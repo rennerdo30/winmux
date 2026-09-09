@@ -1,0 +1,213 @@
+# CLAUDE.md — WinMux
+
+Working notes for implementing this project. Read `README.md` first for the product idea.
+This file is the architecture contract: the decisions that are made, the ones that are open,
+and the traps that will eat days if ignored.
+
+**State: greenfield. No code exists yet. Phase 0 has not run.**
+
+---
+
+## 1. Priorities, in order
+
+When two goals conflict, the higher one wins. This ordering is the product.
+
+1. **Session persistence.** Restoring the layout tree, tabs, per-pane program and working
+   directory is the reason this exists. If a feature endangers reliable save/restore, it loses.
+2. **Stability of the shell.** A misbehaving pane must never take down or freeze WinMux.
+3. **Terminal panes that feel native.** Correct VT, fast, no input lag, sane copy/paste.
+4. **Foreign-app panes.** High value, high risk. Must degrade gracefully, never crash the host.
+5. **File browser pane.**
+6. **Cross-platform.** A design discipline (keep the core portable), not a shipping commitment.
+
+## 2. Stack
+
+**Recommendation: .NET 9 + Avalonia UI, C#.** Adopt after Phase 0 confirms it; the spikes exist
+to falsify this, not to rubber-stamp it.
+
+Why:
+- Win32 interop is the bulk of the hard work here, and C# + [CsWin32](https://github.com/microsoft/CsWin32)
+  gives typed P/Invoke with no hand-written signatures.
+- Avalonia's `NativeControlHost` is purpose-built for embedding native handles, and it has both a
+  Win32 and an X11 implementation — the cross-platform door stays open for free.
+- ConPTY, process inspection and window manipulation all have direct, well-documented .NET paths.
+
+Main risk: **terminal rendering.** .NET has no terminal control of Windows-Terminal quality.
+Either adopt an existing VT parser/renderer or write one — Phase 0 must settle which. If this
+proves to be a multi-week sink, that is the signal to reconsider the stack, not to grind through it.
+
+Rejected, with reasons worth remembering:
+- **Tauri / WebView2 + xterm.js** — excellent terminals and chrome, but embedded apps become native
+  child HWNDs composited *over* a webview. Z-order and input routing fights, permanently.
+- **WinUI 3 / WPF** — best-in-class interop, but forecloses portability entirely.
+- **Rust + custom GPU renderer** — the most control and by far the most work. Reconsider only if
+  terminal rendering forces a rewrite anyway.
+
+## 3. Repository layout
+
+Names are indicative; the *separation* is the requirement.
+
+```
+WinMux.Core/             layout tree, session model, config, keymap, persistence — NO platform APIs
+WinMux.Pty/              ConPTY / pty abstraction, terminal process lifecycle
+WinMux.Platform/         IWindowHost + friends: the platform interface
+WinMux.Platform.Win32/   SetParent, DPI, UIPI, quirks database
+WinMux.PaneHost/         the out-of-process pane host executable (see section 5)
+WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays
+WinMux.Tests/
+docs/adr/                one short file per architectural decision
+```
+
+**`WinMux.Core` must not reference any platform assembly.** Enforce it with a test that asserts
+the dependency set. Everything portable lives there; if the layout engine ever needs an `HWND`,
+the design has gone wrong.
+
+## 4. Model
+
+```
+Session
+ └── Window (top-level; one OS window)
+      └── LayoutNode (tree)
+           ├── Split   { orientation, children[], ratios[] }
+           ├── Stack   { children[], activeIndex }   // tabs
+           └── Leaf    { Pane }
+
+Pane = { id, kind, title, PaneState }
+  kind: Terminal | FileBrowser | ForeignApp
+```
+
+Every pane kind implements one interface: create, attach to a rect, resize, focus, close,
+**serialize to a restore descriptor**, and restore from one. The layout engine knows only that
+interface. Adding a pane kind must not touch the tree code.
+
+**Restore descriptor** — the persisted per-pane payload:
+- `kind`, `title`
+- `program` (resolved absolute path), `args`, `env` overrides
+- `cwd` — the single most important field
+- kind-specific extras (file browser: current directory + selection; foreign app: match rules)
+
+Restore recreates processes from descriptors. It does **not** restore process state. Say so
+plainly in the UI so nobody expects otherwise.
+
+### Capturing the working directory
+
+The known-hard part; Windows Terminal itself has an
+[open issue on this](https://github.com/microsoft/terminal/issues/14270). Layered strategy,
+best available wins:
+
+1. **`OSC 9;9` / `OSC 7`** — the shell reports its cwd. Ship opt-in profile snippets for
+   PowerShell, pwsh, cmd and bash that emit it. This is the only accurate method for shells
+   with child processes running.
+2. **Query the process** — walk to the deepest child of the pane's process and read its cwd
+   via the PEB. Works without shell cooperation, needs matching bitness and access rights.
+3. **Fall back to the launch cwd.** Never fail the whole save because one pane is unknown.
+
+Persist *timestamped* cwd snapshots continuously, not only at exit — a crash must not cost the
+session. Save on a debounce after any layout change, and on cwd change.
+
+### Session file
+
+Human-readable and hand-editable (JSON or TOML — pick one in an ADR and never mix). Versioned
+from the very first write, with a migration path. Sessions are user data: treat a failed load as
+a bug worth a backup file, never as a reason to silently start empty.
+
+## 5. Embedding foreign apps — read before writing any code
+
+[Raymond Chen: cross-process parent/child windows](https://devblogs.microsoft.com/oldnewthing/20130412-00/?p=4683)
+is required reading. The traps, each of which has bitten shipping products:
+
+- **Input queue attachment.** `SetParent` across processes attaches the two threads' input queues,
+  *transitively*. One hung app hangs everyone attached to it — including the WinMux UI thread.
+  **This is why pane hosting is out-of-process** (below). Non-negotiable.
+- **DPI mismatch.** Hosting an app with different DPI awareness misbehaves unless mixed-mode
+  hosting is enabled explicitly (`SetThreadDpiHostingBehavior(DPI_HOSTING_BEHAVIOR_MIXED)`).
+  Declare WinMux per-monitor-v2 and test on a mixed-DPI multi-monitor setup — it is not optional,
+  it is where the bugs live.
+- **Window styles.** `SetParent` does not fix styles. Add `WS_CHILD`, clear `WS_POPUP` and the
+  caption/border bits, then `SetWindowPos(..., SWP_FRAMECHANGED)`. Record every original style,
+  the original parent and the original rect — restoring them exactly is what makes detach safe.
+- **UIPI.** A non-elevated process cannot manipulate an elevated app's windows. Detect and say so
+  in plain words. Do not ship an elevated WinMux to work around it.
+- **Which window?** Apps show splash screens, tool windows and hidden helpers. Adopt only visible,
+  top-level, non-owned windows with a real title, and poll with a timeout rather than assuming the
+  first window is the right one.
+- **Detach must always work.** Every embed is undoable: on clean exit, on crash, and on a panic
+  hotkey. An orphaned invisible child window is a lost application, and users will not forgive it.
+
+### Out-of-process pane hosts
+
+Each foreign-app pane gets its own **`WinMux.PaneHost`** process owning a borderless host window;
+the app is reparented into *that*. The shell positions pane-host windows to match pane rectangles
+and talks to them over IPC (named pipes).
+
+The cost is real — IPC, lifecycle management, focus and z-order coordination. It buys the one thing
+priority 2 demands: a wedged app freezes its own host process, and the shell stays alive, redraws,
+and can kill or detach the pane. Do not "simplify" this away in Phase 3; it is the whole reason
+the design survives contact with real applications.
+
+### Attach mode
+
+The fallback for apps that resist embedding: leave the window top-level, drive its position/size
+to follow the pane rect, like a tiling WM. Less seamless, dramatically more compatible. Every app
+must be switchable between embed and attach **at runtime**, and the choice is remembered per app
+in the quirks database.
+
+### Quirks database
+
+A shipped, user-extendable data file: match on executable/class/title, mapping to strategy,
+window-selection rule, launch delay and known limitations. Assume every non-trivial app needs an
+entry eventually. Verified-app coverage is a documented feature, not an implementation detail.
+
+## 6. UI constraints
+
+- **Native child windows always paint above the host's own drawing.** Any pane hosting a native
+  window will occlude UI drawn beneath it. Design around it: keep chrome (tab bar, status line)
+  in regions that never overlap panes.
+- **Transient overlays** — command palette, pane picker, split preview — must be **separate
+  top-level layered windows**, not in-canvas elements. They will be occluded otherwise.
+- **Focus is explicit.** With processes owning their own windows, focus follows `WM_ACTIVATE` and
+  friends, not the UI framework's notion. Maintain WinMux's own focused-pane state and reconcile
+  it with the OS; never assume they agree.
+- **Keymap: one binding table, tmux-style prefix by default** (configurable, no-prefix allowed).
+  Every action addressable by name from the command palette and from a CLI (`winmux split -h`),
+  because a CLI makes the whole thing scriptable and testable.
+
+## 7. Phase 0 — spikes (do these first)
+
+Throwaway code, in a `spikes/` folder, deleted once the ADRs are written. Nothing else starts
+until all four have an answer.
+
+1. **ConPTY pane.** Spawn pwsh, render VT, resize correctly, no input lag. *Decides the terminal
+   rendering approach, and with it the stack.*
+2. **Reparent four apps** into a borderless host: Notepad (classic Win32), Explorer, a Chromium
+   app (VS Code or a browser), and a packaged/UWP app. Resize, move, detach cleanly, at mixed DPI.
+   *Establishes what "any Windows app" actually means in practice.*
+3. **Hang test.** Embed an app, make it stop pumping messages, confirm the shell stays responsive
+   with the out-of-process host — and confirm it does *not* without one. *Validates section 5.*
+4. **cwd capture.** Get the working directory out of PowerShell, cmd and WSL panes by all three
+   strategies; measure how often each succeeds. *Validates the headline feature.*
+
+Write one short ADR per spike in `docs/adr/`. Record what failed, not just what worked.
+
+## 8. Working agreements
+
+- **Write the ADR when the decision is made**, not later. Short is fine — context, decision,
+  consequences. Future sessions read these before changing direction.
+- **The layout engine gets real unit tests.** Splits, ratios, focus movement, serialization
+  round-trips. It is pure logic with no excuse for being untested, and everything else rests on it.
+- **Keep `WinMux.Core` platform-free.** Enforced by test, not by discipline.
+- **No silent failure around embedding or persistence.** Surface what happened and what the user
+  can do. A pane that vanishes without explanation is worse than one that never opened.
+- **Update this file when architecture changes.** It is the contract between sessions, and a stale
+  contract is worse than none.
+- Keep the README's honesty about limitations intact as the code grows. Overpromising on app
+  compatibility is the fastest way to make this project look broken.
+
+## 9. Open questions
+
+- Terminal rendering: adopt or write? **Blocks the stack decision.** (Spike 1)
+- Session file format: JSON or TOML? (ADR before first write)
+- Detached/daemon sessions — does the shell survive its own restart with panes intact? Deferred
+  past v1, but the process model should not make it impossible later.
+- Adopting already-running apps (drag a running window into a pane) — v1 or later?
+- Multi-monitor: one WinMux window per monitor, or one spanning window with per-monitor tabs?

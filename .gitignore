@@ -1,0 +1,37 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+
+# Rider / VS / VS Code
+.vs/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# NuGet
+*.nupkg
+packages/
+.packages/
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+coverage*.json
+coverage*.xml
+*.trx
+
+# CsWin32 / generated interop
+GeneratedFiles/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Local scratch — spikes are committed, their build output is not
+*.log
+*.tmp

@@ -1,0 +1,15 @@
+# Normalize to LF in the repo; check out native. Keeps the tree sane
+# if/when the platform layer is built on Linux (see README: portability).
+* text=auto eol=lf
+
+# Windows-only scripts stay CRLF on disk
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# Binary
+*.png binary
+*.ico binary
+*.dll binary
+*.exe binary
