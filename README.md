@@ -104,4 +104,4 @@ the target; portability is a design discipline, not a promise.
 
 ## License
 
-TBD.
+[MIT](LICENSE).
