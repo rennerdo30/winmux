@@ -4,7 +4,8 @@ A window multiplexer for Windows. Think **tmux, but outside the terminal** — s
 tabs and saved sessions, where every pane is a real, independent OS process, and a pane can
 be a shell, a file browser, or *any* Windows application.
 
-> Status: **design stage.** No code yet. See `CLAUDE.md` for the architecture and build plan.
+> Status: **Phase 0 — spikes.** No product code yet. See `HANDOFF.md` for where the work stands,
+> `CLAUDE.md` for the architecture and build plan, and `docs/adr/` for decisions already made.
 
 ---
 
@@ -48,7 +49,9 @@ Mostly yes, with an honest set of exceptions. Two strategies, chosen per app:
 - **Embed** (default): reparent the app's top-level window into the pane. True containment —
   it moves, clips and resizes with the layout.
 - **Attach** (fallback): leave the window top-level and drive its position/size to track the pane,
-  the way a tiling WM does. Less seamless, far more compatible.
+  the way a tiling WM does. Less seamless, far more compatible. It is a *compatibility* fallback,
+  not a stability one — measurement showed a wedged app stalls the host equally in both modes
+  unless window calls are kept off the UI thread ([ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md)).
 
 Known-hard cases, handled by falling back to *attach* or by refusing cleanly:
 

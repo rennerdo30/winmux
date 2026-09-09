@@ -1,10 +1,13 @@
 # CLAUDE.md — WinMux
 
-Working notes for implementing this project. Read `README.md` first for the product idea.
+Working notes for implementing this project. Read `README.md` first for the product idea,
+then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: greenfield. No code exists yet. Phase 0 has not run.**
+**State: Phase 0 in progress.** Spike 3 (hang test) is done — see
+[ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md), which corrects section 5's stated
+rationale. Spikes 1, 2 and 4 have not run. No product code exists yet.
 
 ---
 
@@ -116,9 +119,21 @@ a bug worth a backup file, never as a reason to silently start empty.
 [Raymond Chen: cross-process parent/child windows](https://devblogs.microsoft.com/oldnewthing/20130412-00/?p=4683)
 is required reading. The traps, each of which has bitten shipping products:
 
+- **Synchronous cross-process window calls.** *The trap that actually fires* — measured in spike 3,
+  [ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md). `SetWindowPos` on a wedged app's window
+  blocks the caller for as long as the app is wedged, because it sends `WM_WINDOWPOSCHANGING`
+  synchronously to a thread that is not pumping. The shell froze for the full 6 s. **This hits
+  attach mode exactly as hard as embed mode** — no `SetParent` is involved. The rule that follows:
+  *the UI thread never makes a synchronous window call against a foreign window.* Pane geometry
+  goes through a dedicated layout thread or `SWP_ASYNCWINDOWPOS`; every other cross-process call
+  (`SendMessage`, `SetFocus`, `DestroyWindow`, `SetParent`) has the same hazard and no async flag.
 - **Input queue attachment.** `SetParent` across processes attaches the two threads' input queues,
   *transitively*. One hung app hangs everyone attached to it — including the WinMux UI thread.
   **This is why pane hosting is out-of-process** (below). Non-negotiable.
+  *Status: unverified.* Spike 3 chained `shell → host → app` and the shell stayed responsive, but
+  the harness measures message-loop liveness and cannot see input starvation, which is this trap's
+  actual symptom. Treat as true and unproven: do not chain `SetParent` from the shell to a pane
+  host until someone tests it with synthesized input.
 - **DPI mismatch.** Hosting an app with different DPI awareness misbehaves unless mixed-mode
   hosting is enabled explicitly (`SetThreadDpiHostingBehavior(DPI_HOSTING_BEHAVIOR_MIXED)`).
   Declare WinMux per-monitor-v2 and test on a mixed-DPI multi-monitor setup — it is not optional,
@@ -133,6 +148,10 @@ is required reading. The traps, each of which has bitten shipping products:
   first window is the right one.
 - **Detach must always work.** Every embed is undoable: on clean exit, on crash, and on a panic
   hotkey. An orphaned invisible child window is a lost application, and users will not forgive it.
+  Measured in spike 3: killing a pane host that still owns an embedded window **destroys that
+  window**, leaving the app process alive with nothing on screen — unrecoverable. Always detach
+  *then* terminate; never the other way round. Graceful detach restores parent, style, ex-style
+  and rect byte-exactly, so the mechanism is sound — the ordering is what kills.
 
 ### Out-of-process pane hosts
 
@@ -144,6 +163,13 @@ The cost is real — IPC, lifecycle management, focus and z-order coordination. 
 priority 2 demands: a wedged app freezes its own host process, and the shell stays alive, redraws,
 and can kill or detach the pane. Do not "simplify" this away in Phase 3; it is the whole reason
 the design survives contact with real applications.
+
+**Confirmed by spike 3 — for a narrower reason than the above assumes.** The shell survived a
+wedged app in both out-of-process topologies, because it only ever calls window APIs on the
+*host's* window, and the host keeps pumping while the app inside it is stuck. The isolation comes
+from never touching the foreign window, not from anything about input queues. Two consequences:
+the conclusion stands, and the pane host must stay **top-level and positioned** — the shell must
+not `SetParent` it into the shell window. See [ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md).
 
 ### Attach mode
 
@@ -182,8 +208,11 @@ until all four have an answer.
 2. **Reparent four apps** into a borderless host: Notepad (classic Win32), Explorer, a Chromium
    app (VS Code or a browser), and a packaged/UWP app. Resize, move, detach cleanly, at mixed DPI.
    *Establishes what "any Windows app" actually means in practice.*
-3. **Hang test.** Embed an app, make it stop pumping messages, confirm the shell stays responsive
-   with the out-of-process host — and confirm it does *not* without one. *Validates section 5.*
+3. ~~**Hang test.**~~ **Done, 2026-09-10.** Embed an app, make it stop pumping messages, confirm the
+   shell stays responsive with the out-of-process host — and confirm it does *not* without one.
+   Both confirmed. It also found a second, undocumented freeze mechanism that affects attach mode
+   too, and left the input-queue claim unmeasured. See
+   [ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md) and `spikes/03-hang-test/`.
 4. **cwd capture.** Get the working directory out of PowerShell, cmd and WSL panes by all three
    strategies; measure how often each succeeds. *Validates the headline feature.*
 
@@ -200,6 +229,8 @@ Write one short ADR per spike in `docs/adr/`. Record what failed, not just what 
   can do. A pane that vanishes without explanation is worse than one that never opened.
 - **Update this file when architecture changes.** It is the contract between sessions, and a stale
   contract is worse than none.
+- **Update `HANDOFF.md` before the session ends.** See section 10. The contract says what was
+  decided; the handoff says where the work stopped. Both or neither.
 - Keep the README's honesty about limitations intact as the code grows. Overpromising on app
   compatibility is the fastest way to make this project look broken.
 
@@ -211,3 +242,38 @@ Write one short ADR per spike in `docs/adr/`. Record what failed, not just what 
   past v1, but the process model should not make it impossible later.
 - Adopting already-running apps (drag a running window into a pane) — v1 or later?
 - Multi-monitor: one WinMux window per monitor, or one spanning window with per-monitor tabs?
+- **Does input-queue attachment actually starve the shell of input?** Spike 3 could not see it
+  (ADR 0001, finding 4). Needs a harness that synthesizes real input. Until then, chaining
+  `SetParent` from the shell to a pane host stays forbidden.
+
+## 10. Session handoff
+
+Sessions are short and the project is long. `HANDOFF.md` at the repo root is how a new session
+finds out where the last one stopped without replaying its transcript.
+
+**Read it first, before doing anything.** Read it after `README.md` and this file, and treat it
+as current fact — if it disagrees with what you find in the code, the handoff is stale and
+fixing it is part of your work.
+
+**Write it before you stop.** Not as a farewell note at the very end, but whenever the state of
+play changes materially — a spike answered, a decision made, a direction abandoned.
+
+It carries exactly five things, and stays under a page:
+
+1. **Where we are** — the current phase, and the one sentence a newcomer needs.
+2. **What just happened** — the last session's work, dated, with links to what it produced.
+3. **The next action** — one concrete, specific thing. Not a backlog; the single next move.
+4. **Blocked / needs a human** — decisions only the user can make, and what is waiting on them.
+5. **Do not re-do** — approaches already tried and rejected, with the reason. This is the
+   section that actually saves time; without it every session re-derives the same dead ends.
+
+Rules that keep it useful:
+
+- **It is a rolling snapshot, not a changelog.** Git is the changelog. Overwrite freely;
+  a handoff that accumulates history stops being read.
+- **Absolute dates**, never "yesterday" or "last session".
+- **Link, do not restate.** Findings live in ADRs, architecture lives here. The handoff points.
+- **Record what failed**, same as an ADR. A session that wasted two hours on a dead end has
+  produced a real result; write it down.
+- **If it is wrong, fix it before continuing.** A stale handoff is worse than an absent one,
+  because it is trusted.
