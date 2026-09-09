@@ -8,3 +8,4 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-out-of-process-pane-hosts.md) | Out-of-process pane hosts, and the rule that actually keeps the shell alive | accepted |
+| [0002](0002-terminal-stack.md) | Terminal stack: .NET 10 + Avalonia, adopted VT engine behind our own interface | accepted |

@@ -5,9 +5,10 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 0 in progress.** Spike 3 (hang test) is done — see
-[ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md), which corrects section 5's stated
-rationale. Spikes 1, 2 and 4 have not run. No product code exists yet.
+**State: Phase 0 in progress.** Spikes 3 and 1 are done —
+[ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md) corrects section 5's stated rationale, and
+[ADR 0002](docs/adr/0002-terminal-stack.md) settles the stack. Spikes 2 and 4 have not run.
+No product code exists yet.
 
 ---
 
@@ -25,8 +26,9 @@ When two goals conflict, the higher one wins. This ordering is the product.
 
 ## 2. Stack
 
-**Recommendation: .NET 9 + Avalonia UI, C#.** Adopt after Phase 0 confirms it; the spikes exist
-to falsify this, not to rubber-stamp it.
+**Decided: .NET 10 + Avalonia UI, C#.** Confirmed by spike 1 —
+[ADR 0002](docs/adr/0002-terminal-stack.md). (This said ".NET 9" before Phase 0; 10 is what is
+installed and what the terminal packages target.)
 
 Why:
 - Win32 interop is the bulk of the hard work here, and C# + [CsWin32](https://github.com/microsoft/CsWin32)
@@ -35,9 +37,21 @@ Why:
   Win32 and an X11 implementation — the cross-platform door stays open for free.
 - ConPTY, process inspection and window manipulation all have direct, well-documented .NET paths.
 
-Main risk: **terminal rendering.** .NET has no terminal control of Windows-Terminal quality.
-Either adopt an existing VT parser/renderer or write one — Phase 0 must settle which. If this
-proves to be a multi-week sink, that is the signal to reconsider the stack, not to grind through it.
+~~Main risk: **terminal rendering.**~~ **Retired by spike 1.** The plan was that .NET has no
+terminal control of Windows-Terminal quality and that writing one might sink the stack. Measured:
+`Terminal.Emulation` is a VT500 engine that parses at 14–36 MiB/s — 3–10× faster than ConPTY
+delivers — with correct reflow, alternate screen, double-width cells and OSC 8. **Adopt it, behind
+our own `ITerminalEngine` interface**, because it is a 5-week-old single-author package whose
+source repository is not public. Its types must never reach `WinMux.Core`.
+
+Two numbers worth carrying forward:
+- **ConPTY's round-trip floor is ~0.08 ms** (cmd). A full 60 Hz frame is available for rendering.
+- **PowerShell's own echo latency is ~15.6 ms** through the identical pty. That is PSReadLine, not
+  us, and it cannot be fixed from here. Benchmark our input path against cmd or it will be masked.
+
+For the pty itself: **adopt, do not hand-roll.** Hand-rolled ConPTY has a silent failure mode
+(section 5 of ADR 0002) that will cost days. `Porta.Pty` is the recommendation for `WinMux.Pty` —
+independently maintained, widely used, and already carrying Linux/macOS backends.
 
 Rejected, with reasons worth remembering:
 - **Tauri / WebView2 + xterm.js** — excellent terminals and chrome, but embedded apps become native
@@ -203,8 +217,10 @@ entry eventually. Verified-app coverage is a documented feature, not an implemen
 Throwaway code, in a `spikes/` folder, deleted once the ADRs are written. Nothing else starts
 until all four have an answer.
 
-1. **ConPTY pane.** Spawn pwsh, render VT, resize correctly, no input lag. *Decides the terminal
-   rendering approach, and with it the stack.*
+1. ~~**ConPTY pane.**~~ **Done, 2026-09-10.** Spawn pwsh, render VT, resize correctly, no input lag.
+   Stack confirmed, VT engine adopted rather than written. Rendering itself is *not* covered — the
+   spike validates the cell grid, not glyph rasterisation or paint latency. See
+   [ADR 0002](docs/adr/0002-terminal-stack.md) and `spikes/01-conpty/`.
 2. **Reparent four apps** into a borderless host: Notepad (classic Win32), Explorer, a Chromium
    app (VS Code or a browser), and a packaged/UWP app. Resize, move, detach cleanly, at mixed DPI.
    *Establishes what "any Windows app" actually means in practice.*
@@ -236,7 +252,7 @@ Write one short ADR per spike in `docs/adr/`. Record what failed, not just what 
 
 ## 9. Open questions
 
-- Terminal rendering: adopt or write? **Blocks the stack decision.** (Spike 1)
+- ~~Terminal rendering: adopt or write?~~ **Answered — adopt.** [ADR 0002](docs/adr/0002-terminal-stack.md).
 - Session file format: JSON or TOML? (ADR before first write)
 - Detached/daemon sessions — does the shell survive its own restart with panes intact? Deferred
   past v1, but the process model should not make it impossible later.
