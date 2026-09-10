@@ -5,11 +5,12 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 0 in progress.** Spikes 1, 2 and 3 are done —
-[ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md) corrects section 5's stated rationale,
-[ADR 0002](docs/adr/0002-terminal-stack.md) settles the stack, and
-[ADR 0003](docs/adr/0003-foreign-app-compatibility.md) measures the app-compatibility surface.
-Only spike 4 (cwd capture) is left. No product code exists yet.
+**State: Phase 0 COMPLETE.** All four spikes are done and their ADRs written —
+[0001](docs/adr/0001-out-of-process-pane-hosts.md) corrects section 5's stated rationale,
+[0002](docs/adr/0002-terminal-stack.md) settles the stack,
+[0003](docs/adr/0003-foreign-app-compatibility.md) measures the app-compatibility surface, and
+[0004](docs/adr/0004-cwd-capture.md) validates the headline feature.
+**Phase 1 (terminal multiplexer) may now start.** No product code exists yet.
 
 ---
 
@@ -119,6 +120,33 @@ best available wins:
 2. **Query the process** — walk to the deepest child of the pane's process and read its cwd
    via the PEB. Works without shell cooperation, needs matching bitness and access rights.
 3. **Fall back to the launch cwd.** Never fail the whole save because one pane is unknown.
+
+**Measured in spike 4** ([ADR 0004](docs/adr/0004-cwd-capture.md)) — the layered strategy
+succeeds **85% (34/40)**, and the layers really are complementary. Per-shell reality:
+
+| shell | OSC (with snippet) | PEB (root) | PEB (deepest) |
+|---|---|---|---|
+| pwsh / powershell | 80% | **20%** | 60% |
+| cmd | 100% | 80% | 100% |
+| bash under WSL | 80% (stock too, on Debian) | **0%** | **0%** |
+
+- **PowerShell's PEB is permanently stale**: `Set-Location` updates the provider location, not
+  the process working directory. Strategy 2 does not work for the default shell — 20% is only
+  the never-moved case.
+- **For WSL the PEB is meaningless, not merely unreliable** — it returns Windows paths
+  (`C:\WINDOWS`) for a Linux shell. Mark WSL panes OSC-only; a confidently wrong answer is worse
+  than none.
+- **The snippets are therefore mandatory, not a power-user extra.** They live in
+  [`spikes/04-cwd/profiles/`](spikes/04-cwd/profiles) and ship. Offer to install them, and say
+  plainly what is lost otherwise — a bare PowerShell pane restores to the wrong directory the
+  moment the user changes directory, which is the headline feature failing silently.
+- **OSC survives ConPTY intact**, including paths with spaces and non-ASCII.
+- **OSC goes stale inside a nested non-cooperating shell**; PEB-of-deepest-child covers exactly
+  that case. Useful accident: cmd's `PROMPT` is an environment variable so nested `cmd` keeps
+  reporting, whereas a PowerShell prompt *function* is not inherited.
+- **Record which strategy produced each value, and when.** A stale OSC report and a live PEB read
+  do not deserve equal trust on restore.
+- Unsolved: stock PowerShell, after a `cd`, with no child process. Nothing recovers it.
 
 Persist *timestamped* cwd snapshots continuously, not only at exit — a crash must not cost the
 session. Save on a debounce after any layout change, and on cwd change.
@@ -237,7 +265,8 @@ higher-integrity apps → attach**; ordinary Win32, Chromium and the shell → e
 ## 7. Phase 0 — spikes (do these first)
 
 Throwaway code, in a `spikes/` folder, deleted once the ADRs are written. Nothing else starts
-until all four have an answer.
+until all four have an answer. **All four now have answers — the gate is open.** Two artefacts are
+*not* throwaway and ship: `spikes/02-reparent/quirks-seed.json` and `spikes/04-cwd/profiles/`.
 
 1. ~~**ConPTY pane.**~~ **Done, 2026-09-10.** Spawn pwsh, render VT, resize correctly, no input lag.
    Stack confirmed, VT engine adopted rather than written. Rendering itself is *not* covered — the
@@ -253,8 +282,10 @@ until all four have an answer.
    Both confirmed. It also found a second, undocumented freeze mechanism that affects attach mode
    too, and left the input-queue claim unmeasured. See
    [ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md) and `spikes/03-hang-test/`.
-4. **cwd capture.** Get the working directory out of PowerShell, cmd and WSL panes by all three
-   strategies; measure how often each succeeds. *Validates the headline feature.*
+4. ~~**cwd capture.**~~ **Done, 2026-09-10.** All three strategies measured across pwsh,
+   powershell, cmd and WSL bash, over five scenarios each. Layered strategy succeeds 85% (34/40).
+   **PowerShell's PEB is permanently stale and WSL's is meaningless**, so the shell snippets are
+   mandatory, not optional. See [ADR 0004](docs/adr/0004-cwd-capture.md) and `spikes/04-cwd/`.
 
 Write one short ADR per spike in `docs/adr/`. Record what failed, not just what worked.
 
