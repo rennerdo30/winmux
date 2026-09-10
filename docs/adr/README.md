@@ -11,3 +11,4 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | [0002](0002-terminal-stack.md) | Terminal stack: .NET 10 + Avalonia, adopted VT engine behind our own interface | accepted |
 | [0003](0003-foreign-app-compatibility.md) | Foreign-app embedding: what "any Windows app" actually means | accepted |
 | [0004](0004-cwd-capture.md) | Capturing the working directory: ship the shell snippets | accepted |
+| [0005](0005-layout-engine.md) | Layout engine: canonical mutable tree, geometric focus, format-neutral snapshots | accepted |

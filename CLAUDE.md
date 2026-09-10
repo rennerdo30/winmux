@@ -5,12 +5,12 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 0 COMPLETE.** All four spikes are done and their ADRs written —
-[0001](docs/adr/0001-out-of-process-pane-hosts.md) corrects section 5's stated rationale,
-[0002](docs/adr/0002-terminal-stack.md) settles the stack,
-[0003](docs/adr/0003-foreign-app-compatibility.md) measures the app-compatibility surface, and
-[0004](docs/adr/0004-cwd-capture.md) validates the headline feature.
-**Phase 1 (terminal multiplexer) may now start.** No product code exists yet.
+**State: Phase 1 in progress.** Phase 0 is complete — ADRs
+[0001](docs/adr/0001-out-of-process-pane-hosts.md), [0002](docs/adr/0002-terminal-stack.md),
+[0003](docs/adr/0003-foreign-app-compatibility.md) and [0004](docs/adr/0004-cwd-capture.md).
+First product code exists: **`WinMux.Core` (layout engine + session model) and `WinMux.Tests`**,
+68 tests green, `WinMux.Core` platform-free and enforced by test —
+[ADR 0005](docs/adr/0005-layout-engine.md). Next: the ConPTY pane and the shell.
 
 ---
 
@@ -67,15 +67,20 @@ Rejected, with reasons worth remembering:
 Names are indicative; the *separation* is the requirement.
 
 ```
-WinMux.Core/             layout tree, session model, config, keymap, persistence — NO platform APIs
+WinMux.Core/             layout tree, session model, config, keymap, persistence — NO platform APIs   [EXISTS]
 WinMux.Pty/              ConPTY / pty abstraction, terminal process lifecycle
 WinMux.Platform/         IWindowHost + friends: the platform interface
 WinMux.Platform.Win32/   SetParent, DPI, UIPI, quirks database
 WinMux.PaneHost/         the out-of-process pane host executable (see section 5)
 WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays
-WinMux.Tests/
+WinMux.Tests/                                                                                        [EXISTS]
 docs/adr/                one short file per architectural decision
 ```
+
+Built so far: `WinMux.Core` (`Layout/`, `Model/`, `Session/`) and `WinMux.Tests`. See
+[ADR 0005](docs/adr/0005-layout-engine.md) for the layout engine's decisions and invariants.
+The `Columns`/`Rows` vocabulary in `SplitDirection` is deliberate — never `Horizontal`/`Vertical`,
+which every multiplexer defines differently.
 
 **`WinMux.Core` must not reference any platform assembly.** Enforce it with a test that asserts
 the dependency set. Everything portable lives there; if the layout engine ever needs an `HWND`,

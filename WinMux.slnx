@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="WinMux.Core/WinMux.Core.csproj" />
+  <Project Path="WinMux.Tests/WinMux.Tests.csproj" />
+</Solution>
