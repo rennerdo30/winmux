@@ -12,3 +12,4 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | [0003](0003-foreign-app-compatibility.md) | Foreign-app embedding: what "any Windows app" actually means | accepted |
 | [0004](0004-cwd-capture.md) | Capturing the working directory: ship the shell snippets | accepted |
 | [0005](0005-layout-engine.md) | Layout engine: canonical mutable tree, geometric focus, format-neutral snapshots | accepted |
+| [0006](0006-session-file-format.md) | Session file format: TOML, with the layout tree flattened | accepted |

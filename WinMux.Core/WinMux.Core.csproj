@@ -15,4 +15,8 @@
     <NoWarn>CS1591</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Tomlyn" Version="2.10.1" />
+  </ItemGroup>
+
 </Project>

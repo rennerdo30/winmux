@@ -8,9 +8,10 @@ and the traps that will eat days if ignored.
 **State: Phase 1 in progress.** Phase 0 is complete — ADRs
 [0001](docs/adr/0001-out-of-process-pane-hosts.md), [0002](docs/adr/0002-terminal-stack.md),
 [0003](docs/adr/0003-foreign-app-compatibility.md) and [0004](docs/adr/0004-cwd-capture.md).
-First product code exists: **`WinMux.Core` (layout engine + session model) and `WinMux.Tests`**,
-68 tests green, `WinMux.Core` platform-free and enforced by test —
-[ADR 0005](docs/adr/0005-layout-engine.md). Next: the ConPTY pane and the shell.
+First product code exists: **`WinMux.Core` (layout engine, session model, TOML persistence) and
+`WinMux.Tests`**, 95 tests green, `WinMux.Core` platform-free and enforced by test —
+ADRs [0005](docs/adr/0005-layout-engine.md) and [0006](docs/adr/0006-session-file-format.md).
+Next: the ConPTY pane and the shell.
 
 ---
 
@@ -158,9 +159,18 @@ session. Save on a debounce after any layout change, and on cwd change.
 
 ### Session file
 
-Human-readable and hand-editable (JSON or TOML — pick one in an ADR and never mix). Versioned
-from the very first write, with a migration path. Sessions are user data: treat a failed load as
-a bug worth a backup file, never as a reason to silently start empty.
+**Decided: TOML** — [ADR 0006](docs/adr/0006-session-file-format.md). Versioned from the very first
+write, with a migration path. Sessions are user data: a failed load is a bug worth a backup file,
+never a reason to silently start empty.
+
+The layout tree is **flattened** into `[[windows.nodes]]` with generated ids, because nesting TOML
+tables to match the tree produces `[[windows.root.children.children.children]]` — worse than the
+JSON it was meant to improve on. Panes are flat `[[windows.panes]]` tables and are explicitly the
+part worth hand-editing. Paths are written as TOML literal strings so backslashes survive unescaped.
+
+Implemented in `WinMux.Core/Session`: `SessionFile.Save`/`Load` is the whole surface. Saving is
+atomic; loading an unreadable file quarantines a copy and refuses rather than starting empty.
+Reading rejects dangling references, duplicate ids, unreachable nodes and cycles by name.
 
 ## 5. Embedding foreign apps — read before writing any code
 
@@ -313,7 +323,7 @@ Write one short ADR per spike in `docs/adr/`. Record what failed, not just what 
 ## 9. Open questions
 
 - ~~Terminal rendering: adopt or write?~~ **Answered — adopt.** [ADR 0002](docs/adr/0002-terminal-stack.md).
-- Session file format: JSON or TOML? (ADR before first write)
+- ~~Session file format: JSON or TOML?~~ **Answered — TOML.** [ADR 0006](docs/adr/0006-session-file-format.md).
 - Detached/daemon sessions — does the shell survive its own restart with panes intact? Deferred
   past v1, but the process model should not make it impossible later.
 - Adopting already-running apps (drag a running window into a pane) — v1 or later?

@@ -14,12 +14,13 @@ exists and is green:
 
 | Project | State |
 |---|---|
-| `WinMux.Core` | layout tree, pane model, format-neutral session snapshots. **No dependencies at all.** |
-| `WinMux.Tests` | 68 tests, all passing |
+| `WinMux.Core` | layout tree, pane model, **TOML session persistence**. Only dependency: Tomlyn. |
+| `WinMux.Tests` | 95 tests, all passing |
 | `WinMux.Pty` / `.Platform` / `.PaneHost` / `.Shell` | not started |
 
 `dotnet test -c Release` from the repo root is the gate. Design decisions and invariants for the
-engine: [ADR 0005](docs/adr/0005-layout-engine.md).
+engine: [ADR 0005](docs/adr/0005-layout-engine.md); session file format:
+[ADR 0006](docs/adr/0006-session-file-format.md).
 
 **Stack: .NET 10 + Avalonia 12 + C#.** VT engine adopted (`Terminal.Emulation`) and pty adopted
 (`Porta.Pty`), both to sit behind our own interfaces — neither is referenced yet.
@@ -33,6 +34,11 @@ engine: [ADR 0005](docs/adr/0005-layout-engine.md).
   (`spikes/02-reparent/quirks-seed.json`, `spikes/04-cwd/profiles/`).
 - Built `WinMux.Core` + `WinMux.Tests` → [ADR 0005](docs/adr/0005-layout-engine.md).
   Splits, stacks, ratios, resize, geometric focus, canonical collapse, session round-trip.
+- **Session file format settled: TOML** → [ADR 0006](docs/adr/0006-session-file-format.md).
+  The tree is *flattened* into `[[windows.nodes]]`; nesting it would give
+  `[[windows.root.children.children.children]]`, worse than the JSON it replaced. Panes are flat
+  and are the part meant for hand-editing. Saving is atomic; a corrupt file is quarantined, never
+  replaced. `SessionFile.Save`/`Load` is the whole surface.
 - **Both load-bearing guards were mutation-tested**, and one of them was broken:
   `GetReferencedAssemblies()` cannot see a platform package that is referenced but not yet *called*
   — adding `System.Drawing.Common` to Core left the suite green. Now also asserts on the project
@@ -57,9 +63,10 @@ prerequisites for the shell. Concretely:
 
 1. `WinMux.Pty` wrapping `Porta.Pty` behind a small `IPtySession` (write, resize, output stream,
    exited). Do **not** hand-roll ConPTY; see "do not re-do".
-2. `ITerminalEngine` in a new `WinMux.Terminal` project (**not** in Core — Core must stay
-   dependency-free): write bytes, read the cell grid, resize, cursor, title, response callback.
-   The adapter over `Terminal.Emulation` lives behind it.
+2. `ITerminalEngine` in a new `WinMux.Terminal` project — **not** in Core. Core may now declare an
+   approved, platform-neutral package (Tomlyn, per ADR 0006), but `Terminal.*` is on the forbidden
+   list and stays there. Surface: write bytes, read the cell grid, resize, cursor, title, response
+   callback; the adapter over `Terminal.Emulation` lives behind it.
 3. Tests: spawn `cmd`, feed a marker, assert it reaches the grid. `spikes/01-conpty/src/StageB.cs`
    already does exactly this and can be lifted almost verbatim.
 
@@ -67,9 +74,6 @@ Then the Avalonia shell. Keep `dotnet test` green as the gate throughout.
 
 ## Blocked / needs a human
 
-- **Session file format — JSON or TOML?** Now the nearest real blocker: `WinMux.Core/Session`
-  holds a deliberately format-neutral snapshot, and Phase 2 cannot write a file until this is
-  settled. `CLAUDE.md` requires an ADR and says never mix the two.
 - **Mixed-DPI multi-monitor is untested.** Both monitors are 144 DPI, so the scenario `CLAUDE.md`
   calls "where the bugs live" never ran. Set one display to a different scale factor, then re-run
   `spikes/02-reparent/bin/Release/net10.0-windows/ReparentSpike.exe`.
@@ -101,6 +105,13 @@ Then the Avalonia shell. Keep `dotnet test` green as the gate throughout.
   printed Linux paths as `\tmp\foo`.
 - **When interop fails in a way that reading it does not reveal, run a control.** Three re-reads of
   the ConPTY code found nothing; the same test through `Porta.Pty` found the bug in minutes.
+- **Never build a test fixture by string concatenation.** Two malformed-session tests appended an
+  extra `[[windows.nodes]]` block *after* `[[windows.panes]]` — which replaces the earlier array
+  rather than extending it — so the "duplicate id" fixture contained no duplicate and the "orphan
+  node" fixture had lost its root instead. Both passed for the wrong reason. Spell fixtures out.
+- **Do not write against a remembered library API.** `Tomlyn.Toml.Parse().ToModel()` does not exist
+  in 2.10; the route is `TomlSerializer.Deserialize<TomlTable>`. Reflect over the shipped assembly
+  when a call does not compile, rather than guessing a second time.
 
 **Platform traps:**
 

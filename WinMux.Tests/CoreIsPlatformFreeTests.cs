@@ -48,9 +48,10 @@ public class CoreIsPlatformFreeTests
     }
 
     [Fact]
-    public void Core_references_only_the_base_class_library()
+    public void Core_references_only_the_base_class_library_and_approved_packages()
     {
-        string[] allowed = ["System", "netstandard", "mscorlib", "WinMux.Core"];
+        string[] allowed =
+            ["System", "netstandard", "mscorlib", "WinMux.Core", .. ApprovedDependencies.Keys];
 
         var unexpected = Core.GetReferencedAssemblies()
             .Select(a => a.Name ?? string.Empty)
@@ -83,20 +84,50 @@ public class CoreIsPlatformFreeTests
     /// the compiler actually emitted a reference for, so a platform package that is referenced but
     /// not yet called would pass every other test in this file while the boundary is already gone.
     /// </summary>
+    /// <summary>
+    /// Every dependency Core is allowed to declare, and the ADR that admitted it. The list is the
+    /// point: adding to it is a design decision, and the failure message says so.
+    /// </summary>
+    private static readonly Dictionary<string, string> ApprovedDependencies = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Tomlyn"] = "ADR 0006 — session file format is TOML. Platform-neutral, TOML v1.0.0.",
+    };
+
     [Fact]
-    public void Core_declares_no_dependencies_at_all()
+    public void Core_declares_only_approved_dependencies()
     {
         var xml = File.ReadAllText(CoreProjectPath());
 
         var declared = System.Text.RegularExpressions.Regex
             .Matches(xml, @"<(PackageReference|ProjectReference|FrameworkReference)\s+Include=""([^""]+)""")
-            .Select(m => $"{m.Groups[1].Value} {m.Groups[2].Value}")
+            .Select(m => (Kind: m.Groups[1].Value, Name: m.Groups[2].Value))
             .ToArray();
 
-        Assert.True(declared.Length == 0,
-            "WinMux.Core declares dependencies: " + string.Join(", ", declared) +
-            ". Core is the portable half of the product and depends on the BCL only; " +
-            "adding anything here is a design decision that belongs in an ADR first.");
+        var unapproved = declared
+            .Where(d => !ApprovedDependencies.ContainsKey(d.Name))
+            .Select(d => $"{d.Kind} {d.Name}")
+            .ToArray();
+
+        Assert.True(unapproved.Length == 0,
+            "WinMux.Core declares unapproved dependencies: " + string.Join(", ", unapproved) +
+            ". Core is the portable half of the product; adding a dependency is a design decision " +
+            "that belongs in an ADR, and then in ApprovedDependencies here.");
+    }
+
+    [Fact]
+    public void No_project_reference_ever_leaves_Core()
+    {
+        // A package can be portable. A ProjectReference out of Core cannot be, because every other
+        // project in this solution is platform-bound by design.
+        var xml = File.ReadAllText(CoreProjectPath());
+        var projectRefs = System.Text.RegularExpressions.Regex
+            .Matches(xml, @"<ProjectReference\s+Include=""([^""]+)""")
+            .Select(m => m.Groups[1].Value)
+            .ToArray();
+
+        Assert.True(projectRefs.Length == 0,
+            "WinMux.Core references other projects: " + string.Join(", ", projectRefs) +
+            ". Dependencies point INTO Core, never out of it.");
     }
 
     [Fact]
