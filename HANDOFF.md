@@ -17,8 +17,9 @@ exists and is green:
 | `WinMux.Core` | layout tree, pane model, **TOML session persistence**. Only dependency: Tomlyn. |
 | `WinMux.Tests` | 101 tests, all passing |
 | `examples/` | committed session files; a test loads every one on each build |
-| `WinMux.Cli` | `winmux show` / `validate` / `new` — inspects session files, **cannot open panes** |
-| `WinMux.Pty` / `.Platform` / `.PaneHost` / `.Shell` | not started |
+| `WinMux.Cli` | `winmux show` / `validate` / `new` — inspects session files |
+| `WinMux.Shell` | **`WinMux.exe` runs.** Terminal panes + foreign apps embedded in the layout |
+| `WinMux.Pty` / `.Platform` / `.PaneHost` | not started |
 
 `dotnet test -c Release` from the repo root is the gate. Design decisions and invariants for the
 engine: [ADR 0005](docs/adr/0005-layout-engine.md); session file format:
@@ -65,9 +66,30 @@ Constraints from Phase 0 that shape everything still to be written:
    never reach `WinMux.Core` (the platform-free test already forbids `Terminal.*`).
 5. **PowerShell's PEB is permanently stale, WSL's is meaningless.** The cwd snippets are mandatory.
 
+### Running it
+
+```powershell
+dotnet build -c Release
+.\WinMux.Shellin\Release
+et10.0-windows\WinMux.exe            # cmd + Explorer on the cwd
+.\WinMux.Shellin\Release
+et10.0-windows\WinMux.exe session.toml
+```
+
+`Ctrl+B` then: `%` split columns, `"` split rows, arrows move focus, `x` close, `c` new tab,
+`n`/`p` cycle tabs, `w` write the session file.
+
+**Close it with the window's X, never `Stop-Process -Force`** — a hard kill skips detach and
+destroys every embedded window, leaving windowless orphan processes behind.
+
 ## The next action
 
-**Build `WinMux.Pty` and the `ITerminalEngine` seam** — both headless and testable, and both
+**Build the out-of-process `WinMux.PaneHost`** (CLAUDE.md section 5), the last structural piece of
+the design that is missing. Today foreign apps are embedded directly into the shell window, which
+is spike 3's T2 topology — safe only because every foreign-window call is kept off the UI thread.
+A pane host process is what makes a wedged app unable to touch the shell at all.
+
+After that, or in parallel: `WinMux.Pty` and the `ITerminalEngine` seam — both headless and testable, and both
 prerequisites for the shell. Concretely:
 
 1. `WinMux.Pty` wrapping `Porta.Pty` behind a small `IPtySession` (write, resize, output stream,
@@ -114,6 +136,14 @@ Then the Avalonia shell. Keep `dotnet test` green as the gate throughout.
   printed Linux paths as `\tmp\foo`.
 - **When interop fails in a way that reading it does not reveal, run a control.** Three re-reads of
   the ConPTY code found nothing; the same test through `Porta.Pty` found the bug in minutes.
+- **Do not hand-roll `SetParent` into the Avalonia window.** It succeeds, reports the right parent
+  and rect and `IsWindowVisible`, and paints NOTHING — Avalonia composites through a swapchain that
+  a hand-parented child HWND never joins. Use `NativeControlHost` and override
+  `DestroyNativeControlCore` to do nothing. [ADR 0007](docs/adr/0007-hosting-foreign-windows.md).
+- **Do not diagnose window bugs from screenshots.** Enumerating the shell's child windows settled
+  in one call what three rounds of reading pixels could not.
+- **Never `Stop-Process -Force` the shell.** It skips detach, destroys embedded windows, and leaves
+  windowless orphans that break the NEXT run's window selection.
 - **Never build a test fixture by string concatenation.** Two malformed-session tests appended an
   extra `[[windows.nodes]]` block *after* `[[windows.panes]]` — which replaces the earlier array
   rather than extending it — so the "duplicate id" fixture contained no duplicate and the "orphan

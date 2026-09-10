@@ -5,13 +5,18 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 1 in progress.** Phase 0 is complete — ADRs
-[0001](docs/adr/0001-out-of-process-pane-hosts.md), [0002](docs/adr/0002-terminal-stack.md),
-[0003](docs/adr/0003-foreign-app-compatibility.md) and [0004](docs/adr/0004-cwd-capture.md).
-First product code exists: **`WinMux.Core` (layout engine, session model, TOML persistence) and
-`WinMux.Tests`**, 95 tests green, `WinMux.Core` platform-free and enforced by test —
-ADRs [0005](docs/adr/0005-layout-engine.md) and [0006](docs/adr/0006-session-file-format.md).
-Next: the ConPTY pane and the shell.
+**State: Phase 1 — it runs.** `WinMux.exe` opens a window with real terminal panes and real
+foreign applications **embedded** in the layout (verified with cmd + File Explorer and cmd +
+Character Map). Phase 0 complete: ADRs [0001](docs/adr/0001-out-of-process-pane-hosts.md),
+[0002](docs/adr/0002-terminal-stack.md), [0003](docs/adr/0003-foreign-app-compatibility.md),
+[0004](docs/adr/0004-cwd-capture.md). Product code: `WinMux.Core` (layout, session model, TOML —
+ADRs [0005](docs/adr/0005-layout-engine.md), [0006](docs/adr/0006-session-file-format.md)),
+`WinMux.Shell` (Avalonia, [ADR 0007](docs/adr/0007-hosting-foreign-windows.md)), `WinMux.Cli`,
+`WinMux.Tests` (101 green).
+
+**Not done yet:** session save/restore is wired to a keybinding but restore-on-launch is untested
+at scale; no out-of-process pane host (section 5) — a wedged app can still stall the shell's
+foreign-window work; no quirks database at runtime; no command palette.
 
 ---
 
@@ -73,7 +78,7 @@ WinMux.Pty/              ConPTY / pty abstraction, terminal process lifecycle
 WinMux.Platform/         IWindowHost + friends: the platform interface
 WinMux.Platform.Win32/   SetParent, DPI, UIPI, quirks database
 WinMux.PaneHost/         the out-of-process pane host executable (see section 5)
-WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays
+WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays                          [EXISTS]
 WinMux.Cli/              `winmux` — the command line surface (section 6)                             [EXISTS]
 WinMux.Tests/                                                                                        [EXISTS]
 docs/adr/                one short file per architectural decision
@@ -227,6 +232,41 @@ is required reading. The traps, each of which has bitten shipping products:
   window**, leaving the app process alive with nothing on screen — unrecoverable. Always detach
   *then* terminate; never the other way round. Graceful detach restores parent, style, ex-style
   and rect byte-exactly, so the mechanism is sound — the ordering is what kills.
+
+### Hosting a foreign window inside the shell — measured in Phase 1
+
+**Embedding MUST go through Avalonia's `NativeControlHost`.** Hand-rolling `SetParent` into the
+shell window's HWND *appears* to work and does not: the window becomes a genuine child, is sized
+and positioned correctly, and `IsWindowVisible` reports true — and it **paints nothing at all**.
+Avalonia renders through a composition swapchain and a child HWND parented in by hand is never
+composited into it. Verified with Character Map: every child control laid out at the right screen
+coordinates, and the pane showed the desktop behind. Section 2 already said this
+(`NativeControlHost` "is purpose-built for embedding native handles") and it is the same reason
+Tauri/WebView2 was rejected.
+
+Consequences, all learned the hard way:
+
+- **Override `DestroyNativeControlCore` to do nothing.** The default destroys the handle — and the
+  handle belongs to somebody else's application.
+- **Strip the frame yourself.** `SetParent` does not fix styles: clear `WS_CAPTION`,
+  `WS_THICKFRAME`, `WS_SYSMENU` and friends, then `SWP_FRAMECHANGED`, or the app keeps its own
+  title bar and close button inside the pane. That is the visible difference between a window that
+  is *embedded* and one that is merely *followed*.
+- **Never hard-kill the shell while it owns embedded windows.** Killing WinMux with the equivalent
+  of `Stop-Process -Force` skips detach, and a parent takes its children with it: the applications
+  survive as processes with no windows. Reproduced on ourselves repeatedly during development —
+  this is spike 3's T5 finding arriving in the product. Graceful close detaches and the app comes
+  back with its title bar intact.
+- **`explorer.exe <folder>` reuses an existing window.** If a window is already open on that
+  folder, nothing new appears, so "wait for a new window" waits forever. Window selection needs a
+  fallback that adopts an existing unclaimed window matching the rule.
+- **Attach mode is not a runtime fallback.** It leaves the app top-level with its own title bar,
+  merely tracking the pane rect — not containment. Embed, or report why not.
+
+**Spike 2's "OK" verdicts covered geometry and lifecycle, not rendering.** It measured that a
+window reparents, resizes, moves and detaches byte-exactly — all true — and never checked that the
+application still *drew anything*. A reparent can succeed completely and leave an invisible
+window. Any future embedding spike must assert pixels, not just rectangles.
 
 ### Out-of-process pane hosts
 

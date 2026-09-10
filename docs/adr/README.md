@@ -13,3 +13,4 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | [0004](0004-cwd-capture.md) | Capturing the working directory: ship the shell snippets | accepted |
 | [0005](0005-layout-engine.md) | Layout engine: canonical mutable tree, geometric focus, format-neutral snapshots | accepted |
 | [0006](0006-session-file-format.md) | Session file format: TOML, with the layout tree flattened | accepted |
+| [0007](0007-hosting-foreign-windows.md) | Hosting foreign windows: NativeControlHost, and embed only | accepted |
