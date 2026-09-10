@@ -44,7 +44,18 @@ the whole edit. The pane ids are placeholders (`1111…`, `2222…`) and any uni
   only known from how it was launched: `launch-directory`. On restore the two are not weighted
   equally ([ADR 0004](../docs/adr/0004-cwd-capture.md)).
 
+### Looking at it
+
+```
+dotnet publish WinMux.Cli -c Release -r win-x64 --self-contained false -o dist
+.\dist\winmux.exe show examples\cmd-and-explorer.toml
+```
+
+`winmux show` draws the layout using the real `Layouter`, so what you see is what the layout engine
+computed rather than a separate picture of what it was meant to compute. `winmux validate` parses
+and reports, exiting non-zero with the reason.
+
 ### Caveat
 
-Nothing loads these files yet — `WinMux.Core` can read and write them, but there is no shell to run
-them in. This is a format example, not a working configuration.
+**Nothing runs these panes yet.** `winmux show` inspects the file; there is no shell, no pty and no
+window hosting. This is a format example, not a working configuration.

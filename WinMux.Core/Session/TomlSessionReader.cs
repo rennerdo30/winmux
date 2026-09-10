@@ -25,8 +25,9 @@ public static class TomlSessionReader
         }
         catch (TomlException ex)
         {
-            var where = ex.Line is { } line ? $" (line {line + 1})" : string.Empty;
-            throw new SessionFormatException($"Session file is not valid TOML: {ex.Message}{where}");
+            // Tomlyn's message already carries "(line,column) : error : ...", so adding our own
+            // position produced two different-looking line numbers for one problem.
+            throw new SessionFormatException($"Session file is not valid TOML. {ex.Message}");
         }
 
         var version = (int)Integer(root, "version", "the file root");

@@ -36,15 +36,24 @@ public static class Layouter
     /// <summary>Width of the gap between siblings, in pixels. Also the divider hit target.</summary>
     public const int DividerThickness = 6;
 
-    public static Arrangement Arrange(LayoutNode root, Rect bounds)
+    /// <summary>
+    /// Lay the tree out inside <paramref name="bounds"/>.
+    ///
+    /// <paramref name="dividerThickness"/> exists because the same engine has to serve a pixel
+    /// surface and a character grid: the CLI renders layouts into a terminal, where a six-column
+    /// gutter would be absurd. Threaded through explicitly rather than held in ambient state —
+    /// layout is called from more than one thread and a hidden setting would be a race.
+    /// </summary>
+    public static Arrangement Arrange(LayoutNode root, Rect bounds, int? dividerThickness = null)
     {
+        var gutter = Math.Max(0, dividerThickness ?? DividerThickness);
         var rects = new Dictionary<PaneId, Rect>();
         var dividers = new List<Divider>();
-        Place(root, bounds, rects, dividers);
+        Place(root, bounds, rects, dividers, gutter);
         return new Arrangement(bounds, rects, dividers);
     }
 
-    private static void Place(LayoutNode node, Rect rect, Dictionary<PaneId, Rect> rects, List<Divider> dividers)
+    private static void Place(LayoutNode node, Rect rect, Dictionary<PaneId, Rect> rects, List<Divider> dividers, int gutter)
     {
         switch (node)
         {
@@ -55,11 +64,11 @@ public static class Layouter
             case StackNode stack:
                 // Tabs: only the active child occupies the rect. The others are not merely hidden,
                 // they have no geometry, and asking for their rect is a bug worth surfacing.
-                Place(stack.Active, rect, rects, dividers);
+                Place(stack.Active, rect, rects, dividers, gutter);
                 return;
 
             case SplitNode split:
-                PlaceSplit(split, rect, rects, dividers);
+                PlaceSplit(split, rect, rects, dividers, gutter);
                 return;
 
             default:
@@ -67,13 +76,13 @@ public static class Layouter
         }
     }
 
-    private static void PlaceSplit(SplitNode split, Rect rect, Dictionary<PaneId, Rect> rects, List<Divider> dividers)
+    private static void PlaceSplit(SplitNode split, Rect rect, Dictionary<PaneId, Rect> rects, List<Divider> dividers, int gutter)
     {
         int n = split.Children.Count;
         bool columns = split.Direction == SplitDirection.Columns;
 
         int extent = columns ? rect.Width : rect.Height;
-        int gaps = (n - 1) * DividerThickness;
+        int gaps = (n - 1) * gutter;
         int available = Math.Max(0, extent - gaps);
 
         // Distribute by cumulative rounding rather than per-child rounding: per-child rounding
@@ -100,7 +109,7 @@ public static class Layouter
                 ? new Rect(offset, rect.Y, size, rect.Height)
                 : new Rect(rect.X, offset, rect.Width, size);
 
-            Place(split.Children[i], childRect, rects, dividers);
+            Place(split.Children[i], childRect, rects, dividers, gutter);
 
             used += size;
             offset += size;
@@ -108,10 +117,10 @@ public static class Layouter
             if (i < n - 1)
             {
                 var divRect = columns
-                    ? new Rect(offset, rect.Y, DividerThickness, rect.Height)
-                    : new Rect(rect.X, offset, rect.Width, DividerThickness);
+                    ? new Rect(offset, rect.Y, gutter, rect.Height)
+                    : new Rect(rect.X, offset, rect.Width, gutter);
                 dividers.Add(new Divider(split, i, divRect, split.Direction));
-                offset += DividerThickness;
+                offset += gutter;
             }
         }
     }

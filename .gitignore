@@ -35,3 +35,6 @@ desktop.ini
 # Local scratch — spikes are committed, their build output is not
 *.log
 *.tmp
+
+# published CLI output
+dist/

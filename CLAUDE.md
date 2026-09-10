@@ -74,11 +74,12 @@ WinMux.Platform/         IWindowHost + friends: the platform interface
 WinMux.Platform.Win32/   SetParent, DPI, UIPI, quirks database
 WinMux.PaneHost/         the out-of-process pane host executable (see section 5)
 WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays
+WinMux.Cli/              `winmux` — the command line surface (section 6)                             [EXISTS]
 WinMux.Tests/                                                                                        [EXISTS]
 docs/adr/                one short file per architectural decision
 ```
 
-Built so far: `WinMux.Core` (`Layout/`, `Model/`, `Session/`) and `WinMux.Tests`. See
+Built so far: `WinMux.Core` (`Layout/`, `Model/`, `Session/`), `WinMux.Cli` and `WinMux.Tests`. See
 [ADR 0005](docs/adr/0005-layout-engine.md) for the layout engine's decisions and invariants.
 The `Columns`/`Rows` vocabulary in `SplitDirection` is deliberate — never `Horizontal`/`Vertical`,
 which every multiplexer defines differently.
