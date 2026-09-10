@@ -5,10 +5,11 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 0 in progress.** Spikes 3 and 1 are done —
-[ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md) corrects section 5's stated rationale, and
-[ADR 0002](docs/adr/0002-terminal-stack.md) settles the stack. Spikes 2 and 4 have not run.
-No product code exists yet.
+**State: Phase 0 in progress.** Spikes 1, 2 and 3 are done —
+[ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md) corrects section 5's stated rationale,
+[ADR 0002](docs/adr/0002-terminal-stack.md) settles the stack, and
+[ADR 0003](docs/adr/0003-foreign-app-compatibility.md) measures the app-compatibility surface.
+Only spike 4 (cwd capture) is left. No product code exists yet.
 
 ---
 
@@ -157,9 +158,25 @@ is required reading. The traps, each of which has bitten shipping products:
   the original parent and the original rect — restoring them exactly is what makes detach safe.
 - **UIPI.** A non-elevated process cannot manipulate an elevated app's windows. Detect and say so
   in plain words. Do not ship an elevated WinMux to work around it.
+  Measured in spike 2: Task Manager refuses with `SetParent` → **`ERROR_ACCESS_DENIED` (5)**.
+  Note `OpenProcess` for query *succeeds* on it, so probing the process is **not** a valid UIPI
+  test — only the error from `SetParent` itself is. UWP refuses differently:
+  **`ERROR_INVALID_PARAMETER` (87)**. Map both to plain words and fall back to attach mode.
+- **Verifying a reparent.** Two traps, both measured in spike 2:
+  `SetParent` returning the old parent is not success — a failure returns `NULL` and sets the
+  error, so **capture `GetLastError` on the very next line**; any other Win32 call clobbers it.
+  And **`GetParent` returns the OWNER for a `WS_POPUP` window**, not the parent — verify with
+  `GetAncestor(hwnd, GA_PARENT)`, which yields the desktop for a genuine top-level window.
 - **Which window?** Apps show splash screens, tool windows and hidden helpers. Adopt only visible,
   top-level, non-owned windows with a real title, and poll with a timeout rather than assuming the
-  first window is the right one.
+  first window is the right one. Spike 2 confirms this rule is load-bearing: Notepad alone creates
+  **12** top-level windows (`GDI+ Hook Window Class`, three `IME`, two `MSCTFIME UI`,
+  `tooltips_class32`, `CtrlNotifySink`…) and the rule picked correctly on every target.
+  **Match on process image name and window class, never on the launched pid** — on Windows 11
+  `notepad.exe` is a *shim* that runs the packaged `Notepad.exe` as a different process.
+- **A pane's actual rect will not equal its requested rect.** A DPI-unaware window hosted at 150%
+  came back consistently **one pixel wider** than asked (700→701, 880→881) from DPI virtualization
+  rounding, and apps with minimum sizes miss by more. Layout code must never assert equality.
 - **Detach must always work.** Every embed is undoable: on clean exit, on crash, and on a panic
   hotkey. An orphaned invisible child window is a lost application, and users will not forgive it.
   Measured in spike 3: killing a pane host that still owns an embedded window **destroys that
@@ -198,6 +215,11 @@ A shipped, user-extendable data file: match on executable/class/title, mapping t
 window-selection rule, launch delay and known limitations. Assume every non-trivial app needs an
 entry eventually. Verified-app coverage is a documented feature, not an implementation detail.
 
+**Schema and first entries seeded by spike 2**: [`spikes/02-reparent/quirks-seed.json`](spikes/02-reparent/quirks-seed.json).
+Each entry carries match (exe + class), strategy, window-selection rule, launch delay, limitations
+and a `verified` block (date, OS build, result). Defaults established: **UWP/packaged apps and
+higher-integrity apps → attach**; ordinary Win32, Chromium and the shell → embed.
+
 ## 6. UI constraints
 
 - **Native child windows always paint above the host's own drawing.** Any pane hosting a native
@@ -221,9 +243,11 @@ until all four have an answer.
    Stack confirmed, VT engine adopted rather than written. Rendering itself is *not* covered — the
    spike validates the cell grid, not glyph rasterisation or paint latency. See
    [ADR 0002](docs/adr/0002-terminal-stack.md) and `spikes/01-conpty/`.
-2. **Reparent four apps** into a borderless host: Notepad (classic Win32), Explorer, a Chromium
-   app (VS Code or a browser), and a packaged/UWP app. Resize, move, detach cleanly, at mixed DPI.
-   *Establishes what "any Windows app" actually means in practice.*
+2. ~~**Reparent four apps**~~ **Done, 2026-09-10.** Notepad, Character Map, Explorer, VS Code and a
+   packaged/UWP app, plus synthetic DPI-awareness levels. Ordinary apps including Chromium and the
+   shell embed and detach byte-exactly; Task Manager and UWP refuse with distinct, detectable
+   errors. **True mixed-DPI multi-monitor remains untested** — both monitors here are 144 DPI. See
+   [ADR 0003](docs/adr/0003-foreign-app-compatibility.md) and `spikes/02-reparent/`.
 3. ~~**Hang test.**~~ **Done, 2026-09-10.** Embed an app, make it stop pumping messages, confirm the
    shell stays responsive with the out-of-process host — and confirm it does *not* without one.
    Both confirmed. It also found a second, undocumented freeze mechanism that affects attach mode

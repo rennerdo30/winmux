@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "generatedBy": "spikes/02-reparent",
+  "entries": [
+    {
+      "match": {
+        "exe": "Notepad.exe",
+        "windowClass": "Notepad"
+      },
+      "strategy": "embed",
+      "windowSelection": {
+        "mode": "ProcessName",
+        "processName": "Notepad.exe",
+        "className": ""
+      },
+      "launchDelayMs": 1500,
+      "observedFindMs": 410,
+      "dpiAwareness": "PerMonitor",
+      "limitations": null,
+      "verified": {
+        "date": "2026-09-10",
+        "os": "10.0.26200.0",
+        "result": "OK",
+        "resizeFollows": true,
+        "moveFollows": true,
+        "detachExact": true
+      }
+    },
+    {
+      "match": {
+        "exe": "charmap.exe",
+        "windowClass": "#32770"
+      },
+      "strategy": "embed",
+      "windowSelection": {
+        "mode": "Pid",
+        "processName": "",
+        "className": ""
+      },
+      "launchDelayMs": 1200,
+      "observedFindMs": 404,
+      "dpiAwareness": "PerMonitor",
+      "limitations": null,
+      "verified": {
+        "date": "2026-09-10",
+        "os": "10.0.26200.0",
+        "result": "OK",
+        "resizeFollows": true,
+        "moveFollows": true,
+        "detachExact": true
+      }
+    },
+    {
+      "match": {
+        "exe": "Taskmgr.exe",
+        "windowClass": "TaskManagerWindow"
+      },
+      "strategy": "attach",
+      "windowSelection": {
+        "mode": "ProcessName",
+        "processName": "Taskmgr.exe",
+        "className": ""
+      },
+      "launchDelayMs": 1500,
+      "observedFindMs": 650,
+      "dpiAwareness": "System",
+      "limitations": "UIPI: SetParent refused with ERROR_ACCESS_DENIED (5)",
+      "verified": {
+        "date": "2026-09-10",
+        "os": "10.0.26200.0",
+        "result": "EMBED FAILED",
+        "resizeFollows": false,
+        "moveFollows": false,
+        "detachExact": false
+      }
+    },
+    {
+      "match": {
+        "exe": "explorer.exe",
+        "windowClass": "CabinetWClass"
+      },
+      "strategy": "embed",
+      "windowSelection": {
+        "mode": "ClassName",
+        "processName": "",
+        "className": "CabinetWClass"
+      },
+      "launchDelayMs": 2000,
+      "observedFindMs": 736,
+      "dpiAwareness": "PerMonitor",
+      "limitations": null,
+      "verified": {
+        "date": "2026-09-10",
+        "os": "10.0.26200.0",
+        "result": "OK",
+        "resizeFollows": true,
+        "moveFollows": true,
+        "detachExact": true
+      }
+    },
+    {
+      "match": {
+        "exe": "ReparentSpike.exe",
+        "windowClass": "WinMuxGuineaPig"
+      },
+      "strategy": "embed",
+      "windowSelection": {
+        "mode": "ClassName",
+        "processName": "",
+        "className": "WinMuxGuineaPig"
+      },
+      "launchDelayMs": 800,
+      "observedFindMs": 403,
+      "dpiAwareness": "Unaware",
+      "limitations": null,
+      "verified": {
+        "date": "2026-09-10",
+        "os": "10.0.26200.0",
+        "result": "OK",
+        "resizeFollows": true,
+        "moveFollows": true,
+        "detachExact": true
+      }
+    },
+    {
+      "match": {
+        "exe": "ReparentSpike.exe",
+        "windowClass": "WinMuxGuineaPig"
+      },
+      "strategy": "embed",
+      "windowSelection": {
+        "mode": "ClassName",
+        "processName": "",
+        "className": "WinMuxGuineaPig"
+      },
+      "launchDelayMs": 800,
+      "observedFindMs": 404,
+      "dpiAwareness": "System",
+      "limitations": null,
+      "verified": {
+        "date": "2026-09-10",
+        "os": "10.0.26200.0",
+        "result": "OK",
+        "resizeFollows": true,
+        "moveFollows": true,
+        "detachExact": true
+      }
+    },
+    {
+      "match": {
+        "exe": "Code.exe",
+        "windowClass": "Chrome_WidgetWin_1"
+      },
+      "strategy": "embed",
+      "windowSelection": {
+        "mode": "ClassName",
+        "processName": "",
+        "className": "Chrome_WidgetWin_1"
+      },
+      "launchDelayMs": 3500,
+      "observedFindMs": 405,
+      "dpiAwareness": "PerMonitor",
+      "limitations": null,
+      "verified": {
+        "date": "2026-09-10",
+        "os": "10.0.26200.0",
+        "result": "OK",
+        "resizeFollows": true,
+        "moveFollows": true,
+        "detachExact": true
+      }
+    },
+    {
+      "match": {
+        "exe": "ApplicationFrameHost.exe",
+        "windowClass": "ApplicationFrameWindow"
+      },
+      "strategy": "attach",
+      "windowSelection": {
+        "mode": "ClassName",
+        "processName": "",
+        "className": "ApplicationFrameWindow"
+      },
+      "launchDelayMs": 2500,
+      "observedFindMs": 406,
+      "dpiAwareness": "PerMonitor",
+      "limitations": "SetParent refused with ERROR_INVALID_PARAMETER (87) \u2014 the window rejects reparenting",
+      "verified": {
+        "date": "2026-09-10",
+        "os": "10.0.26200.0",
+        "result": "EMBED FAILED",
+        "resizeFollows": false,
+        "moveFollows": false,
+        "detachExact": false
+      }
+    }
+  ]
+}
