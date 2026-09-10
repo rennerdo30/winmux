@@ -15,7 +15,8 @@ exists and is green:
 | Project | State |
 |---|---|
 | `WinMux.Core` | layout tree, pane model, **TOML session persistence**. Only dependency: Tomlyn. |
-| `WinMux.Tests` | 95 tests, all passing |
+| `WinMux.Tests` | 101 tests, all passing |
+| `examples/` | committed session files; a test loads every one on each build |
 | `WinMux.Pty` / `.Platform` / `.PaneHost` / `.Shell` | not started |
 
 `dotnet test -c Release` from the repo root is the gate. Design decisions and invariants for the
@@ -39,6 +40,8 @@ engine: [ADR 0005](docs/adr/0005-layout-engine.md); session file format:
   `[[windows.root.children.children.children]]`, worse than the JSON it replaced. Panes are flat
   and are the part meant for hand-editing. Saving is atomic; a corrupt file is quarantined, never
   replaced. `SessionFile.Save`/`Load` is the whole surface.
+- Added `examples/cmd-and-explorer.toml` (cmd + Explorer side by side on one directory) and a test
+  that loads every committed example, so a stale example fails the build rather than a user.
 - **Both load-bearing guards were mutation-tested**, and one of them was broken:
   `GetReferencedAssemblies()` cannot see a platform package that is referenced but not yet *called*
   — adding `System.Drawing.Common` to Core left the suite green. Now also asserts on the project

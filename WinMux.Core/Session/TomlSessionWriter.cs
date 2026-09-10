@@ -112,10 +112,31 @@ public static class TomlSessionWriter
         if (pane.Kind == Model.PaneKind.ForeignApp || r.Strategy != Model.HostStrategy.Embed)
             Kv(sb, PaneKeyWidth, "strategy", Str(TomlNames.Text(r.Strategy)));
 
-        if (r.EnvOverrides.Count > 0)
-            Kv(sb, PaneKeyWidth, "env", InlineMap(r.EnvOverrides));
-        if (r.Extras.Count > 0)
-            Kv(sb, PaneKeyWidth, "extras", InlineMap(r.Extras));
+        // Inline tables first, then any that were too long to inline. A scalar key written after a
+        // [windows.panes.x] header would attach to that sub-table instead of the pane, so the order
+        // here is load-bearing, not cosmetic.
+        var deferred = new List<(string Name, IReadOnlyDictionary<string, string> Map)>();
+        Emit("env", r.EnvOverrides);
+        Emit("extras", r.Extras);
+        foreach (var (name, map) in deferred) WriteSubTable(sb, name, map);
+
+        void Emit(string name, IReadOnlyDictionary<string, string> map)
+        {
+            if (map.Count == 0) return;
+            var inline = InlineMap(map);
+            if (PaneKeyWidth + 3 + inline.Length <= MaxInlineWidth) Kv(sb, PaneKeyWidth, name, inline);
+            else deferred.Add((name, map));
+        }
+    }
+
+    /// <summary>A map too wide to inline becomes its own table, one key per line.</summary>
+    private static void WriteSubTable(StringBuilder sb, string name, IReadOnlyDictionary<string, string> map)
+    {
+        sb.AppendLine();
+        sb.Append("[windows.panes.").Append(name).AppendLine("]");
+        var width = map.Keys.Max(k => Key(k).Length);
+        foreach (var (k, v) in map.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            Kv(sb, width, Key(k), Str(v));
     }
 
     // ---------------- value formatting ----------------
@@ -123,6 +144,9 @@ public static class TomlSessionWriter
     /// <summary>Widest key in each section, so the `=` signs line up down the file.</summary>
     private const int NodeKeyWidth = 9;    // "direction"
     private const int PaneKeyWidth = 15;   // "cwd_captured_at"
+
+    /// <summary>Beyond this, an inline table becomes a sub-table instead of one very long line.</summary>
+    private const int MaxInlineWidth = 100;
 
     private static void Kv(StringBuilder sb, int width, string key, string value) =>
         sb.Append(key.PadRight(width)).Append(" = ").AppendLine(value);

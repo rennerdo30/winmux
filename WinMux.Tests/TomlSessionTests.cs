@@ -113,6 +113,72 @@ public class TomlSessionTests
     }
 
     [Fact]
+    public void A_long_extras_map_becomes_a_sub_table_instead_of_one_enormous_line()
+    {
+        var extras = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["window_class"] = "CabinetWClass",
+            ["window_match"] = "class",
+            ["launch_delay_ms"] = "2000",
+            ["note"] = "explorer.exe exits immediately; the window belongs to the running shell",
+        };
+        var pane = new Pane(PaneId.New(), PaneKind.ForeignApp, "Explorer",
+            new RestoreDescriptor { Kind = PaneKind.ForeignApp, Extras = extras });
+
+        var text = SessionFile.Serialize(SnapshotOf(new LayoutTree(pane)));
+
+        Assert.Contains("[windows.panes.extras]", text, StringComparison.Ordinal);
+        Assert.All(text.Split('\n'), line =>
+            Assert.True(line.TrimEnd().Length <= 140, "over-long line: " + line));
+
+        // and it still round-trips
+        var back = SessionMapper.FromSnapshot(SessionFile.Deserialize(text).Windows.Single()).Panes.Single();
+        Assert.Equal(extras.Count, back.Restore.Extras.Count);
+        foreach (var (k, v) in extras) Assert.Equal(v, back.Restore.Extras[k]);
+    }
+
+    [Fact]
+    public void A_short_extras_map_stays_inline()
+    {
+        var pane = new Pane(PaneId.New(), PaneKind.Terminal, "t", new RestoreDescriptor
+        {
+            Kind = PaneKind.Terminal,
+            Extras = new Dictionary<string, string>(StringComparer.Ordinal) { ["profile"] = "pwsh" },
+        });
+        var text = SessionFile.Serialize(SnapshotOf(new LayoutTree(pane)));
+
+        Assert.Contains("extras          = { profile = 'pwsh' }", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("[windows.panes.extras]", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Both_env_and_extras_can_be_long_at_once()
+    {
+        // Two sub-tables on one pane: the second must not swallow the first, and no scalar key
+        // may be written after a sub-table header.
+        var big = Enumerable.Range(0, 6).ToDictionary(i => "key_number_" + i, i => "value number " + i, StringComparer.Ordinal);
+        var pane = new Pane(PaneId.New(), PaneKind.Terminal, "t", new RestoreDescriptor
+        {
+            Kind = PaneKind.Terminal,
+            Program = @"C:\tool.exe",
+            EnvOverrides = new Dictionary<string, string>(big, StringComparer.OrdinalIgnoreCase),
+            Extras = big,
+        });
+
+        var text = SessionFile.Serialize(SnapshotOf(new LayoutTree(pane)));
+        var back = SessionMapper.FromSnapshot(SessionFile.Deserialize(text).Windows.Single()).Panes.Single();
+
+        Assert.Equal(@"C:\tool.exe", back.Restore.Program);
+        Assert.Equal(6, back.Restore.EnvOverrides.Count);
+        Assert.Equal(6, back.Restore.Extras.Count);
+        foreach (var (k, v) in big)
+        {
+            Assert.Equal(v, back.Restore.EnvOverrides[k]);
+            Assert.Equal(v, back.Restore.Extras[k]);
+        }
+    }
+
+    [Fact]
     public void Cwd_provenance_survives_the_file()
     {
         var captured = new WorkingDirectory(@"C:\work", CwdSource.ProcessDeepest,

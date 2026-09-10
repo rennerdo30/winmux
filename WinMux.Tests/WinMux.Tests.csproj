@@ -28,6 +28,10 @@
        used, so an unused platform package reference would otherwise slip past the guard. -->
   <ItemGroup>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ExamplesPath</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)..\examples</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>CoreProjectPath</_Parameter1>
       <_Parameter2>$(MSBuildThisFileDirectory)..\WinMux.Core\WinMux.Core.csproj</_Parameter2>
     </AssemblyAttribute>
