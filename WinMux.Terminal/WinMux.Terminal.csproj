@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>WinMux.Terminal</RootNamespace>
+    <Description>WinMux-owned terminal-engine contract and Terminal.Emulation adapter.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pin exactly: ADR 0002 records the supply-chain risk of this source-unavailable package. -->
+    <PackageReference Include="Terminal.Emulation" Version="0.3.3" />
+  </ItemGroup>
+
+  <!--
+    Keep contract tests beside the adapter without making test dependencies part of normal
+    production builds. Run with:
+      dotnet test WinMux.Terminal/WinMux.Terminal.csproj -p:RunTerminalEngineTests=true
+  -->
+  <ItemGroup>
+    <Compile Remove="Tests/**/*.cs" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(RunTerminalEngineTests)' == 'true'">
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(RunTerminalEngineTests)' == 'true'">
+    <Compile Include="Tests/**/*.cs" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" PrivateAssets="all" />
+    <PackageReference Include="xunit" Version="2.9.3" PrivateAssets="all" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

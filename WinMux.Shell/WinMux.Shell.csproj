@@ -18,11 +18,21 @@
     <PackageReference Include="Avalonia" Version="12.1.2" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
-    <PackageReference Include="Terminal.Avalonia" Version="0.3.3" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\WinMux.Core\WinMux.Core.csproj" />
+    <ProjectReference Include="..\WinMux.Pty\WinMux.Pty.csproj" />
+    <ProjectReference Include="..\WinMux.Terminal\WinMux.Terminal.csproj" />
+    <ProjectReference Include="..\WinMux.PaneHost\WinMux.PaneHost.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <Target Name="CopyPaneHost" AfterTargets="Build">
+    <ItemGroup>
+      <PaneHostOutput Include="..\WinMux.PaneHost\bin\$(Configuration)\net10.0-windows\WinMux.PaneHost.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PaneHostOutput)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

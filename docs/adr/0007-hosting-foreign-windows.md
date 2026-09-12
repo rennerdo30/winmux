@@ -1,6 +1,6 @@
 # ADR 0007 — Hosting foreign windows: `NativeControlHost`, and embed only
 
-- **Status:** accepted
+- **Status:** superseded by [ADR 0008](0008-pane-host-ipc.md)
 - **Date:** 2026-09-10
 - **Code:** `WinMux.Shell` — `ForeignHost`, `ForeignAppPane`, `Embedding`, `MainWindow`
 

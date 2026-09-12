@@ -5,18 +5,20 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 1 — it runs.** `WinMux.exe` opens a window with real terminal panes and real
-foreign applications **embedded** in the layout (verified with cmd + File Explorer and cmd +
-Character Map). Phase 0 complete: ADRs [0001](docs/adr/0001-out-of-process-pane-hosts.md),
+**State: Phase 1 complete.** `WinMux.exe` runs owned ConPTY/VT terminal panes in a resizable
+split/tab layout, with a configurable keymap, top-level command palette, and CLI action channel.
+The early Phase 2 persistence and Phase 3 out-of-process embedding paths also run. Phase 0:
+ADRs [0001](docs/adr/0001-out-of-process-pane-hosts.md),
 [0002](docs/adr/0002-terminal-stack.md), [0003](docs/adr/0003-foreign-app-compatibility.md),
 [0004](docs/adr/0004-cwd-capture.md). Product code: `WinMux.Core` (layout, session model, TOML —
 ADRs [0005](docs/adr/0005-layout-engine.md), [0006](docs/adr/0006-session-file-format.md)),
-`WinMux.Shell` (Avalonia, [ADR 0007](docs/adr/0007-hosting-foreign-windows.md)), `WinMux.Cli`,
-`WinMux.Tests` (101 green).
+`WinMux.Pty`, `WinMux.Terminal`, `WinMux.Shell`, `WinMux.PaneHost`, and `WinMux.Cli`; see
+[ADR 0008](docs/adr/0008-pane-host-ipc.md) and
+[ADR 0009](docs/adr/0009-phase-1-terminal-runtime.md).
 
-**Not done yet:** session save/restore is wired to a keybinding but restore-on-launch is untested
-at scale; no out-of-process pane host (section 5) — a wedged app can still stall the shell's
-foreign-window work; no quirks database at runtime; no command palette.
+**Not done yet:** live cwd capture/profile installation, persistence testing at scale, runtime
+quirks selection/attach fallback, mixed-DPI verification, file panes, tab/pane reordering,
+terminal selection and scrollback navigation.
 
 ---
 
@@ -74,17 +76,18 @@ Names are indicative; the *separation* is the requirement.
 
 ```
 WinMux.Core/             layout tree, session model, config, keymap, persistence — NO platform APIs   [EXISTS]
-WinMux.Pty/              ConPTY / pty abstraction, terminal process lifecycle
+WinMux.Pty/              ConPTY / pty abstraction, terminal process lifecycle                  [EXISTS]
+WinMux.Terminal/         owned VT-engine contract and adapter                                   [EXISTS]
 WinMux.Platform/         IWindowHost + friends: the platform interface
 WinMux.Platform.Win32/   SetParent, DPI, UIPI, quirks database
-WinMux.PaneHost/         the out-of-process pane host executable (see section 5)
+WinMux.PaneHost/         the out-of-process pane host executable (see section 5)                 [EXISTS]
 WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays                          [EXISTS]
 WinMux.Cli/              `winmux` — the command line surface (section 6)                             [EXISTS]
 WinMux.Tests/                                                                                        [EXISTS]
 docs/adr/                one short file per architectural decision
 ```
 
-Built so far: `WinMux.Core` (`Layout/`, `Model/`, `Session/`), `WinMux.Cli` and `WinMux.Tests`. See
+All Phase 1 projects above now exist. See
 [ADR 0005](docs/adr/0005-layout-engine.md) for the layout engine's decisions and invariants.
 The `Columns`/`Rows` vocabulary in `SplitDirection` is deliberate — never `Horizontal`/`Vertical`,
 which every multiplexer defines differently.
@@ -235,44 +238,22 @@ is required reading. The traps, each of which has bitten shipping products:
 
 ### Hosting a foreign window inside the shell — measured in Phase 1
 
-**Embedding MUST go through Avalonia's `NativeControlHost`.** Hand-rolling `SetParent` into the
-shell window's HWND *appears* to work and does not: the window becomes a genuine child, is sized
-and positioned correctly, and `IsWindowVisible` reports true — and it **paints nothing at all**.
-Avalonia renders through a composition swapchain and a child HWND parented in by hand is never
-composited into it. Verified with Character Map: every child control laid out at the right screen
-coordinates, and the pane showed the desktop behind. Section 2 already said this
-(`NativeControlHost` "is purpose-built for embedding native handles") and it is the same reason
-Tauri/WebView2 was rejected.
+ADR 0007's direct `NativeControlHost` path rendered, but put the foreign app in the shell's own
+window/lifecycle boundary. It is superseded by [ADR 0008](docs/adr/0008-pane-host-ipc.md): each app
+is now a child of a disposable `WinMux.PaneHost`, while that host remains an owned top-level window
+positioned over its pane. The shell never calls the foreign app's HWND.
 
-Consequences, all learned the hard way:
-
-- **Override `DestroyNativeControlCore` to do nothing.** The default destroys the handle — and the
-  handle belongs to somebody else's application.
-- **Strip the frame yourself.** `SetParent` does not fix styles: clear `WS_CAPTION`,
-  `WS_THICKFRAME`, `WS_SYSMENU` and friends, then `SWP_FRAMECHANGED`, or the app keeps its own
-  title bar and close button inside the pane. That is the visible difference between a window that
-  is *embedded* and one that is merely *followed*.
-- **Never hard-kill the shell while it owns embedded windows.** Killing WinMux with the equivalent
-  of `Stop-Process -Force` skips detach, and a parent takes its children with it: the applications
-  survive as processes with no windows. Reproduced on ourselves repeatedly during development —
-  this is spike 3's T5 finding arriving in the product. Graceful close detaches and the app comes
-  back with its title bar intact.
-- **`explorer.exe <folder>` reuses an existing window.** If a window is already open on that
-  folder, nothing new appears, so "wait for a new window" waits forever. Window selection needs a
-  fallback that adopts an existing unclaimed window matching the rule.
-- **Attach mode is not a runtime fallback.** It leaves the app top-level with its own title bar,
-  merely tracking the pane rect — not containment. Embed, or report why not.
-
-**Spike 2's "OK" verdicts covered geometry and lifecycle, not rendering.** It measured that a
-window reparents, resizes, moves and detaches byte-exactly — all true — and never checked that the
-application still *drew anything*. A reparent can succeed completely and leave an invisible
-window. Any future embedding spike must assert pixels, not just rectangles.
+Strip and restore the app's frame in PaneHost, and never hard-kill either shell or host while the
+app is parented. Graceful `DETACH` restores parent, styles, ex-styles, and rectangle; `CLOSE`
+restores first and then asks the app to close. `explorer.exe` window reuse still requires matching
+by class and excluding windows already claimed by another pane.
 
 ### Out-of-process pane hosts
 
 Each foreign-app pane gets its own **`WinMux.PaneHost`** process owning a borderless host window;
 the app is reparented into *that*. The shell positions pane-host windows to match pane rectangles
-and talks to them over IPC (named pipes).
+and currently talks to them over line-oriented redirected standard streams. A named-pipe upgrade
+is optional when the protocol needs richer lifecycle or focus commands.
 
 The cost is real — IPC, lifecycle management, focus and z-order coordination. It buys the one thing
 priority 2 demands: a wedged app freezes its own host process, and the shell stays alive, redraws,

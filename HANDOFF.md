@@ -1,175 +1,85 @@
 # HANDOFF
 
-Rolling snapshot of where the work stands. Read this before doing anything; update it before you
-stop. Format and rules: `AGENTS.md`, or `CLAUDE.md` section 10.
+Rolling snapshot of where the work stands. Rules: `AGENTS.md` / `CLAUDE.md` section 10.
 
-**Last updated:** 2026-09-10
-
----
+**Last updated:** 2026-09-12
 
 ## Where we are
 
-**Phase 1 in progress.** Phase 0 is complete (four spikes, four ADRs). The first product code now
-exists and is green:
+**Phase 1 is complete.** WinMux is a usable terminal multiplexer: owned ConPTY sessions and VT
+engine, resizable split tree, visible tabs, shared named actions, configurable tmux/no-prefix
+keymaps, a top-level command palette, CLI control, and terminal profiles. Early Phase 2 persistence
+and Phase 3 out-of-process foreign-app embedding also run, but are not complete phases.
 
 | Project | State |
 |---|---|
-| `WinMux.Core` | layout tree, pane model, **TOML session persistence**. Only dependency: Tomlyn. |
-| `WinMux.Tests` | 101 tests, all passing |
-| `examples/` | committed session files; a test loads every one on each build |
-| `WinMux.Cli` | `winmux show` / `validate` / `new` — inspects session files |
-| `WinMux.Shell` | **`WinMux.exe` runs.** Terminal panes + foreign apps embedded in the layout |
-| `WinMux.Pty` / `.Platform` / `.PaneHost` | not started |
+| `WinMux.Core` | platform-free layout tree, pane/session model, atomic TOML persistence |
+| `WinMux.Pty` | `Porta.Pty` behind `IPtySession`; real cmd lifecycle/resize test |
+| `WinMux.Terminal` | `Terminal.Emulation` behind `ITerminalEngine`; headless grid tests |
+| `WinMux.Shell` | owned terminal renderer, splits/dividers/tabs, profiles, palette, command server |
+| `WinMux.Cli` | session commands plus named actions sent to a running shell |
+| `WinMux.PaneHost` | one top-level isolated host per foreign pane; detach/close stream IPC |
 
-`dotnet test -c Release` from the repo root is the gate. Design decisions and invariants for the
-engine: [ADR 0005](docs/adr/0005-layout-engine.md); session file format:
-[ADR 0006](docs/adr/0006-session-file-format.md).
-
-**Stack: .NET 10 + Avalonia 12 + C#.** VT engine adopted (`Terminal.Emulation`) and pty adopted
-(`Porta.Pty`), both to sit behind our own interfaces — neither is referenced yet.
+Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`. Current
+result: **zero build warnings; 130/130 tests passing**. Decisions:
+[ADR 0008](docs/adr/0008-pane-host-ipc.md) and
+[ADR 0009](docs/adr/0009-phase-1-terminal-runtime.md).
 
 ## What just happened
 
-**2026-09-10** — Phase 0 completed and published, then Phase 1 begun.
+**2026-09-12** — Phase 1 closed.
 
-- Repo at **https://github.com/rennerdo30/winmux** (public, MIT). Phase 0 spikes 1–4 with ADRs
-  0001–0004; two artefacts ship rather than being thrown away
-  (`spikes/02-reparent/quirks-seed.json`, `spikes/04-cwd/profiles/`).
-- Built `WinMux.Core` + `WinMux.Tests` → [ADR 0005](docs/adr/0005-layout-engine.md).
-  Splits, stacks, ratios, resize, geometric focus, canonical collapse, session round-trip.
-- **Session file format settled: TOML** → [ADR 0006](docs/adr/0006-session-file-format.md).
-  The tree is *flattened* into `[[windows.nodes]]`; nesting it would give
-  `[[windows.root.children.children.children]]`, worse than the JSON it replaced. Panes are flat
-  and are the part meant for hand-editing. Saving is atomic; a corrupt file is quarantined, never
-  replaced. `SessionFile.Save`/`Load` is the whole surface.
-- Added `examples/cmd-and-explorer.toml` (cmd + Explorer side by side on one directory) and a test
-  that loads every committed example, so a stale example fails the build rather than a user.
-- Added `WinMux.Cli` — the first runnable exe. `winmux show` draws a session's layout with the real
-  `Layouter` (one-column gutter) and lists panes with their cwd provenance in plain words;
-  `validate` parses and exits non-zero with the reason; `new` writes a starter file. It **cannot
-  open panes** and says so in its own output, because there is still no shell.
-  Publish with `dotnet publish WinMux.Cli -c Release -r win-x64 --self-contained false -o dist`.
-- **Both load-bearing guards were mutation-tested**, and one of them was broken:
-  `GetReferencedAssemblies()` cannot see a platform package that is referenced but not yet *called*
-  — adding `System.Drawing.Common` to Core left the suite green. Now also asserts on the project
-  file's declared dependencies, and that mutation fails as it should.
+- Replaced the direct `Terminal.Avalonia` runtime with `WinMux.Pty` + `WinMux.Terminal` owned
+  contracts and a small Avalonia renderer. Input, VT responses, resize, title, exit, paste, and
+  basic full-screen copy pass through those seams.
+- Replaced the hard-coded key switch with stable action names and one configurable binding table.
+  `--no-prefix` and `--keymap FILE` work; defaults remain `Ctrl+B`-prefixed.
+- Added clickable tab chrome, draggable dividers, keyboard resize, direct tab selection, a
+  top-level command palette, and cmd / Windows PowerShell / PowerShell 7 / WSL profiles.
+- Added a current-user named-pipe action channel and CLI aliases (`split`, `focus`, `resize`, tabs,
+  close, save, palette) plus generic `winmux action NAME`.
+- Moved foreign embedding into `WinMux.PaneHost`. Character Map detach restored its original HWND;
+  the full shell/host/app run stayed responsive and restored the app on shell close.
+- Final desktop acceptance created, persisted, and closed five cmd panes via CLI actions:
+  shell responsive, all five child processes cleaned up, exit code 0, no PaneHost left behind.
+- Updated README and architecture text to remove stale Phase 0/direct-host claims.
 
-Constraints from Phase 0 that shape everything still to be written:
-
-1. **The UI thread must never make a synchronous window call against a foreign window.** Hits
-   attach mode as hard as embed mode. Pane geometry goes through a dedicated layout thread or
-   `SWP_ASYNCWINDOWPOS`.
-2. **Never hard-kill a pane host that still owns an embedded window** — detach, then terminate.
-3. **ConPTY's round-trip floor is ~0.08 ms**; a full 60 Hz frame is free for rendering.
-   PowerShell's ~15.6 ms echo latency is PSReadLine's own — benchmark against `cmd`.
-4. **`Terminal.Emulation` has no public source.** Adopt behind `ITerminalEngine`; its types must
-   never reach `WinMux.Core` (the platform-free test already forbids `Terminal.*`).
-5. **PowerShell's PEB is permanently stale, WSL's is meaningless.** The cwd snippets are mandatory.
-
-### Running it
+Run:
 
 ```powershell
-dotnet build -c Release
-.\WinMux.Shellin\Release
-et10.0-windows\WinMux.exe            # cmd + Explorer on the cwd
-.\WinMux.Shellin\Release
-et10.0-windows\WinMux.exe session.toml
+dotnet build WinMux.slnx -c Release
+.\WinMux.Shell\bin\x64\Release\net10.0-windows\WinMux.exe [session.toml]
 ```
 
-`Ctrl+B` then: `%` split columns, `"` split rows, arrows move focus, `x` close, `c` new tab,
-`n`/`p` cycle tabs, `w` write the session file.
-
-**Close it with the window's X, never `Stop-Process -Force`** — a hard kill skips detach and
-destroys every embedded window, leaving windowless orphan processes behind.
+Default prefix actions: `%` / `"` split, arrows focus, Shift+arrows resize, `x` close, `c` tab,
+`n` / `p` cycle tabs, `w` save, `:` palette, `1`–`4` terminal profiles.
 
 ## The next action
 
-**Build the out-of-process `WinMux.PaneHost`** (CLAUDE.md section 5), the last structural piece of
-the design that is missing. Today foreign apps are embedded directly into the shell window, which
-is spike 3's T2 topology — safe only because every foreign-window call is kept off the UI thread.
-A pane host process is what makes a wedged app unable to touch the shell at all.
-
-After that, or in parallel: `WinMux.Pty` and the `ITerminalEngine` seam — both headless and testable, and both
-prerequisites for the shell. Concretely:
-
-1. `WinMux.Pty` wrapping `Porta.Pty` behind a small `IPtySession` (write, resize, output stream,
-   exited). Do **not** hand-roll ConPTY; see "do not re-do".
-2. `ITerminalEngine` in a new `WinMux.Terminal` project — **not** in Core. Core may now declare an
-   approved, platform-neutral package (Tomlyn, per ADR 0006), but `Terminal.*` is on the forbidden
-   list and stays there. Surface: write bytes, read the cell grid, resize, cursor, title, response
-   callback; the adapter over `Terminal.Emulation` lives behind it.
-3. Tests: spawn `cmd`, feed a marker, assert it reaches the grid. `spikes/01-conpty/src/StageB.cs`
-   already does exactly this and can be lifted almost verbatim.
-
-Then the Avalonia shell. Keep `dotnet test` green as the gate throughout.
+**Start Phase 2 with live cwd capture:** parse OSC 9;9 / OSC 7 in the product terminal path, update
+each pane's `WorkingDirectory` with `ShellReported` provenance, and add a round-trip test that saves
+the changed cwd and restores the same launch directory. The measured snippets to ship are in
+`spikes/04-cwd/profiles/`; see [ADR 0004](docs/adr/0004-cwd-capture.md).
 
 ## Blocked / needs a human
 
-- **Mixed-DPI multi-monitor is untested.** Both monitors are 144 DPI, so the scenario `CLAUDE.md`
-  calls "where the bugs live" never ran. Set one display to a different scale factor, then re-run
-  `spikes/02-reparent/bin/Release/net10.0-windows/ReparentSpike.exe`.
-- **Supply-chain call before v1.** `Terminal.Emulation` has no public source. The `ITerminalEngine`
-  seam keeps reversing it cheap, but the call still has to be made.
-- **Does input-queue attachment actually starve the shell of input?** Unmeasured. Until someone
-  builds a harness that synthesizes real input, the shell must not `SetParent` a pane host.
+- **Mixed-DPI multi-monitor remains unmeasured.** Both available monitors were 144 DPI.
+- **Supply-chain call before v1:** `Terminal.Emulation` 0.3.3 has no public source. The owned seam
+  keeps replacement bounded but does not remove the decision.
+- **Input-queue starvation is still unmeasured.** Keep PaneHost top-level until a real-input harness
+  answers it; do not reparent PaneHost into the shell.
 
 ## Do not re-do
 
-**Measurement and testing discipline** — each of these produced a confident, wrong result first:
-
-- **A suite that passes first try deserves to be distrusted.** All 68 layout tests passed
-  immediately; mutation-testing found that the platform-free guard could not fail. Break the
-  thing a test protects and watch it go red before believing it.
-- **Silence is not completion.** A quiet-wait returned while a sleeping `ping` was still running,
-  so a whole spike-4 scenario never executed; the same wait raced PSReadLine's autosuggestion and
-  made a unicode path look like an OSC failure. Sync on a marker echoed back **twice**.
-- **Do not use `GetMessageW` to bound an observation window** — it blocks, and a "3 second" window
-  silently became 2m52s.
-- **Do not write a verification whose pattern can match the question.** A resize check waited for
-  the word `Columns`, which appears in the echo of the typed command.
-- **If a test cannot create the condition it claims to test, delete it.** Two DPI tests scored OK
-  while testing nothing (`__COMPAT_LAYER` does not override a manifest, and neither does a runtime
-  call when the app's own manifest declares awareness).
-- **Do not accumulate unbounded text in a harness** — an O(n²) collector made the first throughput
-  numbers measure the harness rather than ConPTY.
-- **Separate comparison form from display form** — folding path separators in one shared helper
-  printed Linux paths as `\tmp\foo`.
-- **When interop fails in a way that reading it does not reveal, run a control.** Three re-reads of
-  the ConPTY code found nothing; the same test through `Porta.Pty` found the bug in minutes.
-- **Do not hand-roll `SetParent` into the Avalonia window.** It succeeds, reports the right parent
-  and rect and `IsWindowVisible`, and paints NOTHING — Avalonia composites through a swapchain that
-  a hand-parented child HWND never joins. Use `NativeControlHost` and override
-  `DestroyNativeControlCore` to do nothing. [ADR 0007](docs/adr/0007-hosting-foreign-windows.md).
-- **Do not diagnose window bugs from screenshots.** Enumerating the shell's child windows settled
-  in one call what three rounds of reading pixels could not.
-- **Never `Stop-Process -Force` the shell.** It skips detach, destroys embedded windows, and leaves
-  windowless orphans that break the NEXT run's window selection.
-- **Never build a test fixture by string concatenation.** Two malformed-session tests appended an
-  extra `[[windows.nodes]]` block *after* `[[windows.panes]]` — which replaces the earlier array
-  rather than extending it — so the "duplicate id" fixture contained no duplicate and the "orphan
-  node" fixture had lost its root instead. Both passed for the wrong reason. Spell fixtures out.
-- **Do not write against a remembered library API.** `Tomlyn.Toml.Parse().ToModel()` does not exist
-  in 2.10; the route is `TomlSerializer.Deserialize<TomlTable>`. Reflect over the shipped assembly
-  when a call does not compile, rather than guessing a second time.
-
-**Platform traps:**
-
-- **Do not hand-roll ConPTY.** It fails silently and convincingly: conhost starts and the title
-  updates while the child's output goes to the host's console, because `CreateProcess` propagates
-  the host's std handles and those beat the pseudoconsole. Fix is `STARTF_USESTDHANDLES` with null
-  std handles (`spikes/01-conpty/src/ConPty.cs`). Prefer `Porta.Pty`.
-- **`GetParent` returns the OWNER for a `WS_POPUP` window** — use `GetAncestor(hwnd, GA_PARENT)`.
-- **Capture `GetLastError` on the line after `SetParent`** — intervening calls clobber it, turning
-  "UIPI denied (5)" and "window refuses (87)" into a useless "last error 0".
-- **Match windows on process image name, never the launched pid** — Win11's `notepad.exe` is a shim.
-- **Do not attempt a PEB read for a WSL pane** — it returns a confidently wrong Windows path.
-- **A pane's actual rect will not equal its requested rect** (DPI rounding, minimum sizes). Never
-  assert equality.
-
-**Environment:**
-
-- **`gh` is not on this session's PATH** (winget-installed mid-session). Invoke as
-  `"C:\Program Files\GitHub CLI\gh.exe"`, or open a fresh terminal.
-- **`E:\Development\winmux` resolves to `D:\Development\winmux`** (subst or junction).
-- **`dotnet package search --exact-match --format json` returns unusable rows.** Query
-  `https://azuresearch-usnc.nuget.org/query?q=packageid:<id>` directly.
+- Do not hand-roll ConPTY; the silent inherited-stdio failure is recorded in
+  [ADR 0002](docs/adr/0002-terminal-stack.md).
+- Do not call a foreign HWND from the UI thread or hard-kill a host that still owns a child; see
+  [ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md) and [ADR 0008](docs/adr/0008-pane-host-ipc.md).
+- Do not put a command palette over the pane canvas; native windows paint above it.
+- Direct `NativeControlHost` embedding rendered but violated the process boundary; ADR 0007 is
+  superseded by ADR 0008.
+- Do not treat a passing harness as proof until its failure mode is mutation-tested. Prior false
+  passes (ConPTY output, resize echo, DPI, malformed TOML) are documented in the ADRs.
+- `E:\Development\winmux` and `D:\Development\winmux` are the same project via subst/junction.
+- NuGet restore reads the user config; Avalonia build writes a user-local telemetry log, so a
+  restricted sandbox may require approval for otherwise ordinary restore/build commands.

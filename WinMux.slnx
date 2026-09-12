@@ -1,8 +1,19 @@
 <Solution>
   <Project Path="WinMux.Cli/WinMux.Cli.csproj" />
+  <Project Path="WinMux.Cli.Tests/WinMux.Cli.Tests.csproj" />
   <Project Path="WinMux.Core/WinMux.Core.csproj" />
+  <Project Path="WinMux.PaneHost/WinMux.PaneHost.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="WinMux.Pty/WinMux.Pty.csproj" />
+  <Project Path="WinMux.Pty.Tests/WinMux.Pty.Tests.csproj" />
   <Project Path="WinMux.Shell/WinMux.Shell.csproj">
     <Platform Project="x64" />
   </Project>
+  <Project Path="WinMux.Shell.Tests/WinMux.Shell.Tests.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="WinMux.Terminal/WinMux.Terminal.csproj" />
+  <Project Path="WinMux.Terminal/Tests/WinMux.Terminal.Tests.csproj" />
   <Project Path="WinMux.Tests/WinMux.Tests.csproj" />
 </Solution>

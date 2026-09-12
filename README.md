@@ -4,8 +4,10 @@ A window multiplexer for Windows. Think **tmux, but outside the terminal** — s
 tabs and saved sessions, where every pane is a real, independent OS process, and a pane can
 be a shell, a file browser, or *any* Windows application.
 
-> Status: **Phase 0 — spikes.** No product code yet. See `HANDOFF.md` for where the work stands,
-> `CLAUDE.md` for the architecture and build plan, and `docs/adr/` for decisions already made.
+> Status: **Phase 1 complete — terminal multiplexer.** `WinMux.exe` runs ConPTY terminals in a
+> split/tab layout with a configurable keymap, command palette, and CLI actions. Persistence and
+> foreign-app embedding have working early implementations; file panes and broad compatibility do
+> not. See `HANDOFF.md` for the measured state and remaining work.
 
 ---
 
@@ -28,7 +30,8 @@ shells, and Workspaces-grade persistence — in a single host window with one ke
 - **A pane is a process, not a widget.** Panes are hosted, not emulated. Killing WinMux does not
   have to kill your work; a wedged app cannot take the shell down with it.
 - **The layout is a tree**, exactly like tmux: a window contains nested horizontal/vertical splits
-  and stacks (tabs). Every node is resizable, movable and persistable.
+  and stacks (tabs). Splits are resizable and the whole tree is persistable. Pane movement and tab
+  reordering remain later interaction work.
 - **Pane types are pluggable.** Terminal, file browser and foreign-app panes are three
   implementations of one interface. Adding a fourth should not touch the layout engine.
 - **Sessions restore intent, not memory.** Reopening a session recreates the tree, the tabs, each
@@ -38,17 +41,20 @@ shells, and Workspaces-grade persistence — in a single host window with one ke
 ## Pane types
 
 1. **Terminal** — PowerShell, cmd, WSL, pwsh, ssh. Backed by ConPTY, one child process each.
-2. **File browser** — built in, native. Dual-pane friendly, drops you into a terminal pane at the
+2. **File browser** *(planned)* — built in, native. Dual-pane friendly, with terminal handoff at the
    selected directory.
-3. **Foreign app** — any launched or adopted Windows application, embedded into the pane rectangle.
+3. **Foreign app** *(early implementation)* — ordinary Win32 applications can be launched and
+   embedded through an isolated pane-host process.
 
 ## Can it really host *any* Windows app?
 
-Mostly yes, with an honest set of exceptions. Two strategies, chosen per app:
+No—not literally, and the current product path implements **embed only**. Ordinary Win32 and
+Chromium windows worked in the Phase 0 measurements; elevated and packaged/UWP windows did not.
+Two strategies are part of the design:
 
 - **Embed** (default): reparent the app's top-level window into the pane. True containment —
   it moves, clips and resizes with the layout.
-- **Attach** (fallback): leave the window top-level and drive its position/size to track the pane,
+- **Attach** *(future compatibility fallback)*: leave the window top-level and drive its position/size to track the pane,
   the way a tiling WM does. Less seamless, far more compatible. It is a *compatibility* fallback,
   not a stability one — measurement showed a wedged app stalls the host equally in both modes
   unless window calls are kept off the UI thread ([ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md)).
@@ -60,20 +66,21 @@ Known-hard cases, handled by falling back to *attach* or by refusing cleanly:
 - **Apps with splash screens or multiple top-level windows** — need a per-app rule to pick the real one.
 - **Mixed DPI** — hosting a differently-DPI-aware app requires explicit mixed-mode hosting.
 
-A per-app quirks database ships with the product. This is a compatibility surface, not a solved
-problem, and the docs will always state which apps are verified.
+The measured quirks seed exists, but it is not wired into runtime selection yet. Compatibility is
+a product surface still under construction, not a solved problem.
 
 ## Cross-platform
 
-The layout engine, session format, keymap and terminal panes are platform-neutral by construction.
+The layout engine, session format, PTY contract and VT engine are platform-neutral by construction.
+Only the Windows runtime is currently built and verified.
 Foreign-window embedding is not, and this is a hard boundary rather than a backlog item:
 
-| Platform | Terminal + file panes | Foreign-app embed |
+| Platform | Terminal panes | Foreign-app embed |
 |---|---|---|
 | Windows 10 1809+ / 11 | primary target | yes (`SetParent`) |
-| Linux / X11 | portable | yes (`XReparentWindow`) |
-| Linux / Wayland | portable | **impossible** — no foreign-surface reparenting |
-| macOS | portable | **impossible** — no cross-process view embedding |
+| Linux / X11 | designed to be portable; unverified | future (`XReparentWindow`) |
+| Linux / Wayland | designed to be portable; unverified | **impossible** — no foreign-surface reparenting |
+| macOS | designed to be portable; unverified | **impossible** — no cross-process view embedding |
 
 On Wayland and macOS, foreign-app panes degrade to separate windows or are unavailable. Windows is
 the target; portability is a design discipline, not a promise.
@@ -87,12 +94,25 @@ the target; portability is a design discipline, not a promise.
 
 ## Roadmap
 
-- **Phase 0 — spikes.** Prove the three risky things before committing to a stack. Gate for everything else.
-- **Phase 1 — terminal multiplexer.** Split tree, tabs, ConPTY panes, keymap. Useful on its own.
-- **Phase 2 — persistence.** Save/restore sessions: tree, tabs, per-pane program + cwd. *The headline feature.*
+- **Phase 0 — spikes.** **Complete.** Four measured spikes settled the architecture.
+- **Phase 1 — terminal multiplexer.** **Complete.** Split tree, tabs, ConPTY panes, keymap, palette, and CLI actions.
+- **Phase 2 — persistence.** In progress: TOML save/restore works; live cwd capture/profile installation remains.
 - **Phase 3 — foreign apps.** Embed and attach modes, out-of-process pane hosts, quirks database.
 - **Phase 4 — file browser pane** and the public pane-provider interface.
 - **Phase 5 — portability.** Extract the platform layer, prove it on X11.
+
+## Run it
+
+```powershell
+dotnet build WinMux.slnx -c Release
+.\WinMux.Shell\bin\x64\Release\net10.0-windows\WinMux.exe [session.toml]
+```
+
+The default keymap is tmux-style: `Ctrl+B`, then `%`/`"` to split, arrows to move focus,
+`Shift+arrows` to resize, `c` for a tab, `n`/`p` to cycle, `x` to close, `w` to save, and `:` for
+the command palette. `1`–`4` open cmd, Windows PowerShell, PowerShell 7, or WSL profiles. Pass
+`--no-prefix`, or `--keymap path.json`, to replace the default map. `winmux help` lists the CLI
+action surface.
 
 ## Prior art worth reading
 

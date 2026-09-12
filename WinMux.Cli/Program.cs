@@ -9,8 +9,8 @@ namespace WinMux.Cli;
 /// `winmux` — the command line surface.
 ///
 /// CLAUDE.md section 6 wants every action addressable from a CLI, because that is what makes the
-/// product scriptable and testable. Today it can inspect and validate session files; it cannot
-/// open panes, because there is no shell yet. It says so rather than implying otherwise.
+/// product scriptable and testable. Session commands work on files; action commands are sent to
+/// the running desktop shell over a current-user-only named pipe.
 /// </summary>
 internal static class Program
 {
@@ -28,6 +28,16 @@ internal static class Program
                 "show" => Show(rest),
                 "validate" or "check" => Validate(rest),
                 "new" or "demo" => New(rest),
+                "action" => InvokeAction(rest),
+                "split" => DirectionalAction(rest, "split", "split-columns", "split-rows"),
+                "focus" => FourWayAction(rest, "focus"),
+                "resize" => FourWayAction(rest, "resize"),
+                "close" or "close-pane" => InvokeNamedAction("close-pane"),
+                "new-tab" => InvokeNamedAction("new-tab"),
+                "next-tab" => InvokeNamedAction("next-tab"),
+                "previous-tab" or "prev-tab" => InvokeNamedAction("previous-tab"),
+                "save" or "save-session" => InvokeNamedAction("save-session"),
+                "palette" => InvokeNamedAction("show-palette"),
                 "help" or "--help" or "-h" or "/?" => Help(),
                 _ => Unknown(command),
             };
@@ -80,8 +90,7 @@ internal static class Program
         }
 
         Console.WriteLine();
-        Console.WriteLine("  Note: this inspects the file. WinMux cannot open these panes yet —");
-        Console.WriteLine("  there is no shell. See HANDOFF.md for where that stands.");
+        Console.WriteLine("  Note: this command only inspects the file; it does not change the running shell.");
         Console.WriteLine();
         return 0;
     }
@@ -160,6 +169,60 @@ internal static class Program
         return 0;
     }
 
+    private static int InvokeAction(string[] args)
+    {
+        if (args.Length != 1)
+        {
+            Error("Usage: winmux action ACTION-NAME");
+            return 64;
+        }
+        return InvokeNamedAction(args[0]);
+    }
+
+    private static int DirectionalAction(string[] args, string command, string columns, string rows)
+    {
+        if (args.Length != 1)
+        {
+            Error($"Usage: winmux {command} -h|-v");
+            return 64;
+        }
+
+        return args[0].ToLowerInvariant() switch
+        {
+            "-h" or "--horizontal" or "columns" => InvokeNamedAction(columns),
+            "-v" or "--vertical" or "rows" => InvokeNamedAction(rows),
+            _ => DirectionError(command),
+        };
+    }
+
+    private static int FourWayAction(string[] args, string prefix)
+    {
+        if (args.Length != 1)
+        {
+            Error($"Usage: winmux {prefix} left|right|up|down");
+            return 64;
+        }
+
+        var direction = args[0].ToLowerInvariant();
+        if (direction is not ("left" or "right" or "up" or "down"))
+            return DirectionError(prefix);
+        return InvokeNamedAction($"{prefix}-{direction}");
+    }
+
+    private static int DirectionError(string command)
+    {
+        Error($"Unknown direction for {command}.");
+        return 64;
+    }
+
+    private static int InvokeNamedAction(string actionName)
+    {
+        var result = RemoteCommands.InvokeAsync(actionName).GetAwaiter().GetResult();
+        if (result.Succeeded) Console.WriteLine(result.Message);
+        else Error(result.Message);
+        return result.ExitCode;
+    }
+
     private static int Help()
     {
         Console.WriteLine("""
@@ -170,13 +233,21 @@ internal static class Program
               winmux show [FILE]        draw the layout in a session file and list its panes
               winmux validate [FILE]    parse a session file; exit 0 if it loads, 1 with the reason
               winmux new [FILE]         write a starter session file
+              winmux split -h|-v        split the focused pane in the running shell
+              winmux focus DIRECTION    move focus: left, right, up or down
+              winmux resize DIRECTION   resize the focused pane toward a direction
+              winmux new-tab            add a tab beside the focused pane
+              winmux next-tab           select the next tab
+              winmux previous-tab       select the previous tab
+              winmux close-pane         close the focused pane
+              winmux save-session       write the running session
+              winmux palette            open the command palette
+              winmux action NAME        invoke any registered action by its stable name
               winmux help
 
             FILE defaults to session.toml in the current directory.
 
-            WHAT THIS CANNOT DO YET
-              Open panes. There is no shell, no pty and no window hosting — those are the next
-              pieces of Phase 1. Today the CLI reads and writes the session format only.
+            Action commands require WinMux.exe to be running for the current user.
 
             """);
         return 0;
