@@ -14,6 +14,7 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
 {
     private readonly object sync = new();
     private readonly EmulationTerminal terminal;
+    private readonly OscWorkingDirectoryParser workingDirectoryParser = new();
 
     public TerminalEmulationEngine(int columns, int rows, int scrollbackCapacity = 5_000)
     {
@@ -86,12 +87,15 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
 
     public event Action<string>? TitleChanged;
 
+    public event Action<string>? WorkingDirectoryChanged;
+
     public event Action<ReadOnlyMemory<byte>>? Response;
 
     public void Write(ReadOnlySpan<byte> bytes)
     {
         lock (sync)
         {
+            workingDirectoryParser.Write(bytes, OnWorkingDirectoryChanged);
             terminal.Write(bytes);
         }
     }
@@ -138,6 +142,8 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
     private void OnUpdated() => Updated?.Invoke();
 
     private void OnTitleChanged(object? sender, string title) => TitleChanged?.Invoke(title);
+
+    private void OnWorkingDirectoryChanged(string path) => WorkingDirectoryChanged?.Invoke(path);
 
     private void OnResponse(object? sender, ReadOnlyMemory<byte> bytes) => Response?.Invoke(bytes);
 
