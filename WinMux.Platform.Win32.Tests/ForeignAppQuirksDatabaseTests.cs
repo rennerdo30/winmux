@@ -8,7 +8,7 @@ public sealed class ForeignAppQuirksDatabaseTests
     [Fact]
     public void Measured_seed_loads_without_losing_compatibility_evidence()
     {
-        var database = ForeignAppQuirksDatabase.Load(FindMeasuredSeed());
+        var database = ForeignAppQuirksDatabase.Load(FindShippedDatabase());
 
         Assert.Equal(1, database.Version);
         Assert.Equal("spikes/02-reparent", database.GeneratedBy);
@@ -35,6 +35,9 @@ public sealed class ForeignAppQuirksDatabaseTests
         Assert.Equal(
             "SetParent refused with ERROR_INVALID_PARAMETER (87) — the window rejects reparenting",
             calculator.Rule.Limitations);
+        var calculatorLauncher = database.Select("calc.exe", "ApplicationFrameWindow");
+        Assert.False(calculatorLauncher.IsDefault);
+        Assert.Equal("calc.exe", calculatorLauncher.Rule.Match.LaunchExecutable);
 
         var characterMap = database.Select("charmap.exe", "#32770");
         Assert.Equal(HostStrategy.Embed, characterMap.Rule.Strategy);
@@ -46,7 +49,7 @@ public sealed class ForeignAppQuirksDatabaseTests
     [Fact]
     public void Executable_only_lookup_still_finds_a_measured_rule()
     {
-        var database = ForeignAppQuirksDatabase.Load(FindMeasuredSeed());
+        var database = ForeignAppQuirksDatabase.Load(FindShippedDatabase());
 
         var result = database.Select(@"C:\Windows\explorer.exe");
 
@@ -72,7 +75,7 @@ public sealed class ForeignAppQuirksDatabaseTests
     [Fact]
     public void Equal_specificity_ties_keep_file_order()
     {
-        var database = ForeignAppQuirksDatabase.Load(FindMeasuredSeed());
+        var database = ForeignAppQuirksDatabase.Load(FindShippedDatabase());
 
         var result = database.Select("ReparentSpike.exe", "WinMuxGuineaPig");
 
@@ -84,7 +87,7 @@ public sealed class ForeignAppQuirksDatabaseTests
     [Fact]
     public void Unknown_application_gets_an_explicit_unverified_embed_default()
     {
-        var database = ForeignAppQuirksDatabase.Load(FindMeasuredSeed());
+        var database = ForeignAppQuirksDatabase.Load(FindShippedDatabase());
 
         var result = database.Select(@"D:\Unknown\NovelApp.exe", "NovelWindow");
 
@@ -101,12 +104,25 @@ public sealed class ForeignAppQuirksDatabaseTests
     [Fact]
     public void Mismatched_known_window_class_does_not_apply_an_executable_rule_for_another_window()
     {
-        var database = ForeignAppQuirksDatabase.Load(FindMeasuredSeed());
+        var database = ForeignAppQuirksDatabase.Load(FindShippedDatabase());
 
         var result = database.Select("Taskmgr.exe", "SomeOtherWindow");
 
         Assert.True(result.IsDefault);
         Assert.Equal(HostStrategy.Embed, result.Rule.Strategy);
+    }
+
+    [Fact]
+    public void Optional_title_match_disambiguates_windows_from_the_same_application()
+    {
+        var json = ValidDatabase.Replace(
+            "\"windowClass\": \"\"",
+            "\"windowClass\": \"\", \"titleContains\": \"Project Alpha\"",
+            StringComparison.Ordinal);
+        var database = ForeignAppQuirksDatabase.Parse(json);
+
+        Assert.False(database.Select("tool.exe", windowTitle: "Project Alpha — tool").IsDefault);
+        Assert.True(database.Select("tool.exe", windowTitle: "Project Beta — tool").IsDefault);
     }
 
     [Fact]
@@ -147,20 +163,25 @@ public sealed class ForeignAppQuirksDatabaseTests
         { ValidDatabase.Replace("\"generatedBy\": \"test\"", "\"generatedBy\": \"test\", \"surprise\": true", StringComparison.Ordinal), "not valid version-1 JSON" },
     };
 
-    private static string FindMeasuredSeed()
+    private static string FindShippedDatabase()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
              directory is not null;
              directory = directory.Parent)
         {
-            var candidate = Path.Combine(directory.FullName, "spikes", "02-reparent", "quirks-seed.json");
+            var candidate = Path.Combine(
+                directory.FullName,
+                "WinMux.Platform.Win32",
+                "ForeignApps",
+                "foreign-app-quirks.json");
             if (File.Exists(candidate))
             {
                 return candidate;
             }
         }
 
-        throw new FileNotFoundException("Could not locate spikes/02-reparent/quirks-seed.json from the test output directory.");
+        throw new FileNotFoundException(
+            "Could not locate WinMux.Platform.Win32/ForeignApps/foreign-app-quirks.json from the test output directory.");
     }
 
     private const string ValidDatabase = """

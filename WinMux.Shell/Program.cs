@@ -153,13 +153,12 @@ internal static class Program
             Program = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
             Args = [here],
             Cwd = cwd,
-            Strategy = HostStrategy.Embed,
+            Strategy = HostStrategy.Auto,
             Extras = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 // Measured in spike 2: explorer.exe exits at once and the window belongs to the
                 // already-running shell, so it is found by class, never by the launched pid.
                 ["window_class"] = "CabinetWClass",
-                ["launch_delay_ms"] = "1500",
             },
         });
 

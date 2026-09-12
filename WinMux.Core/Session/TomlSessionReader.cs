@@ -188,7 +188,9 @@ public static class TomlSessionReader
                     Args = StringListOrEmpty(t, "args", at),
                     EnvOverrides = Map(t, "env", at, StringComparer.OrdinalIgnoreCase),
                     Cwd = cwd,
-                    Strategy = Optional(t, "strategy") is string st ? TomlNames.ParseStrategy(st, at) : HostStrategy.Embed,
+                    Strategy = Optional(t, "strategy") is string st
+                        ? TomlNames.ParseStrategy(st, at)
+                        : kind == PaneKind.ForeignApp ? HostStrategy.Auto : HostStrategy.Embed,
                     Extras = Map(t, "extras", at, StringComparer.Ordinal),
                 },
             };

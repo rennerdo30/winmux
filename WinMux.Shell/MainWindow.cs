@@ -43,6 +43,8 @@ internal sealed class MainWindow : Window
     private Divider? _dragDivider;
     private Avalonia.Point _lastDragPoint;
     private bool _shutdownStarted;
+    private bool _shutdownComplete;
+    private bool _paneCloseInProgress;
 
     public MainWindow(
         LayoutTree tree,
@@ -132,6 +134,8 @@ internal sealed class MainWindow : Window
         {
             if (!_foreign.TryGetValue(pane.Id, out var app)) continue;
             await app.LaunchAsync(_claimedWindows, _shellHwnd, _shutdown.Token);
+
+            if (app.Notice is { Length: > 0 }) _message = $"{pane.Title}: {app.Notice}";
 
             Relayout();
         }
@@ -452,7 +456,7 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.FocusRight, () => MoveFocus(FocusDirection.Right));
         _actions.Register(ShellActionNames.FocusUp, () => MoveFocus(FocusDirection.Up));
         _actions.Register(ShellActionNames.FocusDown, () => MoveFocus(FocusDirection.Down));
-        _actions.Register(ShellActionNames.ClosePane, CloseFocused);
+        _actions.Register(ShellActionNames.ClosePane, () => _ = CloseFocusedAsync());
         _actions.Register(ShellActionNames.NewTab, AddTab);
         _actions.Register(ShellActionNames.NextTab, () => CycleTab(1));
         _actions.Register(ShellActionNames.PreviousTab, () => CycleTab(-1));
@@ -468,6 +472,7 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.NewTerminalPowerShell, () => AddTab(TerminalProfiles.PowerShell));
         _actions.Register(ShellActionNames.NewTerminalWsl, () => AddTab(TerminalProfiles.Wsl));
         _actions.Register(ShellActionNames.ConfigureCwdReporting, () => _ = ShowCwdIntegrationAsync(onlyIfUnseen: false));
+        _actions.Register(ShellActionNames.ToggleForeignHostStrategy, () => _ = ToggleForeignHostStrategyAsync());
     }
 
     internal ActionDispatchResult DispatchNamedAction(string actionName)
@@ -490,6 +495,30 @@ internal sealed class MainWindow : Window
             _ = terminal.SendText("\u0002");
         else
             _message = "the focused pane does not accept terminal input";
+    }
+
+    private async Task ToggleForeignHostStrategyAsync()
+    {
+        if (!_foreign.TryGetValue(_tree.Focused, out var app) || app.EffectiveStrategy is not { } current)
+        {
+            _message = "the focused pane is not a ready foreign application";
+            UpdateStatus();
+            return;
+        }
+
+        var target = current == HostStrategy.Embed ? HostStrategy.Attach : HostStrategy.Embed;
+        _message = $"switching {app.Pane.Title} to {target.ToString().ToLowerInvariant()}…";
+        UpdateStatus();
+        try
+        {
+            var result = await app.SwitchStrategyAsync(target, _shutdown.Token);
+            _message = result.Message;
+            _session.RequestSave();
+            Relayout();
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+        }
     }
 
     private Pane NewTerminalPane(TerminalProfile? profile = null)
@@ -576,17 +605,43 @@ internal sealed class MainWindow : Window
         Relayout();
     }
 
-    private void CloseFocused()
+    private async Task CloseFocusedAsync()
     {
+        if (_paneCloseInProgress) { _message = "a pane is already closing"; UpdateStatus(); return; }
+        if (_tree.Panes.Count() == 1) { _message = "cannot close the last pane"; UpdateStatus(); return; }
+
         var id = _tree.Focused;
-        if (!_tree.Close(id)) { _message = "cannot close the last pane"; UpdateStatus(); return; }
+        _paneCloseInProgress = true;
+        try
+        {
+            if (_foreign.TryGetValue(id, out var foreign))
+            {
+                var claimedWindow = foreign.ChildHwnd;
+                _message = $"closing {foreign.Pane.Title} safely…";
+                UpdateStatus();
+                var result = await foreign.CloseAsync();
+                if (!result.Succeeded)
+                {
+                    _message = "pane stayed open: " + result.Message;
+                    UpdateStatus();
+                    return;
+                }
+                lock (_claimedWindows) _claimedWindows.Remove(claimedWindow);
+            }
 
-        if (_views.Remove(id, out var view)) _canvas.Children.Remove(view);
-        if (_foreign.Remove(id, out var app)) { app.Close(); _tracker.Forget(id); }
-        if (view is TerminalPaneControl term) { try { term.Dispose(); } catch (ObjectDisposedException) { } }
+            if (!_tree.Close(id)) { _message = "cannot close the last pane"; UpdateStatus(); return; }
 
-        _message = "closed";
-        Relayout();
+            if (_views.Remove(id, out var view)) _canvas.Children.Remove(view);
+            if (_foreign.Remove(id, out _)) _tracker.Forget(id);
+            if (view is TerminalPaneControl term) { try { term.Dispose(); } catch (ObjectDisposedException) { } }
+
+            _message = "closed";
+            Relayout();
+        }
+        finally
+        {
+            _paneCloseInProgress = false;
+        }
     }
 
     private void SaveSession()
@@ -640,13 +695,14 @@ internal sealed class MainWindow : Window
 
     private void Shutdown(WindowClosingEventArgs e)
     {
+        if (_shutdownComplete) return;
+        e.Cancel = true;
         if (_shutdownStarted) return;
         _cwdCaptureTimer.Stop();
         RefreshProcessWorkingDirectories();
-        var saved = _session.WindowClosing(this);
+        var saved = _session.PrepareWindowClosing(this);
         if (!saved.Succeeded)
         {
-            e.Cancel = true;
             _cwdCaptureTimer.Start();
             _message = "WinMux stayed open because the session could not be saved: " + saved.Error?.Message;
             UpdateStatus();
@@ -654,16 +710,75 @@ internal sealed class MainWindow : Window
         }
 
         _shutdownStarted = true;
-        _shutdown.Cancel();
+        _message = "detaching foreign applications safely…";
+        UpdateStatus();
+        _ = CompleteShutdownAsync();
+    }
 
-        // WM_CLOSE is posted to each host, never the foreign app. The host restores its child
-        // before exiting, and a wedged app can only stall that disposable host process.
-        foreach (var app in _foreign.Values) app.Detach();
+    private async Task CompleteShutdownAsync()
+    {
+        try
+        {
+            var attempts = _foreign.Values
+                .Select(app => (App: app, Child: app.ChildHwnd, Task: DetachSafelyAsync(app)))
+                .ToArray();
+            var detachResults = await Task.WhenAll(attempts.Select(attempt => attempt.Task));
+            var failed = detachResults.FirstOrDefault(result => !result.Succeeded);
+            if (failed is not null)
+            {
+                var removed = 0;
+                for (var index = 0; index < attempts.Length; index++)
+                {
+                    if (!detachResults[index].Succeeded) continue;
+                    var (app, child, _) = attempts[index];
+                    _foreign.Remove(app.Id);
+                    _tracker.Forget(app.Id);
+                    if (_views.Remove(app.Id, out var view)) _canvas.Children.Remove(view);
+                    lock (_claimedWindows) _claimedWindows.Remove(child);
+                    _tree.Close(app.Id);
+                    removed++;
+                }
 
-        foreach (var app in _foreign.Values) _tracker.Forget(app.Id);
-        foreach (var view in _views.Values)
-            if (view is TerminalPaneControl t) { try { t.Dispose(); } catch (ObjectDisposedException) { } }
-        _tracker.Dispose();
+                _shutdownStarted = false;
+                _cwdCaptureTimer.Start();
+                _message = "WinMux stayed open because an application could not detach: " + failed.Message +
+                           (removed > 0
+                               ? $"; {removed} app(s) already detached safely and were removed from this window"
+                               : string.Empty);
+                Relayout();
+                return;
+            }
+
+            _session.CompleteWindowClosing(this);
+            _shutdown.Cancel();
+
+            foreach (var app in _foreign.Values) _tracker.Forget(app.Id);
+            foreach (var view in _views.Values)
+                if (view is TerminalPaneControl t) { try { t.Dispose(); } catch (ObjectDisposedException) { } }
+            _tracker.Dispose();
+            _shutdownComplete = true;
+            // Always leave the original Closing event before asking Avalonia to close again.
+            Dispatcher.UIThread.Post(Close);
+        }
+        catch (Exception ex)
+        {
+            _shutdownStarted = false;
+            _cwdCaptureTimer.Start();
+            _message = "WinMux stayed open because safe detach failed: " + ex.Message;
+            UpdateStatus();
+        }
+    }
+
+    private static async Task<ForeignAppShutdownResult> DetachSafelyAsync(ForeignAppPane app)
+    {
+        try
+        {
+            return await app.DetachAsync();
+        }
+        catch (Exception ex)
+        {
+            return new ForeignAppShutdownResult(false, ex.Message);
+        }
     }
 
     private void RefreshProcessWorkingDirectories()

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using WinMux.Core.Model;
+using WinMux.Platform.Win32.ForeignApps;
 
 namespace WinMux.Shell;
 
@@ -10,12 +11,15 @@ namespace WinMux.Shell;
 internal sealed class ForeignAppPane
 {
     private Process? _hostProcess;
+    private readonly SemaphoreSlim _protocolLock = new(1, 1);
 
     public PaneId Id { get; }
     public Pane Pane { get; }
     public IntPtr Hwnd { get; private set; }
     public IntPtr ChildHwnd { get; private set; }
+    public HostStrategy? EffectiveStrategy { get; private set; }
     public string Status { get; private set; } = "starting…";
+    public string? Notice { get; private set; }
     public bool Located => Hwnd != IntPtr.Zero && Win32Interop.IsWindow(Hwnd);
 
     public ForeignAppPane(Pane pane)
@@ -30,6 +34,19 @@ internal sealed class ForeignAppPane
         if (string.IsNullOrWhiteSpace(restore.Program))
         {
             Status = "no program set";
+            return;
+        }
+
+        ForeignAppLaunchPlan plan;
+        var quirksPath = Path.Combine(AppContext.BaseDirectory, "foreign-app-quirks.json");
+        try
+        {
+            plan = ForeignAppLaunchPlan.Resolve(restore, ForeignAppQuirksDatabase.Load(quirksPath));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                                   ForeignAppQuirksFormatException or ArgumentException)
+        {
+            Status = $"cannot load foreign-app quirks from {quirksPath}: {ex.Message}";
             return;
         }
 
@@ -50,15 +67,31 @@ internal sealed class ForeignAppPane
         };
         start.ArgumentList.Add("--program");
         start.ArgumentList.Add(restore.Program);
+        start.ArgumentList.Add("--strategy");
+        start.ArgumentList.Add(plan.StrategyArgument);
+        start.ArgumentList.Add("--settle-ms");
+        start.ArgumentList.Add(plan.SettleMilliseconds.ToString());
+        start.ArgumentList.Add("--match-mode");
+        start.ArgumentList.Add(plan.MatchModeArgument);
         if (ownerWindow != IntPtr.Zero)
         {
             start.ArgumentList.Add("--owner");
             start.ArgumentList.Add(ownerWindow.ToInt64().ToString());
         }
-        if (restore.Extras.GetValueOrDefault("window_class") is { Length: > 0 } windowClass)
+        if (plan.WindowClass is { Length: > 0 } windowClass)
         {
             start.ArgumentList.Add("--window-class");
             start.ArgumentList.Add(windowClass);
+        }
+        if (plan.TitleContains is { Length: > 0 } titleContains)
+        {
+            start.ArgumentList.Add("--window-title-contains");
+            start.ArgumentList.Add(titleContains);
+        }
+        if (plan.ProcessName is { Length: > 0 } processName)
+        {
+            start.ArgumentList.Add("--process-name");
+            start.ArgumentList.Add(processName);
         }
         lock (claimed)
         {
@@ -88,41 +121,84 @@ internal sealed class ForeignAppPane
 
         Status = "waiting for pane host…";
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        var startupTimeout = TimeSpan.FromMilliseconds(Math.Max(20_000L, plan.SettleMilliseconds + 15_000L));
+        timeout.CancelAfter(startupTimeout);
 
+        await _protocolLock.WaitAsync(token);
         try
         {
-            while (await _hostProcess.StandardOutput.ReadLineAsync(timeout.Token) is { } line)
+            try
             {
-                if (TryReadHandle(line, "HOST_HWND=", out var host))
+                var reportedStrategy = plan.Strategy;
+                while (await _hostProcess.StandardOutput.ReadLineAsync(timeout.Token) is { } line)
                 {
-                    Hwnd = host;
-                    Status = "waiting for application window…";
-                    continue;
-                }
-                if (TryReadHandle(line, "READY=", out var child))
-                {
-                    ChildHwnd = child;
-                    lock (claimed) claimed.Add(child);
-                    Status = "hosted out of process";
-                    return;
-                }
-                if (line.StartsWith("ERROR=", StringComparison.Ordinal))
-                {
-                    Status = line[6..];
-                    Detach();
-                    Hwnd = IntPtr.Zero;
-                    return;
-                }
-            }
+                    if (TryReadHandle(line, "HOST_HWND=", out var host))
+                    {
+                        Hwnd = host;
+                        Status = "waiting for application window…";
+                        continue;
+                    }
+                    if (line.StartsWith("STRATEGY=", StringComparison.OrdinalIgnoreCase))
+                    {
+                        reportedStrategy = line["STRATEGY=".Length..].Equals("attach", StringComparison.OrdinalIgnoreCase)
+                            ? HostStrategy.Attach
+                            : HostStrategy.Embed;
+                        continue;
+                    }
+                    if (line.StartsWith("NOTICE=", StringComparison.Ordinal))
+                    {
+                        Notice = line[7..];
+                        Status = Notice;
+                        continue;
+                    }
+                    if (TryReadReady(line, out var child, out var effectiveStrategy))
+                    {
+                        if (!line.Contains("strategy=", StringComparison.OrdinalIgnoreCase))
+                            effectiveStrategy = reportedStrategy;
+                        ChildHwnd = child;
+                        EffectiveStrategy = effectiveStrategy;
+                        lock (claimed) claimed.Add(child);
+                        var mode = effectiveStrategy == HostStrategy.Attach ? "attached" : "embedded";
+                        var detail = Notice ?? plan.Limitation;
+                        Status = detail is { Length: > 0 }
+                            ? $"{mode} out of process — {detail}"
+                            : $"{mode} out of process";
 
-            var error = await _hostProcess.StandardError.ReadToEndAsync(timeout.Token);
-            Status = string.IsNullOrWhiteSpace(error) ? "pane host exited before it was ready" : error.Trim();
+                        // A failed explicit/automatic embed that safely fell back becomes an explicit
+                        // per-app override in the session. A measured auto→attach choice stays Auto so
+                        // future quirks updates can still improve it.
+                        if (effectiveStrategy == HostStrategy.Attach && plan.Strategy == HostStrategy.Embed)
+                            Pane.Restore = Pane.Restore with { Strategy = HostStrategy.Attach };
+                        return;
+                    }
+                    if (line.StartsWith("ERROR=", StringComparison.Ordinal))
+                    {
+                        Status = line[6..];
+                        SendCommand("DETACH");
+                        Hwnd = IntPtr.Zero;
+                        return;
+                    }
+                }
+
+                var error = await _hostProcess.StandardError.ReadToEndAsync(timeout.Token);
+                Status = string.IsNullOrWhiteSpace(error) ? "pane host exited before it was ready" : error.Trim();
+            }
+            catch (OperationCanceledException)
+            {
+                Status = token.IsCancellationRequested
+                    ? "cancelled"
+                    : $"pane host did not become ready within {startupTimeout.TotalSeconds:0.#} seconds";
+                SendCommand("DETACH");
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+            {
+                Status = "pane host protocol failed: " + ex.Message;
+                SendCommand("DETACH");
+            }
         }
-        catch (OperationCanceledException)
+        finally
         {
-            Status = token.IsCancellationRequested ? "cancelled" : "pane host did not become ready within 20 seconds";
-            Detach();
+            _protocolLock.Release();
         }
     }
 
@@ -134,23 +210,174 @@ internal sealed class ForeignAppPane
                (hwnd = new IntPtr(value)) != IntPtr.Zero;
     }
 
-    /// <summary>Detach the app and let it survive shell shutdown.</summary>
-    public void Detach()
+    internal static bool TryReadReady(string line, out IntPtr hwnd, out HostStrategy strategy)
     {
-        SendCommand("DETACH");
-        Hwnd = IntPtr.Zero;
-        ChildHwnd = IntPtr.Zero;
+        hwnd = IntPtr.Zero;
+        strategy = HostStrategy.Embed;
+        if (!line.StartsWith("READY=", StringComparison.Ordinal)) return false;
+
+        var fields = line.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (!long.TryParse(fields[0].AsSpan("READY=".Length), out var value) || value == 0) return false;
+        hwnd = new IntPtr(value);
+
+        foreach (var field in fields.Skip(1))
+        {
+            if (!field.StartsWith("strategy=", StringComparison.OrdinalIgnoreCase)) continue;
+            strategy = field["strategy=".Length..].ToLowerInvariant() switch
+            {
+                "embed" => HostStrategy.Embed,
+                "attach" => HostStrategy.Attach,
+                _ => strategy,
+            };
+        }
+        return true;
     }
+
+    public async Task<ForeignAppSwitchResult> SwitchStrategyAsync(
+        HostStrategy target,
+        CancellationToken token = default)
+    {
+        if (target == HostStrategy.Auto)
+            return new ForeignAppSwitchResult(false, EffectiveStrategy, "auto must resolve before switching");
+        if (_hostProcess is null || _hostProcess.HasExited || ChildHwnd == IntPtr.Zero)
+            return new ForeignAppSwitchResult(false, EffectiveStrategy, "the foreign application is not ready");
+
+        await _protocolLock.WaitAsync(token);
+        try
+        {
+            Notice = null;
+            Status = $"switching to {target.ToString().ToLowerInvariant()}…";
+            if (!SendCommand("STRATEGY=" + target.ToString().ToUpperInvariant()))
+                return new ForeignAppSwitchResult(false, EffectiveStrategy, "could not contact PaneHost");
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            var reported = target;
+            while (await _hostProcess.StandardOutput.ReadLineAsync(timeout.Token) is { } line)
+            {
+                if (line.StartsWith("NOTICE=", StringComparison.Ordinal))
+                {
+                    Notice = line["NOTICE=".Length..];
+                    continue;
+                }
+                if (line.StartsWith("STRATEGY=", StringComparison.OrdinalIgnoreCase))
+                {
+                    reported = line["STRATEGY=".Length..].Equals("attach", StringComparison.OrdinalIgnoreCase)
+                        ? HostStrategy.Attach
+                        : HostStrategy.Embed;
+                    continue;
+                }
+                if (TryReadReady(line, out var child, out var effective))
+                {
+                    if (!line.Contains("strategy=", StringComparison.OrdinalIgnoreCase)) effective = reported;
+                    ChildHwnd = child;
+                    EffectiveStrategy = effective;
+                    Pane.Restore = Pane.Restore with { Strategy = effective };
+                    var mode = effective == HostStrategy.Attach ? "attached" : "embedded";
+                    Status = Notice is { Length: > 0 }
+                        ? $"{mode} out of process — {Notice}"
+                        : $"{mode} out of process";
+                    var reachedTarget = effective == target;
+                    return new ForeignAppSwitchResult(
+                        reachedTarget,
+                        effective,
+                        reachedTarget ? $"switched to {mode}" : Notice ?? $"remained in {mode} mode");
+                }
+                if (line.StartsWith("ERROR=", StringComparison.Ordinal))
+                {
+                    Status = line["ERROR=".Length..];
+                    return new ForeignAppSwitchResult(false, EffectiveStrategy, Status);
+                }
+            }
+
+            Status = "PaneHost exited while changing strategy";
+            return new ForeignAppSwitchResult(false, EffectiveStrategy, Status);
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        {
+            Status = "PaneHost did not change strategy within 10 seconds";
+            return new ForeignAppSwitchResult(false, EffectiveStrategy, Status);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            Status = "PaneHost strategy switch failed: " + ex.Message;
+            return new ForeignAppSwitchResult(false, EffectiveStrategy, Status);
+        }
+        finally
+        {
+            _protocolLock.Release();
+        }
+    }
+
+    /// <summary>Detach the app and let it survive shell shutdown.</summary>
+    public Task<ForeignAppShutdownResult> DetachAsync(CancellationToken token = default) =>
+        ShutdownAsync("DETACH", "DETACHED", token);
 
     /// <summary>Close the app because the user explicitly closed its pane.</summary>
-    public void Close()
+    public Task<ForeignAppShutdownResult> CloseAsync(CancellationToken token = default) =>
+        ShutdownAsync("CLOSE", "CLOSED", token);
+
+    private async Task<ForeignAppShutdownResult> ShutdownAsync(
+        string command,
+        string acknowledgement,
+        CancellationToken token)
     {
-        SendCommand("CLOSE");
-        Hwnd = IntPtr.Zero;
-        ChildHwnd = IntPtr.Zero;
+        if (_hostProcess is null || _hostProcess.HasExited)
+        {
+            ClearHandles();
+            return new ForeignAppShutdownResult(true, "PaneHost had already exited");
+        }
+
+        await _protocolLock.WaitAsync(token);
+        try
+        {
+            if (!SendCommand(command))
+                return new ForeignAppShutdownResult(false, "could not contact PaneHost");
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            while (await _hostProcess.StandardOutput.ReadLineAsync(timeout.Token) is { } line)
+            {
+                if (line.Equals(acknowledgement, StringComparison.Ordinal))
+                {
+                    ClearHandles();
+                    return new ForeignAppShutdownResult(true,
+                        command == "DETACH" ? "application detached safely" : "application close requested safely");
+                }
+                if (line.StartsWith("ERROR=", StringComparison.Ordinal))
+                {
+                    Status = line["ERROR=".Length..];
+                    return new ForeignAppShutdownResult(false, Status);
+                }
+            }
+
+            Status = "PaneHost exited without confirming " + command.ToLowerInvariant();
+            return new ForeignAppShutdownResult(false, Status);
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        {
+            Status = $"PaneHost did not confirm {command.ToLowerInvariant()} within 10 seconds";
+            return new ForeignAppShutdownResult(false, Status);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            Status = "PaneHost shutdown protocol failed: " + ex.Message;
+            return new ForeignAppShutdownResult(false, Status);
+        }
+        finally
+        {
+            _protocolLock.Release();
+        }
     }
 
-    private void SendCommand(string command)
+    private void ClearHandles()
+    {
+        Hwnd = IntPtr.Zero;
+        ChildHwnd = IntPtr.Zero;
+        EffectiveStrategy = null;
+    }
+
+    private bool SendCommand(string command)
     {
         try
         {
@@ -158,9 +385,14 @@ internal sealed class ForeignAppPane
             {
                 _hostProcess.StandardInput.WriteLine(command);
                 _hostProcess.StandardInput.Flush();
+                return true;
             }
         }
         catch (InvalidOperationException) { }
         catch (IOException) { }
+        return false;
     }
 }
+
+internal sealed record ForeignAppSwitchResult(bool Succeeded, HostStrategy? EffectiveStrategy, string Message);
+internal sealed record ForeignAppShutdownResult(bool Succeeded, string Message);

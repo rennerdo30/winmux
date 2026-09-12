@@ -52,7 +52,11 @@ internal sealed record LaunchSpec(
     string Program,
     IReadOnlyList<string> Arguments,
     string? WindowClass,
+    string? WindowTitleContains,
+    string? ProcessName,
+    WindowMatchMode MatchMode,
     HostStrategy Strategy,
+    int SettleMilliseconds,
     IntPtr OwnerWindow,
     IReadOnlySet<IntPtr> ExcludedWindows)
 {
@@ -60,7 +64,12 @@ internal sealed record LaunchSpec(
     {
         string? program = null;
         string? windowClass = null;
+        string? windowTitleContains = null;
+        string? processName = null;
+        var matchMode = WindowMatchMode.ProcessName;
+        var matchModeExplicit = false;
         var strategy = HostStrategy.Embed;
+        var settleMilliseconds = 400;
         var ownerWindow = IntPtr.Zero;
         var arguments = new List<string>();
         var excluded = new HashSet<IntPtr>();
@@ -70,11 +79,46 @@ internal sealed record LaunchSpec(
         {
             if (!afterSeparator && args[i] == "--") { afterSeparator = true; continue; }
             if (!afterSeparator && args[i] == "--program" && ++i < args.Length) { program = args[i]; continue; }
-            if (!afterSeparator && args[i] == "--window-class" && ++i < args.Length) { windowClass = args[i]; continue; }
+            if (!afterSeparator && args[i] == "--window-class" && ++i < args.Length)
+            {
+                windowClass = args[i];
+                if (!matchModeExplicit) matchMode = WindowMatchMode.ClassName;
+                continue;
+            }
+            if (!afterSeparator && args[i] == "--window-title-contains" && ++i < args.Length)
+            {
+                windowTitleContains = args[i];
+                continue;
+            }
+            if (!afterSeparator && args[i] == "--process-name" && ++i < args.Length)
+            {
+                processName = args[i];
+                if (!matchModeExplicit) matchMode = WindowMatchMode.ProcessName;
+                continue;
+            }
+            if (!afterSeparator && args[i] == "--match-mode")
+            {
+                if (++i >= args.Length) throw new ArgumentException("missing value for --match-mode");
+                matchMode = args[i].ToLowerInvariant() switch
+                {
+                    "pid" => WindowMatchMode.Pid,
+                    "process-name" => WindowMatchMode.ProcessName,
+                    "class-name" => WindowMatchMode.ClassName,
+                    _ => throw new ArgumentException("--match-mode must be pid, process-name, or class-name"),
+                };
+                matchModeExplicit = true;
+                continue;
+            }
             if (!afterSeparator && args[i] == "--strategy")
             {
                 if (++i >= args.Length) throw new ArgumentException("missing value for --strategy");
                 strategy = ParseStrategy(args[i]);
+                continue;
+            }
+            if (!afterSeparator && args[i] == "--settle-ms")
+            {
+                if (++i >= args.Length || !int.TryParse(args[i], out settleMilliseconds) || settleMilliseconds < 0)
+                    throw new ArgumentException("--settle-ms must be a non-negative integer");
                 continue;
             }
             if (!afterSeparator && args[i] == "--owner" && ++i < args.Length && long.TryParse(args[i], out var owner))
@@ -91,7 +135,8 @@ internal sealed record LaunchSpec(
         }
 
         if (string.IsNullOrWhiteSpace(program)) throw new ArgumentException("missing --program <path>");
-        return new LaunchSpec(program, arguments, windowClass, strategy, ownerWindow, excluded);
+        return new LaunchSpec(program, arguments, windowClass, windowTitleContains, processName, matchMode, strategy,
+            settleMilliseconds, ownerWindow, excluded);
     }
 
     private static HostStrategy ParseStrategy(string value) => value.ToLowerInvariant() switch
@@ -108,6 +153,13 @@ internal enum HostStrategy
     Attach,
 }
 
+internal enum WindowMatchMode
+{
+    Pid,
+    ProcessName,
+    ClassName,
+}
+
 internal static class HostProtocol
 {
     public static string Strategy(HostStrategy strategy) =>
@@ -115,25 +167,29 @@ internal static class HostProtocol
 
     public static string Ready(IntPtr child) => $"READY={child.ToInt64()}";
 
+    public static string Notice(string message) => "NOTICE=" + message;
+
     public static string EmbedFailure(int error) => error switch
     {
         5 => "ERROR=application is elevated or higher-integrity; WinMux cannot embed it " +
             "(win32=5, fallback=attach)",
         87 => "ERROR=application refused embedding (win32=87, fallback=attach)",
         0 => "ERROR=application did not become a child of PaneHost (win32=0, fallback=attach)",
-        _ => $"ERROR=SetParent failed with Win32 error {error}",
+        _ => $"ERROR=SetParent failed with Win32 error {error} (fallback=attach)",
     };
 }
 
 internal sealed class PaneHostWindow : IDisposable
 {
     private const string WindowClassName = "WinMux.PaneHost.Window";
-    private const int GwlStyle = -16, GwlExStyle = -20, SwShowNormal = 1, SwRestore = 9;
+    private const int GwlStyle = -16, GwlExStyle = -20, SwHide = 0, SwShowNormal = 1, SwRestore = 9;
     private const int WsPopup = unchecked((int)0x80000000), WsVisible = 0x10000000;
+    private const long WsPopupStyle = 0x80000000L, WsChildStyle = 0x40000000L;
     private const long ForeignFrameStyles = 0x00CF0000L;
-    private const uint GaParent = 1, GwOwner = 4, WmClose = 0x0010, WmDestroy = 0x0002;
+    private const uint GaParent = 1, GwOwner = 4, WmClose = 0x0010, WmDestroy = 0x0002, WmShowWindow = 0x0018;
     private const uint WmMove = 0x0003, WmSize = 0x0005, WmActivate = 0x0006, WmWindowPosChanged = 0x0047;
     private const uint WmAppAdopt = 0x8001, WmAppClosePane = 0x8002;
+    private const uint WmAppAttach = 0x8003, WmAppEmbed = 0x8004;
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const uint SwpNoSize = 0x0001, SwpNoMove = 0x0002, SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010, SwpShowWindow = 0x0040, SwpFrameChanged = 0x0020;
@@ -144,13 +200,16 @@ internal sealed class PaneHostWindow : IDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private IntPtr _hostWindow;
     private IntPtr _childWindow;
+    private uint _launchedProcessId;
     private HostedWindowState? _hosted;
+    private bool _hostVisible = true;
     private bool _disposed;
 
     public PaneHostWindow(LaunchSpec launch) { _launch = launch; _windowProc = WindowProcImpl; }
 
     public void Run()
     {
+        _ = SetThreadDpiHostingBehavior(new IntPtr(-3)); // DPI_HOSTING_BEHAVIOR_MIXED
         RegisterWindowClass();
         _hostWindow = CreateWindowExW(0, WindowClassName, "WinMux pane host", WsPopup | WsVisible,
             100, 100, 900, 600, _launch.OwnerWindow, IntPtr.Zero, GetModuleHandleW(null), IntPtr.Zero);
@@ -188,21 +247,42 @@ internal sealed class PaneHostWindow : IDisposable
             var before = AdoptableWindows().ToHashSet();
             var start = new ProcessStartInfo(_launch.Program) { UseShellExecute = false };
             foreach (var argument in _launch.Arguments) start.ArgumentList.Add(argument);
-            _ = Process.Start(start) ?? throw new InvalidOperationException("could not start foreign application");
+            using var process = Process.Start(start) ??
+                throw new InvalidOperationException("could not start foreign application");
+            _launchedProcessId = (uint)process.Id;
 
             var stopwatch = Stopwatch.StartNew();
-            while (stopwatch.Elapsed < TimeSpan.FromSeconds(8) && !_shutdown.IsCancellationRequested)
+            var candidate = IntPtr.Zero;
+            var candidateFoundAt = TimeSpan.Zero;
+            var discoveryTimeout = TimeSpan.FromSeconds(12) +
+                                   TimeSpan.FromMilliseconds(_launch.SettleMilliseconds);
+            while (stopwatch.Elapsed < discoveryTimeout && !_shutdown.IsCancellationRequested)
             {
-                var candidate = AdoptableWindows().LastOrDefault(hwnd =>
+                var latest = AdoptableWindows().LastOrDefault(hwnd =>
                     !before.Contains(hwnd) && !_launch.ExcludedWindows.Contains(hwnd) && Matches(hwnd));
-                if (candidate != IntPtr.Zero) { PostMessageW(_hostWindow, WmAppAdopt, candidate, IntPtr.Zero); return; }
+                if (latest != IntPtr.Zero)
+                {
+                    if (candidate != latest) candidateFoundAt = stopwatch.Elapsed;
+                    candidate = latest;
+                    if (stopwatch.Elapsed - candidateFoundAt >= TimeSpan.FromMilliseconds(_launch.SettleMilliseconds))
+                    {
+                        PostMessageW(_hostWindow, WmAppAdopt, candidate, IntPtr.Zero);
+                        return;
+                    }
+                }
+                else
+                {
+                    candidate = IntPtr.Zero;
+                    candidateFoundAt = TimeSpan.Zero;
+                }
                 Thread.Sleep(100);
             }
 
             var existing = AdoptableWindows().LastOrDefault(hwnd =>
-                !_launch.ExcludedWindows.Contains(hwnd) && Matches(hwnd));
+                before.Contains(hwnd) && !_launch.ExcludedWindows.Contains(hwnd) && Matches(hwnd));
             if (existing != IntPtr.Zero) { PostMessageW(_hostWindow, WmAppAdopt, existing, IntPtr.Zero); return; }
-            if (!_shutdown.IsCancellationRequested) WriteProtocol("ERROR=no matching window appeared within 8 seconds");
+            if (!_shutdown.IsCancellationRequested)
+                WriteProtocol($"ERROR=no matching window appeared within {discoveryTimeout.TotalSeconds:0.#} seconds");
         }
         catch (Exception ex)
         {
@@ -220,52 +300,100 @@ internal sealed class PaneHostWindow : IDisposable
                 {
                     case "DETACH":
                         PostMessageW(_hostWindow, WmClose, IntPtr.Zero, IntPtr.Zero);
-                        return;
+                        break;
                     case "CLOSE":
                         PostMessageW(_hostWindow, WmAppClosePane, IntPtr.Zero, IntPtr.Zero);
-                        return;
+                        break;
+                    case "STRATEGY=ATTACH":
+                        PostMessageW(_hostWindow, WmAppAttach, IntPtr.Zero, IntPtr.Zero);
+                        break;
+                    case "STRATEGY=EMBED":
+                        PostMessageW(_hostWindow, WmAppEmbed, IntPtr.Zero, IntPtr.Zero);
+                        break;
                 }
+            }
+
+            // Redirected stdin closes when the shell crashes. Restore autonomously so the app
+            // cannot remain an invisible orphaned child after its owner disappears.
+            while (!_shutdown.IsCancellationRequested && IsWindow(_hostWindow))
+            {
+                PostMessageW(_hostWindow, WmClose, IntPtr.Zero, IntPtr.Zero);
+                await Task.Delay(1_000, _shutdown.Token);
             }
         }
         catch (OperationCanceledException) { }
     }
 
-    private bool Matches(IntPtr hwnd) => !string.IsNullOrWhiteSpace(_launch.WindowClass)
-        ? GetClassName(hwnd).Equals(_launch.WindowClass, StringComparison.OrdinalIgnoreCase)
-        : GetProcessImageName(hwnd).Equals(Path.GetFileName(_launch.Program), StringComparison.OrdinalIgnoreCase);
+    private bool Matches(IntPtr hwnd)
+    {
+        var identityMatches = _launch.MatchMode switch
+        {
+            WindowMatchMode.Pid => GetWindowProcessId(hwnd) == _launchedProcessId,
+            WindowMatchMode.ClassName => !string.IsNullOrWhiteSpace(_launch.WindowClass) &&
+                                         GetClassName(hwnd).Equals(
+                                             _launch.WindowClass,
+                                             StringComparison.OrdinalIgnoreCase),
+            _ => GetProcessImageName(hwnd).Equals(
+                _launch.ProcessName ?? Path.GetFileName(_launch.Program),
+                StringComparison.OrdinalIgnoreCase),
+        };
+        return identityMatches &&
+               (string.IsNullOrWhiteSpace(_launch.WindowTitleContains) ||
+                GetWindowText(hwnd).Contains(_launch.WindowTitleContains, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static uint GetWindowProcessId(IntPtr hwnd)
+    {
+        GetWindowThreadProcessId(hwnd, out var processId);
+        return processId;
+    }
 
     private void HostApplication(IntPtr child)
     {
         if (!IsWindow(child)) return;
         if (!GetWindowRect(child, out var originalRect)) ThrowLastError("GetWindowRect");
-        _hosted = new HostedWindowState(child, GetAncestor(child, GaParent), GetWindowLongPtrW(child, GwlStyle),
+        var original = new HostedWindowState(child, GetAncestor(child, GaParent), GetWindowLongPtrW(child, GwlStyle),
             GetWindowLongPtrW(child, GwlExStyle), originalRect, _launch.Strategy);
 
         if (IsIconic(child)) ShowWindow(child, SwRestore);
         if (_launch.Strategy == HostStrategy.Attach)
         {
-            _childWindow = child;
-            if (!PositionAttachedWindow())
-            {
-                _childWindow = IntPtr.Zero;
-                _hosted = null;
-                WriteProtocol("ERROR=Windows refused to position the application in attach mode");
-                return;
-            }
-
-            WriteProtocol(HostProtocol.Strategy(HostStrategy.Attach));
-            WriteProtocol(HostProtocol.Ready(child));
+            Attach(original with { Strategy = HostStrategy.Attach });
             return;
         }
 
-        SetWindowLongPtrW(child, GwlStyle, new IntPtr(_hosted.OriginalStyle.ToInt64() & ~ForeignFrameStyles));
+        Embed(original with { Strategy = HostStrategy.Embed });
+    }
+
+    private void Embed(HostedWindowState state)
+    {
+        _hosted = state;
+        var child = state.Child;
+        var childStyle = ((state.OriginalStyle.ToInt64() & 0xffffffffL) | WsChildStyle) &
+                         ~(WsPopupStyle | ForeignFrameStyles);
+        Marshal.SetLastPInvokeError(0);
+        SetWindowLongPtrW(child, GwlStyle, new IntPtr(childStyle));
+        var styleError = Marshal.GetLastPInvokeError();
+        if ((GetWindowLongPtrW(child, GwlStyle).ToInt64() & 0xffffffffL) != childStyle)
+        {
+            if (RestoreForeignWindow())
+            {
+                WriteProtocol(HostProtocol.Notice(
+                    $"application style could not be prepared for embedding (win32={styleError}, fallback=attach)"));
+                Attach(state with { Strategy = HostStrategy.Attach });
+            }
+            return;
+        }
+
         Marshal.SetLastPInvokeError(0);
         var oldParent = SetParent(child, _hostWindow);
         var error = Marshal.GetLastPInvokeError();
         if ((oldParent == IntPtr.Zero && error != 0) || GetAncestor(child, GaParent) != _hostWindow)
         {
-            RestoreForeignWindow();
-            WriteProtocol(HostProtocol.EmbedFailure(error));
+            if (!RestoreForeignWindow()) return;
+            var reason = HostProtocol.EmbedFailure(error)["ERROR=".Length..];
+            WriteProtocol(HostProtocol.Notice(reason));
+            Attach(state with { Strategy = HostStrategy.Attach });
             return;
         }
 
@@ -275,6 +403,42 @@ internal sealed class PaneHostWindow : IDisposable
             SwpNoSize | SwpNoMove | SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
         WriteProtocol(HostProtocol.Strategy(HostStrategy.Embed));
         WriteProtocol(HostProtocol.Ready(child));
+    }
+
+    private void Attach(HostedWindowState state)
+    {
+        _hosted = state;
+        _childWindow = state.Child;
+        if (!PositionAttachedWindow())
+        {
+            if (RestoreForeignWindow())
+                WriteProtocol("ERROR=Windows refused to position the application in attach mode");
+            return;
+        }
+
+        WriteProtocol(HostProtocol.Strategy(HostStrategy.Attach));
+        WriteProtocol(HostProtocol.Ready(state.Child));
+    }
+
+    private void SwitchStrategy(HostStrategy strategy)
+    {
+        if (_hosted is not { } current || !IsWindow(current.Child))
+        {
+            WriteProtocol("ERROR=no hosted application is available to switch");
+            return;
+        }
+        if (current.Strategy == strategy)
+        {
+            WriteProtocol(HostProtocol.Strategy(strategy));
+            WriteProtocol(HostProtocol.Ready(current.Child));
+            return;
+        }
+
+        if (!RestoreForeignWindow(restoreRect: false)) return;
+        if (strategy == HostStrategy.Attach)
+            Attach(current with { Strategy = HostStrategy.Attach });
+        else
+            Embed(current with { Strategy = HostStrategy.Embed });
     }
 
     private void ResizeChild()
@@ -292,8 +456,13 @@ internal sealed class PaneHostWindow : IDisposable
 
     private bool PositionAttachedWindow()
     {
-        if (_childWindow == IntPtr.Zero || !IsWindow(_childWindow) ||
-            !GetWindowRect(_hostWindow, out var rect))
+        if (_childWindow == IntPtr.Zero || !IsWindow(_childWindow)) return false;
+        if (!_hostVisible)
+        {
+            ShowWindow(_childWindow, SwHide);
+            return true;
+        }
+        if (!GetWindowRect(_hostWindow, out var rect))
         {
             return false;
         }
@@ -304,23 +473,62 @@ internal sealed class PaneHostWindow : IDisposable
             SwpNoActivate | SwpShowWindow | SwpAsyncWindowPos);
     }
 
-    private void RestoreForeignWindow()
+    private bool RestoreForeignWindow(bool restoreRect = true)
     {
-        if (_hosted is not { } hosted || !IsWindow(hosted.Child)) return;
-        if (hosted.Strategy == HostStrategy.Embed)
+        if (_hosted is not { } hosted) return true;
+        if (!IsWindow(hosted.Child))
         {
-            SetParent(hosted.Child, hosted.OriginalParent);
-            SetWindowLongPtrW(hosted.Child, GwlStyle, hosted.OriginalStyle);
-            SetWindowLongPtrW(hosted.Child, GwlExStyle, hosted.OriginalExStyle);
+            _hosted = null;
+            _childWindow = IntPtr.Zero;
+            return true;
         }
 
-        var restoreFlags = SwpNoZOrder | SwpNoActivate | SwpFrameChanged | SwpShowWindow;
-        if (hosted.Strategy == HostStrategy.Attach) restoreFlags |= SwpAsyncWindowPos;
-        SetWindowPos(hosted.Child, IntPtr.Zero, hosted.OriginalRect.Left, hosted.OriginalRect.Top,
-            hosted.OriginalRect.Right - hosted.OriginalRect.Left, hosted.OriginalRect.Bottom - hosted.OriginalRect.Top,
-            restoreFlags);
+        if (hosted.Strategy == HostStrategy.Embed)
+        {
+            Marshal.SetLastPInvokeError(0);
+            SetParent(hosted.Child, hosted.OriginalParent);
+            var parentError = Marshal.GetLastPInvokeError();
+            if (GetAncestor(hosted.Child, GaParent) != hosted.OriginalParent)
+            {
+                WriteProtocol($"ERROR=could not detach application from PaneHost (win32={parentError})");
+                return false;
+            }
+
+            Marshal.SetLastPInvokeError(0);
+            SetWindowLongPtrW(hosted.Child, GwlStyle, hosted.OriginalStyle);
+            var styleError = Marshal.GetLastPInvokeError();
+            if (GetWindowLongPtrW(hosted.Child, GwlStyle) != hosted.OriginalStyle)
+            {
+                WriteProtocol($"ERROR=could not restore application window style (win32={styleError})");
+                return false;
+            }
+
+            Marshal.SetLastPInvokeError(0);
+            SetWindowLongPtrW(hosted.Child, GwlExStyle, hosted.OriginalExStyle);
+            var exStyleError = Marshal.GetLastPInvokeError();
+            if (GetWindowLongPtrW(hosted.Child, GwlExStyle) != hosted.OriginalExStyle)
+            {
+                WriteProtocol($"ERROR=could not restore application extended style (win32={exStyleError})");
+                return false;
+            }
+        }
+
+        if (restoreRect)
+        {
+            var restoreFlags = SwpNoZOrder | SwpNoActivate | SwpFrameChanged | SwpShowWindow;
+            if (hosted.Strategy == HostStrategy.Attach) restoreFlags |= SwpAsyncWindowPos;
+            if (!SetWindowPos(hosted.Child, IntPtr.Zero, hosted.OriginalRect.Left, hosted.OriginalRect.Top,
+                    hosted.OriginalRect.Right - hosted.OriginalRect.Left,
+                    hosted.OriginalRect.Bottom - hosted.OriginalRect.Top,
+                    restoreFlags))
+            {
+                WriteProtocol($"ERROR=could not restore application rectangle (win32={Marshal.GetLastPInvokeError()})");
+                return false;
+            }
+        }
         _hosted = null;
         _childWindow = IntPtr.Zero;
+        return true;
     }
 
     private IntPtr WindowProcImpl(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam)
@@ -330,10 +538,20 @@ internal sealed class PaneHostWindow : IDisposable
             case WmAppAdopt:
                 try { HostApplication(wParam); } catch (Exception ex) { WriteProtocol("ERROR=" + ex.Message); }
                 return IntPtr.Zero;
+            case WmAppAttach:
+                try { SwitchStrategy(HostStrategy.Attach); } catch (Exception ex) { WriteProtocol("ERROR=" + ex.Message); }
+                return IntPtr.Zero;
+            case WmAppEmbed:
+                try { SwitchStrategy(HostStrategy.Embed); } catch (Exception ex) { WriteProtocol("ERROR=" + ex.Message); }
+                return IntPtr.Zero;
             case WmMove:
             case WmSize:
             case WmWindowPosChanged:
                 ResizeChild();
+                break;
+            case WmShowWindow:
+                _hostVisible = wParam != IntPtr.Zero;
+                if (_hosted?.Strategy == HostStrategy.Attach) PositionAttachedWindow();
                 break;
             case WmActivate:
                 if (_hosted?.Strategy == HostStrategy.Attach && (wParam.ToInt64() & 0xffff) != 0)
@@ -341,15 +559,20 @@ internal sealed class PaneHostWindow : IDisposable
                 break;
             case WmAppClosePane:
                 var child = _childWindow;
-                RestoreForeignWindow();
+                if (!RestoreForeignWindow()) return IntPtr.Zero;
                 if (child != IntPtr.Zero && IsWindow(child)) PostMessageW(child, WmClose, IntPtr.Zero, IntPtr.Zero);
+                WriteProtocol("CLOSED");
                 DestroyWindow(hwnd);
                 return IntPtr.Zero;
             case WmClose:
-                RestoreForeignWindow();
+                if (!RestoreForeignWindow()) return IntPtr.Zero;
+                WriteProtocol("DETACHED");
                 DestroyWindow(hwnd);
                 return IntPtr.Zero;
-            case WmDestroy: PostQuitMessage(0); return IntPtr.Zero;
+            case WmDestroy:
+                RestoreForeignWindow();
+                PostQuitMessage(0);
+                return IntPtr.Zero;
             default: return DefWindowProcW(hwnd, message, wParam, lParam);
         }
 
@@ -363,8 +586,8 @@ internal sealed class PaneHostWindow : IDisposable
         if (_disposed) return;
         _disposed = true;
         _shutdown.Cancel();
-        RestoreForeignWindow();
-        if (_hostWindow != IntPtr.Zero && IsWindow(_hostWindow)) DestroyWindow(_hostWindow);
+        var restored = RestoreForeignWindow();
+        if (restored && _hostWindow != IntPtr.Zero && IsWindow(_hostWindow)) DestroyWindow(_hostWindow);
         _shutdown.Dispose();
     }
 
@@ -437,6 +660,7 @@ internal sealed class PaneHostWindow : IDisposable
     [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr GetWindowLongPtrW(IntPtr hwnd, int index);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern bool PostMessageW(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiHostingBehavior(IntPtr value);
     [DllImport("kernel32.dll")] private static extern IntPtr GetModuleHandleW(string? name);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, char[] buffer, ref int size);

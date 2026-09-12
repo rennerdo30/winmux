@@ -307,6 +307,17 @@ public class TomlSessionTests
     }
 
     [Fact]
+    public void A_foreign_app_without_an_explicit_strategy_uses_automatic_quirks_selection()
+    {
+        var foreign = Minimal.Replace("kind = \"terminal\"", "kind = \"foreign-app\"", StringComparison.Ordinal);
+
+        var pane = SessionMapper.FromSnapshot(SessionFile.Deserialize(foreign).Windows.Single()).Panes.Single();
+
+        Assert.Equal(HostStrategy.Auto, pane.Restore.Strategy);
+        Assert.Contains("strategy        = 'auto'", SessionFile.Serialize(SessionFile.Deserialize(foreign)), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Malformed_toml_is_reported_as_such()
     {
         var ex = Assert.Throws<SessionFormatException>(() => SessionFile.Deserialize("version = = 1"));

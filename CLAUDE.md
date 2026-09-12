@@ -5,9 +5,9 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 2 complete.** `WinMux.exe` runs owned ConPTY/VT terminal panes in a resizable
-split/tab layout and continuously persists every window, launch descriptor, and layered cwd
-snapshot with crash-safe TOML replacement. Phase 3 out-of-process embedding remains early. Phase 0:
+**State: Phase 3 complete.** `WinMux.exe` runs persistent ConPTY/VT terminal panes plus foreign
+applications selected through a shipped quirks database and isolated in one top-level PaneHost
+per pane. Both embed and attach modes, automatic refusal fallback, and live switching ship. Phase 0:
 ADRs [0001](docs/adr/0001-out-of-process-pane-hosts.md),
 [0002](docs/adr/0002-terminal-stack.md), [0003](docs/adr/0003-foreign-app-compatibility.md),
 [0004](docs/adr/0004-cwd-capture.md). Product code: `WinMux.Core` (layout, session model, TOML —
@@ -15,10 +15,11 @@ ADRs [0005](docs/adr/0005-layout-engine.md), [0006](docs/adr/0006-session-file-f
 `WinMux.Pty`, `WinMux.Terminal`, `WinMux.Shell`, `WinMux.PaneHost`, and `WinMux.Cli`; see
 [ADR 0008](docs/adr/0008-pane-host-ipc.md) and
 [ADR 0009](docs/adr/0009-phase-1-terminal-runtime.md), with Phase 2 closed by
-[ADR 0010](docs/adr/0010-phase-2-persistence-runtime.md).
+[ADR 0010](docs/adr/0010-phase-2-persistence-runtime.md), and Phase 3 by
+[ADR 0011](docs/adr/0011-phase-3-foreign-app-runtime.md).
 
-**Not done yet:** runtime quirks selection/attach fallback, mixed-DPI verification, file panes, tab/pane reordering,
-terminal selection and scrollback navigation.
+**Not done yet:** physical mixed-scale multi-monitor verification, file panes, tab/pane reordering,
+foreign-window focus reconciliation, terminal selection and scrollback navigation.
 
 ---
 
@@ -79,7 +80,7 @@ WinMux.Core/             layout tree, session model, config, keymap, persistence
 WinMux.Pty/              ConPTY / pty abstraction, terminal process lifecycle                  [EXISTS]
 WinMux.Terminal/         owned VT-engine contract and adapter                                   [EXISTS]
 WinMux.Platform/         IWindowHost + friends: the platform interface
-WinMux.Platform.Win32/   SetParent, DPI, UIPI, quirks database
+WinMux.Platform.Win32/   Win32 quirks database and selection                              [EXISTS]
 WinMux.PaneHost/         the out-of-process pane host executable (see section 5)                 [EXISTS]
 WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays                          [EXISTS]
 WinMux.Cli/              `winmux` — the command line surface (section 6)                             [EXISTS]
@@ -87,7 +88,7 @@ WinMux.Tests/                                                                   
 docs/adr/                one short file per architectural decision
 ```
 
-All Phase 1 projects above now exist. See
+All projects required through Phase 3 now exist. See
 [ADR 0005](docs/adr/0005-layout-engine.md) for the layout engine's decisions and invariants.
 The `Columns`/`Rows` vocabulary in `SplitDirection` is deliberate — never `Horizontal`/`Vertical`,
 which every multiplexer defines differently.
@@ -274,6 +275,11 @@ to follow the pane rect, like a tiling WM. Less seamless, dramatically more comp
 must be switchable between embed and attach **at runtime**, and the choice is remembered per app
 in the quirks database.
 
+Implemented in Phase 3: PaneHost owns both transitions and emits the effective strategy. Prefix
+`A` / `toggle-foreign-host-strategy` switches the focused pane without launching a second app;
+the shell persists the resulting explicit override. An embed refusal restores first, then attaches
+the same HWND and surfaces the reason.
+
 ### Quirks database
 
 A shipped, user-extendable data file: match on executable/class/title, mapping to strategy,
@@ -284,6 +290,11 @@ entry eventually. Verified-app coverage is a documented feature, not an implemen
 Each entry carries match (exe + class), strategy, window-selection rule, launch delay, limitations
 and a `verified` block (date, OS build, result). Defaults established: **UWP/packaged apps and
 higher-integrity apps → attach**; ordinary Win32, Chromium and the shell → embed.
+
+Implemented in Phase 3 by `WinMux.Platform.Win32`. The measured seed is copied beside
+`WinMux.exe` as `foreign-app-quirks.json`, where it is deliberately user-editable. Matching accepts
+executable image, class, and optional title substring; malformed/future files stop foreign-app
+launch visibly rather than being ignored. The shell resolves rules but never calls a foreign HWND.
 
 ## 6. UI constraints
 
@@ -302,8 +313,9 @@ higher-integrity apps → attach**; ordinary Win32, Chromium and the shell → e
 ## 7. Phase 0 — spikes (do these first)
 
 Throwaway code, in a `spikes/` folder, deleted once the ADRs are written. Nothing else starts
-until all four have an answer. **All four now have answers — the gate is open.** Two artefacts are
-*not* throwaway and ship: `spikes/02-reparent/quirks-seed.json` and `spikes/04-cwd/profiles/`.
+until all four have an answer. **All four now have answers — the gate is open.** The measured
+quirks data now ships from `WinMux.Platform.Win32/ForeignApps/foreign-app-quirks.json`; the spike
+copy remains evidence. The cwd profiles moved into `WinMux.Shell/Cwd/Profiles/` for Phase 2.
 
 1. ~~**ConPTY pane.**~~ **Done, 2026-09-10.** Spawn pwsh, render VT, resize correctly, no input lag.
    Stack confirmed, VT engine adopted rather than written. Rendering itself is *not* covered — the

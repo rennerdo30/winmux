@@ -5,6 +5,11 @@
   <Project Path="WinMux.PaneHost/WinMux.PaneHost.csproj">
     <Platform Project="x64" />
   </Project>
+  <Project Path="WinMux.PaneHost.Tests/WinMux.PaneHost.Tests.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="WinMux.Platform.Win32/WinMux.Platform.Win32.csproj" />
+  <Project Path="WinMux.Platform.Win32.Tests/WinMux.Platform.Win32.Tests.csproj" />
   <Project Path="WinMux.Pty/WinMux.Pty.csproj" />
   <Project Path="WinMux.Pty.Tests/WinMux.Pty.Tests.csproj" />
   <Project Path="WinMux.Shell/WinMux.Shell.csproj">

@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WinMux.Core\WinMux.Core.csproj" />
+    <ProjectReference Include="..\WinMux.Platform.Win32\WinMux.Platform.Win32.csproj" />
     <ProjectReference Include="..\WinMux.Pty\WinMux.Pty.csproj" />
     <ProjectReference Include="..\WinMux.Terminal\WinMux.Terminal.csproj" />
     <ProjectReference Include="..\WinMux.PaneHost\WinMux.PaneHost.csproj"
@@ -32,6 +33,9 @@
     <EmbeddedResource Include="Cwd\Profiles\winmux.ps1" />
     <EmbeddedResource Include="Cwd\Profiles\winmux.cmd" />
     <EmbeddedResource Include="Cwd\Profiles\winmux.sh" />
+    <None Include="..\WinMux.Platform.Win32\ForeignApps\foreign-app-quirks.json"
+          Link="foreign-app-quirks.json"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="CopyPaneHost" AfterTargets="Build">

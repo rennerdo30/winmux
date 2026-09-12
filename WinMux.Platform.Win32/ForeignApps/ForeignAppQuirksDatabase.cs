@@ -22,8 +22,12 @@ public enum ForeignAppDpiAwareness
     PerMonitor,
 }
 
-/// <summary>Executable image and window-class criteria for one compatibility rule.</summary>
-public sealed record ForeignAppQuirkMatch(string? ExecutableImage, string? WindowClass);
+/// <summary>Executable image, window class, and optional title criteria for one compatibility rule.</summary>
+public sealed record ForeignAppQuirkMatch(
+    string? ExecutableImage,
+    string? WindowClass,
+    string? TitleContains = null,
+    string? LaunchExecutable = null);
 
 /// <summary>Configuration used to find the application's real top-level window.</summary>
 public sealed record ForeignWindowSelection(
@@ -162,16 +166,20 @@ public sealed class ForeignAppQuirksDatabase
     /// single criterion; equal-specificity ties retain file order, including the seed's two
     /// measurements of the same guinea-pig window under different DPI awareness modes.
     /// </summary>
-    public ForeignAppQuirkSelection Select(string? executableImage, string? windowClass = null)
+    public ForeignAppQuirkSelection Select(
+        string? executableImage,
+        string? windowClass = null,
+        string? windowTitle = null)
     {
         var image = NormalizeExecutableImage(executableImage);
         var window = NullIfWhiteSpace(windowClass);
+        var title = NullIfWhiteSpace(windowTitle);
         ForeignAppQuirkRule? best = null;
         var bestSpecificity = -1;
 
         foreach (var entry in Entries)
         {
-            var specificity = MatchSpecificity(entry.Match, image, window);
+            var specificity = MatchSpecificity(entry.Match, image, window, title);
             if (specificity > bestSpecificity)
             {
                 best = entry;
@@ -180,7 +188,7 @@ public sealed class ForeignAppQuirksDatabase
         }
 
         return best is null
-            ? new ForeignAppQuirkSelection(CreateDefault(image, window), IsDefault: true)
+            ? new ForeignAppQuirkSelection(CreateDefault(image, window, title), IsDefault: true)
             : new ForeignAppQuirkSelection(best, IsDefault: false);
     }
 
@@ -198,11 +206,13 @@ public sealed class ForeignAppQuirksDatabase
         }
 
         var executable = NullIfWhiteSpace(entry.Match.ExecutableImage);
+        var launchExecutable = NullIfWhiteSpace(entry.Match.LaunchExecutable);
         var windowClass = NullIfWhiteSpace(entry.Match.WindowClass);
-        if (executable is null && windowClass is null)
+        var titleContains = NullIfWhiteSpace(entry.Match.TitleContains);
+        if (executable is null && launchExecutable is null && windowClass is null && titleContains is null)
         {
             throw new ForeignAppQuirksFormatException(
-                $"{location}.match must specify exe, windowClass, or both.");
+                $"{location}.match must specify exe, launchExe, windowClass, titleContains, or a combination.");
         }
 
         var strategy = entry.Strategy switch
@@ -275,7 +285,7 @@ public sealed class ForeignAppQuirksDatabase
             Required(entry.Verified.DetachExact, $"{location}.verified.detachExact"));
 
         return new ForeignAppQuirkRule(
-            new ForeignAppQuirkMatch(executable, windowClass),
+            new ForeignAppQuirkMatch(executable, windowClass, titleContains, launchExecutable),
             strategy,
             new ForeignWindowSelection(selectionMode, processName, selectionClass),
             launchDelay,
@@ -288,18 +298,21 @@ public sealed class ForeignAppQuirksDatabase
     private static int MatchSpecificity(
         ForeignAppQuirkMatch match,
         string? executableImage,
-        string? windowClass)
+        string? windowClass,
+        string? windowTitle)
     {
         var specificity = 0;
-        if (executableImage is not null && match.ExecutableImage is not null)
+        if (executableImage is not null &&
+            (match.ExecutableImage is not null || match.LaunchExecutable is not null))
         {
-            if (!string.Equals(executableImage, match.ExecutableImage, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(executableImage, match.ExecutableImage, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(executableImage, match.LaunchExecutable, StringComparison.OrdinalIgnoreCase))
             {
                 return -1;
             }
             specificity += 2;
         }
-        else if (executableImage is null && windowClass is null)
+        else if (executableImage is null && windowClass is null && windowTitle is null)
         {
             return -1;
         }
@@ -313,10 +326,22 @@ public sealed class ForeignAppQuirksDatabase
             specificity++;
         }
 
+        if (windowTitle is not null && match.TitleContains is not null)
+        {
+            if (!windowTitle.Contains(match.TitleContains, StringComparison.OrdinalIgnoreCase))
+            {
+                return -1;
+            }
+            specificity++;
+        }
+
         return specificity == 0 ? -1 : specificity;
     }
 
-    private static ForeignAppQuirkRule CreateDefault(string? executableImage, string? windowClass)
+    private static ForeignAppQuirkRule CreateDefault(
+        string? executableImage,
+        string? windowClass,
+        string? windowTitle)
     {
         var selection = windowClass is not null
             ? new ForeignWindowSelection(ForeignWindowSelectionMode.ClassName, null, windowClass)
@@ -325,7 +350,7 @@ public sealed class ForeignAppQuirksDatabase
                 : new ForeignWindowSelection(ForeignWindowSelectionMode.Pid, null, null);
 
         return new ForeignAppQuirkRule(
-            new ForeignAppQuirkMatch(executableImage, windowClass),
+            new ForeignAppQuirkMatch(executableImage, windowClass, windowTitle, executableImage),
             HostStrategy.Embed,
             selection,
             DefaultLaunchDelayMilliseconds,
@@ -416,6 +441,12 @@ public sealed class ForeignAppQuirksDatabase
 
         [JsonPropertyName("windowClass")]
         public string? WindowClass { get; init; }
+
+        [JsonPropertyName("titleContains")]
+        public string? TitleContains { get; init; }
+
+        [JsonPropertyName("launchExe")]
+        public string? LaunchExecutable { get; init; }
     }
 
     private sealed class WindowSelectionDocument

@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\WinMux.Platform.Win32\WinMux.Platform.Win32.csproj" />
     <ProjectReference Include="..\WinMux.Shell\WinMux.Shell.csproj" />
   </ItemGroup>
 

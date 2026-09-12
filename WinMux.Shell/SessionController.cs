@@ -52,22 +52,23 @@ internal sealed class SessionController : IDisposable
         return _autosaver.FlushAsync().GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    /// Persist the last window before app exit. Closing one of several windows removes only that
-    /// window from the next restore and leaves the others running.
-    /// </summary>
-    public SessionSaveResult WindowClosing(MainWindow window)
+    /// <summary>Persist current intent before any foreign application is detached.</summary>
+    public SessionSaveResult PrepareWindowClosing(MainWindow window)
     {
         if (!_windows.Contains(window)) return new SessionSaveResult(true);
-        if (_windows.Count == 1)
-        {
-            return SaveNow();
-        }
+        return SaveNow();
+    }
 
+    /// <summary>
+    /// Remove a successfully closed window from a multi-window session. The last window remains in
+    /// the snapshot so the next launch restores the session the user just closed.
+    /// </summary>
+    public void CompleteWindowClosing(MainWindow window)
+    {
+        if (!_windows.Contains(window) || _windows.Count == 1) return;
         _windows.Remove(window);
         if (ReferenceEquals(_activeWindow, window)) _activeWindow = _windows.LastOrDefault();
         RequestSave();
-        return new SessionSaveResult(true);
     }
 
     public void Dispose()

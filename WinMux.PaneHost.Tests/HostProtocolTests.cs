@@ -19,6 +19,12 @@ public sealed class HostProtocolTests
         Assert.Equal("READY=1234", HostProtocol.Ready(new IntPtr(1234)));
     }
 
+    [Fact]
+    public void Notice_is_machine_detectable_without_being_a_terminal_error()
+    {
+        Assert.Equal("NOTICE=fell back safely", HostProtocol.Notice("fell back safely"));
+    }
+
     [Theory]
     [InlineData(5, "elevated or higher-integrity", "win32=5", "fallback=attach")]
     [InlineData(87, "refused embedding", "win32=87", "fallback=attach")]
@@ -39,7 +45,9 @@ public sealed class HostProtocolTests
     [Fact]
     public void Unknown_embed_failure_keeps_the_win32_code()
     {
-        Assert.Equal("ERROR=SetParent failed with Win32 error 1400", HostProtocol.EmbedFailure(1400));
+        Assert.Equal(
+            "ERROR=SetParent failed with Win32 error 1400 (fallback=attach)",
+            HostProtocol.EmbedFailure(1400));
     }
 
     [Fact]

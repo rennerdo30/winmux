@@ -61,5 +61,6 @@ public sealed record KeymapConfiguration
         new("3", ShellActionNames.NewTerminalPowerShell, scope),
         new("4", ShellActionNames.NewTerminalWsl, scope),
         new("I", ShellActionNames.ConfigureCwdReporting, scope),
+        new("A", ShellActionNames.ToggleForeignHostStrategy, scope),
     ];
 }

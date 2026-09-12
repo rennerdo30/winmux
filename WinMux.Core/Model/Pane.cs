@@ -10,6 +10,12 @@ public enum PaneKind
 /// <summary>How a foreign app is hosted. Measured per app in spike 2; see ADR 0003.</summary>
 public enum HostStrategy
 {
+    /// <summary>
+    /// Select a measured per-application strategy from the quirks database, falling back to
+    /// embed for applications that have not been measured.
+    /// </summary>
+    Auto,
+
     /// <summary>Reparent the app's window into the pane host. True containment.</summary>
     Embed,
 
@@ -49,7 +55,7 @@ public sealed record RestoreDescriptor
     /// <summary>The single most important field (CLAUDE.md section 4), with its provenance.</summary>
     public WorkingDirectory Cwd { get; init; } = WorkingDirectory.None;
 
-    /// <summary>Embed or attach, for foreign-app panes. Remembered per app in the quirks database.</summary>
+    /// <summary>Automatic, embed, or attach hosting for foreign-app panes.</summary>
     public HostStrategy Strategy { get; init; } = HostStrategy.Embed;
 
     /// <summary>

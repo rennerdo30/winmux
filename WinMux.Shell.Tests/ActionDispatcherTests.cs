@@ -42,7 +42,7 @@ public class ActionDispatcherTests
     [Fact]
     public void Every_registered_action_has_a_unique_name()
     {
-        Assert.Equal(22, ShellActionNames.All.Count);
         Assert.Equal(ShellActionNames.All.Count, ShellActionNames.All.Distinct().Count());
+        Assert.Contains(ShellActionNames.ToggleForeignHostStrategy, ShellActionNames.All);
     }
 }

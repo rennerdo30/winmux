@@ -30,6 +30,7 @@ public static class ShellActionNames
     public const string NewTerminalPowerShell = "new-terminal-powershell";
     public const string NewTerminalWsl = "new-terminal-wsl";
     public const string ConfigureCwdReporting = "configure-cwd-reporting";
+    public const string ToggleForeignHostStrategy = "toggle-foreign-host-strategy";
 
     public static IReadOnlyList<string> All { get; } =
     [
@@ -55,5 +56,6 @@ public static class ShellActionNames
         NewTerminalPowerShell,
         NewTerminalWsl,
         ConfigureCwdReporting,
+        ToggleForeignHostStrategy,
     ];
 }

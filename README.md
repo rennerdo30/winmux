@@ -4,10 +4,10 @@ A window multiplexer for Windows. Think **tmux, but outside the terminal** — s
 tabs and saved sessions, where every pane is a real, independent OS process, and a pane can
 be a shell, a file browser, or *any* Windows application.
 
-> Status: **Phase 2 complete — persistent terminal multiplexer.** `WinMux.exe` continuously saves
-> every window, split/tab, terminal launch descriptor, and timestamped cwd, then recreates that
-> intent after a restart or crash. Foreign-app embedding is still an early Phase 3 implementation;
-> file panes and broad compatibility are not done. See `HANDOFF.md` for the measured state.
+> Status: **Phase 3 complete — persistent terminal and foreign-app multiplexer.** `WinMux.exe`
+> continuously saves the layout and restore intent, while isolated PaneHost processes embed or
+> attach foreign applications using measured compatibility rules. File panes and broad app
+> compatibility are not done. See `HANDOFF.md` for the measured state.
 
 ---
 
@@ -43,31 +43,38 @@ shells, and Workspaces-grade persistence — in a single host window with one ke
 1. **Terminal** — PowerShell, cmd, WSL, pwsh, ssh. Backed by ConPTY, one child process each.
 2. **File browser** *(planned)* — built in, native. Dual-pane friendly, with terminal handoff at the
    selected directory.
-3. **Foreign app** *(early implementation)* — ordinary Win32 applications can be launched and
-   embedded through an isolated pane-host process.
+3. **Foreign app** — applications are embedded or attached through one isolated pane-host process
+   per pane. The session can request `auto`, `embed`, or `attach`.
 
 ## Can it really host *any* Windows app?
 
-No—not literally, and the current product path implements **embed only**. Ordinary Win32 and
-Chromium windows worked in the Phase 0 measurements; elevated and packaged/UWP windows did not.
-Two strategies are part of the design:
+No—not literally. Ordinary Win32 and Chromium windows worked in the Phase 0 measurements;
+packaged/UWP windows require attach, while higher-integrity windows remain constrained by UIPI.
+Two strategies are implemented:
 
-- **Embed** (default): reparent the app's top-level window into the pane. True containment —
+- **Embed**: reparent the app's top-level window into the pane. True containment —
   it moves, clips and resizes with the layout.
-- **Attach** *(future compatibility fallback)*: leave the window top-level and drive its position/size to track the pane,
-  the way a tiling WM does. Less seamless, far more compatible. It is a *compatibility* fallback,
+- **Attach**: leave the window top-level and drive its position/size to track the pane, the way a
+  tiling WM does. Less seamless, far more compatible. It is a *compatibility* fallback,
   not a stability one — measurement showed a wedged app stalls the host equally in both modes
   unless window calls are kept off the UI thread ([ADR 0001](docs/adr/0001-out-of-process-pane-hosts.md)).
 
+`strategy = 'auto'` is the session-file default for foreign apps. It consults the shipped,
+user-editable `foreign-app-quirks.json`; unknown apps use an explicitly unverified embed default.
+If embedding is refused, PaneHost keeps the same application alive, explains why, and switches it
+to attach. `Ctrl+B`, then `A`, switches the focused foreign pane live and persists the result.
+
 Known-hard cases, handled by falling back to *attach* or by refusing cleanly:
 
-- **Elevated apps** — UIPI forbids a non-elevated host from reparenting them.
+- **Elevated/higher-integrity apps** — UIPI can forbid both reparenting and positioning; failures
+  are reported, and WinMux is never elevated as a workaround.
 - **UWP / packaged WinUI apps** — they live under `ApplicationFrameHost`; reparenting is unreliable.
 - **Apps with splash screens or multiple top-level windows** — need a per-app rule to pick the real one.
-- **Mixed DPI** — hosting a differently-DPI-aware app requires explicit mixed-mode hosting.
+- **Mixed DPI** — the host enables mixed-mode DPI hosting, but different-scale monitors have not
+  yet been available for the required physical multi-monitor verification.
 
-The measured quirks seed exists, but it is not wired into runtime selection yet. Compatibility is
-a product surface still under construction, not a solved problem.
+Compatibility remains a measured product surface, not a claim that every application works.
+See [ADR 0011](docs/adr/0011-phase-3-foreign-app-runtime.md) for exactly what was exercised.
 
 ## Cross-platform
 
@@ -98,7 +105,8 @@ the target; portability is a design discipline, not a promise.
 - **Phase 1 — terminal multiplexer.** **Complete.** Split tree, tabs, ConPTY panes, keymap, palette, and CLI actions.
 - **Phase 2 — persistence.** **Complete.** Atomic/debounced multi-window TOML, migration and
   validation, layered OSC/PEB cwd capture, profile onboarding, and visible crash/restore demo.
-- **Phase 3 — foreign apps.** Embed and attach modes, out-of-process pane hosts, quirks database.
+- **Phase 3 — foreign apps.** **Complete.** Embed/attach/live switching, isolated pane hosts,
+  measured quirks selection, clean fallback, and a visible desktop acceptance script.
 - **Phase 4 — file browser pane** and the public pane-provider interface.
 - **Phase 5 — portability.** Extract the platform layer, prove it on X11.
 
@@ -109,14 +117,16 @@ dotnet build WinMux.slnx -c Release
 .\WinMux.Shell\bin\x64\Release\net10.0-windows\WinMux.exe [session.toml]
 ```
 
-To see Phase 2 rather than only run unit tests, use the two-window forced-crash walkthrough:
+To see the product phases rather than only run unit tests, use the visible walkthroughs:
 
 ```powershell
 .\scripts\phase2-demo.ps1 -Configuration Release
+.\scripts\phase3-demo.ps1 -Configuration Release
 ```
 
 The default keymap is tmux-style: `Ctrl+B`, then `%`/`"` to split, arrows to move focus,
-`Shift+arrows` to resize, `c` for a tab, `n`/`p` to cycle, `x` to close, `w` to save, and `:` for
+`Shift+arrows` to resize, `c` for a tab, `n`/`p` to cycle, `x` to close, `w` to save, `A` to
+toggle a foreign pane between embed and attach, and `:` for
 the command palette. `1`–`4` open cmd, Windows PowerShell, PowerShell 7, or WSL profiles; `i` opens
 cwd-reporting setup. Pass
 `--no-prefix`, or `--keymap path.json`, to replace the default map. `winmux help` lists the CLI

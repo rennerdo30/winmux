@@ -36,6 +36,7 @@ internal static class TomlNames
 
     private static readonly (HostStrategy Value, string Text)[] Strategies =
     [
+        (HostStrategy.Auto, "auto"),
         (HostStrategy.Embed, "embed"),
         (HostStrategy.Attach, "attach"),
     ];
