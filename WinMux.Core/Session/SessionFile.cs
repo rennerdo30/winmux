@@ -19,7 +19,8 @@ public static class SessionFile
     public const string DefaultFileName = "session.toml";
 
     /// <summary>Serialize to TOML text.</summary>
-    public static string Serialize(SessionSnapshot snapshot) => TomlSessionWriter.Write(snapshot);
+    public static string Serialize(SessionSnapshot snapshot) =>
+        TomlSessionWriter.Write(SessionMapper.Validate(snapshot));
 
     /// <summary>Parse TOML text. Throws <see cref="SessionFormatException"/> with a specific reason.</summary>
     public static SessionSnapshot Deserialize(string toml) => TomlSessionReader.Read(toml);

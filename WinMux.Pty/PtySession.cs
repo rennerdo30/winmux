@@ -1,5 +1,6 @@
 using PortaPtyOptions = Porta.Pty.PtyOptions;
 using PortaPtyProvider = Porta.Pty.PtyProvider;
+using System.Text;
 
 namespace WinMux.Pty;
 
@@ -14,16 +15,23 @@ public static class PtySession
         ArgumentNullException.ThrowIfNull(options);
         Validate(options);
 
+        var quoteWindowsArguments = OperatingSystem.IsWindows() && !options.VerbatimCommandLine;
         var providerOptions = new PortaPtyOptions
         {
             Name = options.Name,
             App = options.Application,
-            CommandLine = options.Arguments.ToArray(),
+            // Porta.Pty 2.2.2's generic quoting uses POSIX single quotes. CreateProcess does not
+            // treat those as delimiters, so restored arguments containing spaces arrive with a
+            // literal leading quote. Own the Windows quoting at our seam and ask the provider to
+            // pass the resulting command-line tokens verbatim.
+            CommandLine = quoteWindowsArguments
+                ? options.Arguments.Select(QuoteWindowsArgument).ToArray()
+                : options.Arguments.ToArray(),
             Cwd = options.WorkingDirectory,
             Environment = new Dictionary<string, string>(options.Environment),
             Cols = options.Columns,
             Rows = options.Rows,
-            VerbatimCommandLine = options.VerbatimCommandLine,
+            VerbatimCommandLine = options.VerbatimCommandLine || quoteWindowsArguments,
             UseAsyncIo = true,
         };
 
@@ -46,6 +54,38 @@ public static class PtySession
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(columns);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(rows);
+    }
+
+    internal static string QuoteWindowsArgument(string argument)
+    {
+        if (argument.Length > 0 && !argument.Any(character =>
+                char.IsWhiteSpace(character) || character == '"'))
+        {
+            return argument;
+        }
+
+        var quoted = new StringBuilder(argument.Length + 2).Append('"');
+        var backslashes = 0;
+        foreach (var character in argument)
+        {
+            if (character == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (character == '"')
+            {
+                quoted.Append('\\', backslashes * 2 + 1).Append('"');
+                backslashes = 0;
+                continue;
+            }
+
+            quoted.Append('\\', backslashes).Append(character);
+            backslashes = 0;
+        }
+
+        return quoted.Append('\\', backslashes * 2).Append('"').ToString();
     }
 
     private static void Validate(PtySessionOptions options)

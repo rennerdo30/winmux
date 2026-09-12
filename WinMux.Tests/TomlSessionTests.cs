@@ -451,6 +451,37 @@ public class TomlSessionTests
     }
 
     [Fact]
+    public void A_noncanonical_container_is_rejected_during_file_load()
+    {
+        const string oneChildSplit = """
+            version = 1
+            [[windows]]
+            root = "split"
+            focused = "11111111-1111-1111-1111-111111111111"
+
+            [[windows.nodes]]
+            id = "split"
+            kind = "split"
+            direction = "columns"
+            children = ["leaf"]
+            ratios = [1.0]
+
+            [[windows.nodes]]
+            id = "leaf"
+            kind = "leaf"
+            pane = "11111111-1111-1111-1111-111111111111"
+
+            [[windows.panes]]
+            id = "11111111-1111-1111-1111-111111111111"
+            kind = "terminal"
+            """;
+
+        var error = Assert.Throws<SessionFormatException>(() => SessionFile.Deserialize(oneChildSplit));
+
+        Assert.Contains("at least 2 children", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void An_unreachable_node_is_refused_rather_than_silently_dropping_a_pane()
     {
         // Written out in full rather than appended to Minimal: re-opening [[windows.nodes]] after

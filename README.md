@@ -4,10 +4,10 @@ A window multiplexer for Windows. Think **tmux, but outside the terminal** — s
 tabs and saved sessions, where every pane is a real, independent OS process, and a pane can
 be a shell, a file browser, or *any* Windows application.
 
-> Status: **Phase 1 complete — terminal multiplexer.** `WinMux.exe` runs ConPTY terminals in a
-> split/tab layout with a configurable keymap, command palette, and CLI actions. Persistence and
-> foreign-app embedding have working early implementations; file panes and broad compatibility do
-> not. See `HANDOFF.md` for the measured state and remaining work.
+> Status: **Phase 2 complete — persistent terminal multiplexer.** `WinMux.exe` continuously saves
+> every window, split/tab, terminal launch descriptor, and timestamped cwd, then recreates that
+> intent after a restart or crash. Foreign-app embedding is still an early Phase 3 implementation;
+> file panes and broad compatibility are not done. See `HANDOFF.md` for the measured state.
 
 ---
 
@@ -96,7 +96,8 @@ the target; portability is a design discipline, not a promise.
 
 - **Phase 0 — spikes.** **Complete.** Four measured spikes settled the architecture.
 - **Phase 1 — terminal multiplexer.** **Complete.** Split tree, tabs, ConPTY panes, keymap, palette, and CLI actions.
-- **Phase 2 — persistence.** In progress: TOML save/restore works; live cwd capture/profile installation remains.
+- **Phase 2 — persistence.** **Complete.** Atomic/debounced multi-window TOML, migration and
+  validation, layered OSC/PEB cwd capture, profile onboarding, and visible crash/restore demo.
 - **Phase 3 — foreign apps.** Embed and attach modes, out-of-process pane hosts, quirks database.
 - **Phase 4 — file browser pane** and the public pane-provider interface.
 - **Phase 5 — portability.** Extract the platform layer, prove it on X11.
@@ -108,9 +109,16 @@ dotnet build WinMux.slnx -c Release
 .\WinMux.Shell\bin\x64\Release\net10.0-windows\WinMux.exe [session.toml]
 ```
 
+To see Phase 2 rather than only run unit tests, use the two-window forced-crash walkthrough:
+
+```powershell
+.\scripts\phase2-demo.ps1 -Configuration Release
+```
+
 The default keymap is tmux-style: `Ctrl+B`, then `%`/`"` to split, arrows to move focus,
 `Shift+arrows` to resize, `c` for a tab, `n`/`p` to cycle, `x` to close, `w` to save, and `:` for
-the command palette. `1`–`4` open cmd, Windows PowerShell, PowerShell 7, or WSL profiles. Pass
+the command palette. `1`–`4` open cmd, Windows PowerShell, PowerShell 7, or WSL profiles; `i` opens
+cwd-reporting setup. Pass
 `--no-prefix`, or `--keymap path.json`, to replace the default map. `winmux help` lists the CLI
 action surface.
 

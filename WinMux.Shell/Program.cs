@@ -1,6 +1,8 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
+using Avalonia.Threading;
 using WinMux.Core.Layout;
 using WinMux.Core.Model;
 using WinMux.Core.Session;
@@ -9,16 +11,47 @@ namespace WinMux.Shell;
 
 internal sealed class App : Application
 {
-    public LayoutTree Tree { get; init; } = null!;
+    public SessionSnapshot Snapshot { get; init; } = null!;
     public string SessionPath { get; init; } = SessionFile.DefaultFileName;
     public WinMux.Shell.Keymap.KeymapConfiguration Keymap { get; init; } = WinMux.Shell.Keymap.KeymapConfiguration.TmuxDefaults();
+    public bool Restored { get; init; }
 
     public override void Initialize() => Styles.Add(new FluentTheme());
 
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.MainWindow = new MainWindow(Tree, SessionPath, Keymap);
+        {
+            var session = new SessionController(SessionPath);
+            var windows = Snapshot.Windows
+                .Select(saved => new MainWindow(SessionMapper.FromSnapshot(saved), session, Keymap, saved.Title))
+                .ToArray();
+            desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
+            desktop.MainWindow = windows[0];
+            foreach (var window in windows.Skip(1)) window.Show();
+            session.StartCommandServer();
+            windows[0].Opened += (_, _) => Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    if (Restored)
+                    {
+                        await new NoticeWindow(
+                            "WinMux session restored",
+                            "The saved windows, panes, programs, arguments, environment overrides, and working directories were restored. " +
+                            "Processes were started again; running jobs and in-memory TUI state cannot be resumed.")
+                            .ShowDialog(windows[0]);
+                    }
+
+                    await windows[0].ShowCwdIntegrationAsync(onlyIfUnseen: true);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    windows[0].ShowMessage("startup notice could not be shown: " + ex.Message);
+                }
+            });
+            desktop.Exit += (_, _) => session.Dispose();
+        }
         base.OnFrameworkInitializationCompleted();
     }
 }
@@ -40,20 +73,28 @@ internal static class Program
         }
         string sessionPath = arguments.SessionPath ?? SessionFile.DefaultFileName;
 
-        LayoutTree tree;
+        SessionSnapshot snapshot;
+        bool restored;
         try
         {
-            tree = File.Exists(sessionPath)
-                ? SessionMapper.FromSnapshot(SessionFile.Load(sessionPath).Windows[0])
-                : DefaultSession();
+            snapshot = SessionFile.Load(sessionPath);
+            restored = true;
         }
-        catch (Exception ex) when (ex is SessionFormatException or IOException or UnauthorizedAccessException or FormatException)
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // Missing is the only safe reason to create a new session. File.Exists also returns
+            // false for access failures, which could let a later autosave overwrite real data.
+            snapshot = DefaultSession();
+            restored = false;
+        }
+        catch (Exception ex) when (ex is SessionFormatException or IOException or UnauthorizedAccessException or FormatException or ArgumentException)
         {
             // A session file is user data. Refusing loudly beats starting empty over a layout we
             // could not understand (CLAUDE.md sections 4 and 8).
             Console.Error.WriteLine();
             Console.Error.WriteLine("  " + ex.Message);
             Console.Error.WriteLine();
+            ShowStartupError("WinMux could not restore the session", ex.Message);
             return 1;
         }
 
@@ -70,22 +111,35 @@ internal static class Program
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or ArgumentException)
         {
             Console.Error.WriteLine($"Could not load keymap: {ex.Message}");
+            ShowStartupError("WinMux could not load the keymap", ex.Message);
             return 2;
         }
 
-        return BuildAvaloniaApp(tree, sessionPath, keymap).StartWithClassicDesktopLifetime(argv);
+        return BuildAvaloniaApp(snapshot, sessionPath, keymap, restored).StartWithClassicDesktopLifetime(argv);
     }
 
-    private static AppBuilder BuildAvaloniaApp(LayoutTree tree, string sessionPath, Keymap.KeymapConfiguration keymap) =>
-        AppBuilder.Configure(() => new App { Tree = tree, SessionPath = sessionPath, Keymap = keymap })
+    private static AppBuilder BuildAvaloniaApp(
+        SessionSnapshot snapshot,
+        string sessionPath,
+        Keymap.KeymapConfiguration keymap,
+        bool restored) =>
+        AppBuilder.Configure(() => new App { Snapshot = snapshot, SessionPath = sessionPath, Keymap = keymap, Restored = restored })
             .UsePlatformDetect()
             .LogToTrace();
+
+    private static void ShowStartupError(string title, string message)
+    {
+        if (OperatingSystem.IsWindows() && Environment.UserInteractive)
+        {
+            _ = Win32Interop.MessageBoxW(IntPtr.Zero, message, title, Win32Interop.MB_OK | Win32Interop.MB_ICONERROR);
+        }
+    }
 
     /// <summary>
     /// With no session file: a shell and File Explorer side by side on the current directory —
     /// the smallest layout that exercises both a terminal pane and a hosted foreign application.
     /// </summary>
-    private static LayoutTree DefaultSession()
+    private static SessionSnapshot DefaultSession()
     {
         var here = Environment.CurrentDirectory;
         var cwd = new WorkingDirectory(here, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow);
@@ -112,7 +166,11 @@ internal static class Program
         var tree = new LayoutTree(shell);
         tree.Split(shell.Id, SplitDirection.Columns, explorer, ratio: 0.5);
         tree.Focus(shell.Id);
-        return tree;
+        return new SessionSnapshot
+        {
+            SavedAt = DateTimeOffset.UtcNow,
+            Windows = [SessionMapper.ToSnapshot(tree, "WinMux")],
+        };
     }
 
     private sealed record ShellArguments(string? SessionPath, string? KeymapPath, bool NoPrefix)

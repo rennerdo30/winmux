@@ -42,16 +42,22 @@ public sealed record WorkingDirectory(string Path, CwdSource Source, DateTimeOff
     public bool IsKnown => Source != CwdSource.Unknown && !string.IsNullOrWhiteSpace(Path);
 
     /// <summary>
-    /// Pick the better of two captures: the more trustworthy source wins, and a fresher capture
-    /// breaks a tie between equal sources.
+    /// Pick the better of two captures. A fresh deepest-child PEB reading supersedes an older OSC
+    /// report because it is the measured nested-shell case; otherwise OSC remains authoritative
+    /// over a root PEB (which is permanently stale in PowerShell). Capture time breaks ties.
     /// </summary>
     public static WorkingDirectory Better(WorkingDirectory a, WorkingDirectory b)
     {
         if (!a.IsKnown) return b;
         if (!b.IsKnown) return a;
+        if (IsShellVersusDeepest(a, b)) return a.CapturedAt >= b.CapturedAt ? a : b;
         if (a.Source != b.Source) return a.Source > b.Source ? a : b;
         return a.CapturedAt >= b.CapturedAt ? a : b;
     }
+
+    private static bool IsShellVersusDeepest(WorkingDirectory a, WorkingDirectory b) =>
+        (a.Source == CwdSource.ShellReported && b.Source == CwdSource.ProcessDeepest) ||
+        (a.Source == CwdSource.ProcessDeepest && b.Source == CwdSource.ShellReported);
 
     public override string ToString() =>
         IsKnown ? $"{Path} ({Source} @ {CapturedAt:u})" : "(unknown)";

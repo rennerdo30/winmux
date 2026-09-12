@@ -29,6 +29,7 @@ public static class ShellActionNames
     public const string NewTerminalWindowsPowerShell = "new-terminal-windows-powershell";
     public const string NewTerminalPowerShell = "new-terminal-powershell";
     public const string NewTerminalWsl = "new-terminal-wsl";
+    public const string ConfigureCwdReporting = "configure-cwd-reporting";
 
     public static IReadOnlyList<string> All { get; } =
     [
@@ -53,5 +54,6 @@ public static class ShellActionNames
         NewTerminalWindowsPowerShell,
         NewTerminalPowerShell,
         NewTerminalWsl,
+        ConfigureCwdReporting,
     ];
 }

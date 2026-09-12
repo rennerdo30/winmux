@@ -11,6 +11,22 @@ namespace WinMux.Tests;
 /// </summary>
 public class SessionRoundTripTests
 {
+    [Fact]
+    public void Serialization_refuses_an_unreachable_focused_pane()
+    {
+        var tree = new LayoutTree(Pane.Terminal("only"));
+        var invalid = new SessionSnapshot
+        {
+            SavedAt = DateTimeOffset.UtcNow,
+            Windows = [SessionMapper.ToSnapshot(tree, "invalid") with { FocusedPane = Guid.NewGuid() }],
+        };
+
+        var error = Assert.Throws<SessionFormatException>(() => SessionFile.Serialize(invalid));
+
+        Assert.Contains("focused", error.Message, StringComparison.Ordinal);
+        Assert.Contains("not reachable", error.Message, StringComparison.Ordinal);
+    }
+
     private static Pane P(string t) => Pane.Terminal(t);
 
     private static LayoutTree BuildBusyTree(out Pane focused)

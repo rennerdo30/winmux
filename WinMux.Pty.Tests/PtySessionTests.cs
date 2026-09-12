@@ -40,6 +40,17 @@ public sealed class PtySessionTests
         }));
     }
 
+    [Theory]
+    [InlineData("plain", "plain")]
+    [InlineData("two words", "\"two words\"")]
+    [InlineData("", "\"\"")]
+    [InlineData("ends with slash\\", "\"ends with slash\\\\\"")]
+    [InlineData("say \"hello\"", "\"say \\\"hello\\\"\"")]
+    public void Windows_argument_quoting_matches_CreateProcess_rules(string argument, string expected)
+    {
+        Assert.Equal(expected, PtySession.QuoteWindowsArgument(argument));
+    }
+
     private static async Task<string> ReadUntilAsync(Stream stream, string marker, TimeSpan timeout)
     {
         using var cancellation = new CancellationTokenSource(timeout);

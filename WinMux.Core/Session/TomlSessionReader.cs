@@ -49,13 +49,13 @@ public static class TomlSessionReader
         if (windows.Count == 0)
             throw new SessionFormatException("Session file contains no [[windows]].");
 
-        return new SessionSnapshot
+        return SessionMapper.Validate(new SessionSnapshot
         {
             // Reading is also migration: callers and the next save always see the current model.
             Version = SessionSnapshot.CurrentVersion,
             SavedAt = savedAt,
             Windows = windows.Select((w, i) => ReadWindow(w, $"windows[{i}]", sourceVersion)).ToArray(),
-        };
+        });
     }
 
     private static WindowSnapshot ReadWindow(TomlTable window, string where, int sourceVersion)

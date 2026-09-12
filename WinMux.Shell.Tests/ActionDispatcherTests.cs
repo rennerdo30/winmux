@@ -40,9 +40,9 @@ public class ActionDispatcherTests
     }
 
     [Fact]
-    public void Every_phase_one_action_has_a_unique_name()
+    public void Every_registered_action_has_a_unique_name()
     {
-        Assert.Equal(21, ShellActionNames.All.Count);
+        Assert.Equal(22, ShellActionNames.All.Count);
         Assert.Equal(ShellActionNames.All.Count, ShellActionNames.All.Distinct().Count());
     }
 }

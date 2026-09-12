@@ -123,11 +123,20 @@ public static class ProcessWorkingDirectoryResolver
         // Toolhelp does not expose process creation time. Match the measured spike's deterministic
         // tie-break: choose the highest PID among equally deep descendants.
         return descendants
+            // Console infrastructure is not pane intent. It commonly has the same depth as the
+            // actual workload and reports C:\Windows, so a PID tie-break can otherwise select a
+            // confidently wrong cwd.
+            .Where(item => !IsConsoleInfrastructure(item.Process.ExecutableName))
             .OrderByDescending(item => item.Depth)
             .ThenByDescending(item => item.Process.ProcessId)
             .Select(item => (ProcessEntry?)item.Process)
             .FirstOrDefault();
     }
+
+    private static bool IsConsoleInfrastructure(string executableName) =>
+        executableName.Equals("conhost.exe", StringComparison.OrdinalIgnoreCase) ||
+        executableName.Equals("OpenConsole.exe", StringComparison.OrdinalIgnoreCase) ||
+        executableName.Equals("WindowsTerminal.exe", StringComparison.OrdinalIgnoreCase);
 
     private static string Describe(ProcessEntry process) =>
         $"{process.ExecutableName} ({process.ProcessId})";

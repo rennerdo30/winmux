@@ -28,6 +28,12 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Cwd\Profiles\winmux.ps1" />
+    <EmbeddedResource Include="Cwd\Profiles\winmux.cmd" />
+    <EmbeddedResource Include="Cwd\Profiles\winmux.sh" />
+  </ItemGroup>
+
   <Target Name="CopyPaneHost" AfterTargets="Build">
     <ItemGroup>
       <PaneHostOutput Include="..\WinMux.PaneHost\bin\$(Configuration)\net10.0-windows\WinMux.PaneHost.*" />

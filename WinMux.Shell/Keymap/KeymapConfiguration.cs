@@ -60,5 +60,6 @@ public sealed record KeymapConfiguration
         new("2", ShellActionNames.NewTerminalWindowsPowerShell, scope),
         new("3", ShellActionNames.NewTerminalPowerShell, scope),
         new("4", ShellActionNames.NewTerminalWsl, scope),
+        new("I", ShellActionNames.ConfigureCwdReporting, scope),
     ];
 }

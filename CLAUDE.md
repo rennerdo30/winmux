@@ -5,19 +5,19 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 1 complete.** `WinMux.exe` runs owned ConPTY/VT terminal panes in a resizable
-split/tab layout, with a configurable keymap, top-level command palette, and CLI action channel.
-The early Phase 2 persistence and Phase 3 out-of-process embedding paths also run. Phase 0:
+**State: Phase 2 complete.** `WinMux.exe` runs owned ConPTY/VT terminal panes in a resizable
+split/tab layout and continuously persists every window, launch descriptor, and layered cwd
+snapshot with crash-safe TOML replacement. Phase 3 out-of-process embedding remains early. Phase 0:
 ADRs [0001](docs/adr/0001-out-of-process-pane-hosts.md),
 [0002](docs/adr/0002-terminal-stack.md), [0003](docs/adr/0003-foreign-app-compatibility.md),
 [0004](docs/adr/0004-cwd-capture.md). Product code: `WinMux.Core` (layout, session model, TOML —
 ADRs [0005](docs/adr/0005-layout-engine.md), [0006](docs/adr/0006-session-file-format.md)),
 `WinMux.Pty`, `WinMux.Terminal`, `WinMux.Shell`, `WinMux.PaneHost`, and `WinMux.Cli`; see
 [ADR 0008](docs/adr/0008-pane-host-ipc.md) and
-[ADR 0009](docs/adr/0009-phase-1-terminal-runtime.md).
+[ADR 0009](docs/adr/0009-phase-1-terminal-runtime.md), with Phase 2 closed by
+[ADR 0010](docs/adr/0010-phase-2-persistence-runtime.md).
 
-**Not done yet:** live cwd capture/profile installation, persistence testing at scale, runtime
-quirks selection/attach fallback, mixed-DPI verification, file panes, tab/pane reordering,
+**Not done yet:** runtime quirks selection/attach fallback, mixed-DPI verification, file panes, tab/pane reordering,
 terminal selection and scrollback navigation.
 
 ---

@@ -56,6 +56,9 @@ public static class SessionMapper
     public static LayoutTree FromSnapshot(WindowSnapshot snapshot)
     {
         var root = FromSnapshot(snapshot.Root);
+        if (!root.Leaves().Any(leaf => leaf.Pane.Id.Value == snapshot.FocusedPane))
+            throw new SessionFormatException(
+                $"The window's focused pane \"{snapshot.FocusedPane:D}\" is not reachable from its root.");
         var tree = new LayoutTree(root, new PaneId(snapshot.FocusedPane)) { Bounds = snapshot.Bounds };
         return tree;
     }
@@ -119,7 +122,17 @@ public static class SessionMapper
         if (snapshot.Windows.Count == 0)
             throw new SessionFormatException("Session file contains no windows.");
 
-        foreach (var w in snapshot.Windows) _ = FromSnapshot(w.Root);
+        for (var index = 0; index < snapshot.Windows.Count; index++)
+        {
+            var window = snapshot.Windows[index];
+            var root = FromSnapshot(window.Root);
+            var panes = root.Leaves().Select(leaf => leaf.Pane.Id.Value).ToArray();
+            if (panes.Distinct().Count() != panes.Length)
+                throw new SessionFormatException($"windows[{index}] contains duplicate pane ids.");
+            if (!panes.Contains(window.FocusedPane))
+                throw new SessionFormatException(
+                    $"windows[{index}].focused is \"{window.FocusedPane:D}\", which is not reachable from its root.");
+        }
         return snapshot;
     }
 }

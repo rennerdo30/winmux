@@ -8,6 +8,7 @@ using WinMux.Core.Layout;
 using WinMux.Core.Model;
 using WinMux.Core.Session;
 using WinMux.Shell.Actions;
+using WinMux.Shell.Cwd;
 using WinMux.Shell.Keymap;
 using CoreRect = WinMux.Core.Layout.Rect;
 
@@ -33,26 +34,42 @@ internal sealed class MainWindow : Window
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ActionDispatcher _actions = new();
     private readonly KeymapRouter _keymap;
-    private readonly CommandServer _commandServer;
+    private readonly SessionController _session;
+    private readonly DispatcherTimer _cwdCaptureTimer;
 
     private LayoutTree _tree;
     private IntPtr _shellHwnd;
-    private string _sessionPath;
     private string _message = "";
     private Divider? _dragDivider;
     private Avalonia.Point _lastDragPoint;
+    private bool _shutdownStarted;
 
-    public MainWindow(LayoutTree tree, string sessionPath, KeymapConfiguration keymapConfiguration)
+    public MainWindow(
+        LayoutTree tree,
+        SessionController session,
+        KeymapConfiguration keymapConfiguration,
+        string title)
     {
         _tree = tree;
-        _sessionPath = sessionPath;
+        _session = session;
+        _session.Register(this);
+        _cwdCaptureTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        _cwdCaptureTimer.Tick += (_, _) =>
+        {
+            RefreshProcessWorkingDirectories();
+            _session.RequestSave();
+        };
         RegisterActions();
         _keymap = new KeymapRouter(new KeyBindingTable(keymapConfiguration), _actions);
-        _commandServer = new CommandServer(DispatchRemoteAsync);
 
-        Title = "WinMux";
-        Width = 1400;
-        Height = 860;
+        Title = string.IsNullOrWhiteSpace(title) ? "WinMux" : title;
+        Width = tree.Bounds.Width > 0 ? Math.Max(640, tree.Bounds.Width) : 1400;
+        Height = tree.Bounds.Height > 0 ? Math.Max(400, tree.Bounds.Height) : 860;
+        if (!tree.Bounds.IsEmpty)
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Position = new PixelPoint(tree.Bounds.X, tree.Bounds.Y);
+        }
         Background = new SolidColorBrush(Color.FromRgb(0x18, 0x18, 0x25));
 
         var dock = new DockPanel();
@@ -88,15 +105,16 @@ internal sealed class MainWindow : Window
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         Opened += async (_, _) =>
         {
+            ClampRestoredGeometry();
             _shellHwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
-            _ = RunCommandServerAsync();
             await StartPanesAsync();
+            _cwdCaptureTimer.Start();
         };
-        Closing += (_, _) => Shutdown();
+        Closing += (_, e) => Shutdown(e);
         PositionChanged += (_, _) => Relayout();
         // Attach-mode windows sit above the shell but are not owned by it, so activating the shell
         // buries them. Re-assert placement (and z-order) whenever we come forward.
-        Activated += (_, _) => { _tracker.Refresh(); Relayout(); };
+        Activated += (_, _) => { _session.Activate(this); _tracker.Refresh(); Relayout(); };
         Deactivated += (_, _) => Relayout();
     }
 
@@ -123,6 +141,8 @@ internal sealed class MainWindow : Window
     private Control EnsureView(Pane pane)
     {
         if (_views.TryGetValue(pane.Id, out var existing)) return existing;
+
+        NormalizeProgram(pane);
 
         Control view;
         switch (pane.Kind)
@@ -156,13 +176,55 @@ internal sealed class MainWindow : Window
         var program = string.IsNullOrWhiteSpace(r.Program)
             ? Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe"
             : r.Program;
-        var cwd = r.Cwd.IsKnown && Directory.Exists(r.Cwd.Path) ? r.Cwd.Path : Environment.CurrentDirectory;
-        var term = new TerminalPaneControl(program, r.Args, cwd, r.EnvOverrides);
+        var isWsl = IsWsl(program);
+        var arguments = r.Args.ToList();
+        string cwd;
+        if (isWsl)
+        {
+            cwd = Environment.CurrentDirectory;
+            if (r.Cwd.IsKnown && r.Cwd.Path.StartsWith("/", StringComparison.Ordinal))
+            {
+                arguments.Insert(0, r.Cwd.Path);
+                arguments.Insert(0, "--cd");
+            }
+        }
+        else if (r.Cwd.IsKnown && Directory.Exists(r.Cwd.Path))
+        {
+            cwd = r.Cwd.Path;
+        }
+        else
+        {
+            cwd = Environment.CurrentDirectory;
+            if (r.Cwd.IsKnown)
+            {
+                _message = $"saved cwd for \"{pane.Title}\" is unavailable: {r.Cwd.Path}; started in {cwd}";
+            }
+            else
+            {
+                pane.Restore = r with
+                {
+                    Cwd = new WorkingDirectory(cwd, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow),
+                };
+            }
+        }
+
+        var term = new TerminalPaneControl(program, arguments, cwd, r.EnvOverrides);
 
         term.TitleChanged += title => Dispatcher.UIThread.Post(() =>
         {
             if (!string.IsNullOrWhiteSpace(title)) { pane.Title = title; UpdateStatus(); UpdateTabBar(); }
+            _session.RequestSave();
         });
+        term.WorkingDirectoryChanged += path =>
+        {
+            pane.Restore = pane.Restore with
+            {
+                Cwd = new WorkingDirectory(path, CwdSource.ShellReported, DateTimeOffset.UtcNow),
+            };
+            _message = $"captured cwd for \"{pane.Title}\" from the shell";
+            UpdateStatus();
+            _session.RequestSave();
+        };
         term.Exited += exitCode => Dispatcher.UIThread.Post(() =>
         {
             _message = $"pane \"{pane.Title}\" exited with code {exitCode}";
@@ -262,6 +324,7 @@ internal sealed class MainWindow : Window
 
         UpdateStatus();
         UpdateTabBar();
+        _session.RequestSave();
     }
 
     private void UpdateTabBar()
@@ -404,9 +467,10 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.NewTerminalWindowsPowerShell, () => AddTab(TerminalProfiles.WindowsPowerShell));
         _actions.Register(ShellActionNames.NewTerminalPowerShell, () => AddTab(TerminalProfiles.PowerShell));
         _actions.Register(ShellActionNames.NewTerminalWsl, () => AddTab(TerminalProfiles.Wsl));
+        _actions.Register(ShellActionNames.ConfigureCwdReporting, () => _ = ShowCwdIntegrationAsync(onlyIfUnseen: false));
     }
 
-    private ActionDispatchResult DispatchAction(string actionName)
+    internal ActionDispatchResult DispatchNamedAction(string actionName)
     {
         var result = _actions.Dispatch(actionName);
         if (!result.Succeeded) _message = result.Error ?? "action failed";
@@ -414,43 +478,9 @@ internal sealed class MainWindow : Window
         return result;
     }
 
-    private ValueTask<string?> DispatchRemoteAsync(string actionName, CancellationToken cancellationToken)
-    {
-        var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                completion.TrySetCanceled(cancellationToken);
-                return;
-            }
-
-            var result = DispatchAction(actionName);
-            if (result.Succeeded) completion.TrySetResult(result.ActionName);
-            else completion.TrySetException(result.Exception ?? new InvalidOperationException(result.Error));
-        });
-        return new ValueTask<string?>(completion.Task);
-    }
-
-    private async Task RunCommandServerAsync()
-    {
-        try
-        {
-            await _commandServer.RunAsync(_shutdown.Token);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                _message = "CLI actions unavailable: " + ex.Message;
-                UpdateStatus();
-            });
-        }
-    }
-
     private void ShowPalette()
     {
-        var palette = new CommandPaletteWindow(_actions.RegisteredActions, action => DispatchAction(action));
+        var palette = new CommandPaletteWindow(_actions.RegisteredActions, action => DispatchNamedAction(action));
         palette.Show(this);
     }
 
@@ -474,6 +504,15 @@ internal sealed class MainWindow : Window
                 ? new WorkingDirectory(cwd.Path, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow)
                 : null);
         pane.Restore = pane.Restore with { Args = profile.Arguments };
+        var normalized = ExecutablePathResolver.ResolveTerminalDescriptor(pane.Restore);
+        if (normalized.Succeeded)
+        {
+            pane.Restore = normalized.Descriptor;
+        }
+        else
+        {
+            _message = normalized.Error ?? $"could not resolve {profile.Program}";
+        }
         return pane;
     }
 
@@ -552,24 +591,69 @@ internal sealed class MainWindow : Window
 
     private void SaveSession()
     {
+        RefreshProcessWorkingDirectories();
+        var result = _session.SaveNow();
+        if (result.Succeeded)
+        {
+            _message = "wrote " + _session.SessionPath;
+        }
+        else
+        {
+            _message = "could not write session: " + result.Error?.Message;
+        }
+        UpdateStatus();
+    }
+
+    internal WindowSnapshot CaptureSnapshot()
+    {
+        var snapshot = SessionMapper.ToSnapshot(_tree, Title ?? "WinMux");
+        var width = Math.Max(1, (int)Math.Round(Bounds.Width > 0 ? Bounds.Width : Width));
+        var height = Math.Max(1, (int)Math.Round(Bounds.Height > 0 ? Bounds.Height : Height));
+        return snapshot with { Bounds = new CoreRect(Position.X, Position.Y, width, height) };
+    }
+
+    internal async Task ShowCwdIntegrationAsync(bool onlyIfUnseen)
+    {
         try
         {
-            SessionFile.Save(_sessionPath, new SessionSnapshot
-            {
-                SavedAt = DateTimeOffset.UtcNow,
-                Windows = [SessionMapper.ToSnapshot(_tree, Title ?? "main")],
-            });
-            _message = "wrote " + _sessionPath;
+            var installer = new ProfileInstaller();
+            var report = installer.Inspect();
+            var unseen = CwdIntegrationOnboarding.Unseen(report);
+            if (onlyIfUnseen && unseen.Count == 0) return;
+
+            var dialog = new CwdIntegrationWindow(installer, report);
+            await dialog.ShowDialog(this);
+            CwdIntegrationOnboarding.MarkSeen(onlyIfUnseen ? unseen : report.Shells.Select(status => status.Shell));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
         {
-            // No silent failure around persistence (CLAUDE.md section 8).
-            _message = "could not write session: " + ex.Message;
+            _message = "cwd reporting setup is unavailable: " + ex.Message;
+            UpdateStatus();
         }
     }
 
-    private void Shutdown()
+    internal void ShowMessage(string message)
     {
+        _message = message;
+        UpdateStatus();
+    }
+
+    private void Shutdown(WindowClosingEventArgs e)
+    {
+        if (_shutdownStarted) return;
+        _cwdCaptureTimer.Stop();
+        RefreshProcessWorkingDirectories();
+        var saved = _session.WindowClosing(this);
+        if (!saved.Succeeded)
+        {
+            e.Cancel = true;
+            _cwdCaptureTimer.Start();
+            _message = "WinMux stayed open because the session could not be saved: " + saved.Error?.Message;
+            UpdateStatus();
+            return;
+        }
+
+        _shutdownStarted = true;
         _shutdown.Cancel();
 
         // WM_CLOSE is posted to each host, never the foreign app. The host restores its child
@@ -580,5 +664,61 @@ internal sealed class MainWindow : Window
         foreach (var view in _views.Values)
             if (view is TerminalPaneControl t) { try { t.Dispose(); } catch (ObjectDisposedException) { } }
         _tracker.Dispose();
+    }
+
+    private void RefreshProcessWorkingDirectories()
+    {
+        foreach (var pane in _tree.Panes.Where(candidate => candidate.Kind == PaneKind.Terminal))
+        {
+            if (_views.GetValueOrDefault(pane.Id) is not TerminalPaneControl terminal ||
+                terminal.ProcessId is not int processId)
+            {
+                continue;
+            }
+
+            var isWsl = IsWsl(pane.Restore.Program);
+            var result = ProcessWorkingDirectoryResolver.Resolve(processId, disablePebForWsl: isWsl);
+            if (!result.Succeeded) continue;
+
+            var capture = new WorkingDirectory(result.Path!, result.Provenance, DateTimeOffset.UtcNow);
+            pane.Restore = pane.Restore with { Cwd = WorkingDirectory.Better(pane.Restore.Cwd, capture) };
+        }
+    }
+
+    private static bool IsWsl(string? program) =>
+        string.Equals(Path.GetFileNameWithoutExtension(program), "wsl", StringComparison.OrdinalIgnoreCase);
+
+    private void NormalizeProgram(Pane pane)
+    {
+        if (string.IsNullOrWhiteSpace(pane.Restore.Program)) return;
+
+        var resolution = ExecutablePathResolver.Resolve(pane.Restore.Program);
+        if (resolution.Succeeded)
+        {
+            pane.Restore = pane.Restore with { Program = resolution.AbsolutePath };
+        }
+        else
+        {
+            _message = resolution.Error ?? $"could not resolve {pane.Restore.Program}";
+        }
+    }
+
+    private void ClampRestoredGeometry()
+    {
+        var areas = Screens.All
+            .OrderByDescending(screen => screen == Screens.Primary)
+            .Select(screen => new CoreRect(
+                screen.WorkingArea.X,
+                screen.WorkingArea.Y,
+                screen.WorkingArea.Width,
+                screen.WorkingArea.Height))
+            .ToArray();
+        if (areas.Length == 0) return;
+
+        var saved = new CoreRect(Position.X, Position.Y, (int)Math.Round(Width), (int)Math.Round(Height));
+        var visible = WindowGeometry.ClampToVisibleArea(saved, areas);
+        Position = new PixelPoint(visible.X, visible.Y);
+        Width = visible.Width;
+        Height = visible.Height;
     }
 }

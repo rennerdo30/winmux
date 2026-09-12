@@ -55,6 +55,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         _engine = new TerminalEmulationEngine(columns: 120, rows: 30);
         _engine.Updated += OnEngineUpdated;
         _engine.TitleChanged += OnEngineTitleChanged;
+        _engine.WorkingDirectoryChanged += OnEngineWorkingDirectoryChanged;
         _engine.Response += OnEngineResponse;
 
         Focusable = true;
@@ -63,7 +64,17 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     public event Action<string>? TitleChanged;
 
+    public event Action<string>? WorkingDirectoryChanged;
+
     public event Action<int>? Exited;
+
+    public int? ProcessId
+    {
+        get
+        {
+            lock (_gate) return _session?.ProcessId;
+        }
+    }
 
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -231,6 +242,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
         _engine.Updated -= OnEngineUpdated;
         _engine.TitleChanged -= OnEngineTitleChanged;
+        _engine.WorkingDirectoryChanged -= OnEngineWorkingDirectoryChanged;
         _engine.Response -= OnEngineResponse;
         _lifetime.Cancel();
         lock (_gate)
@@ -345,6 +357,14 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         if (_disposed == 0)
         {
             Dispatcher.UIThread.Post(() => TitleChanged?.Invoke(title));
+        }
+    }
+
+    private void OnEngineWorkingDirectoryChanged(string path)
+    {
+        if (_disposed == 0)
+        {
+            Dispatcher.UIThread.Post(() => WorkingDirectoryChanged?.Invoke(path));
         }
     }
 

@@ -35,6 +35,8 @@ internal static class Win32Interop
     public const int SW_HIDE = 0;
     public const int SW_SHOWNA = 8;
     public const int SW_RESTORE = 9;
+    public const uint MB_OK = 0x00000000;
+    public const uint MB_ICONERROR = 0x00000010;
 
     public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
@@ -66,6 +68,7 @@ internal static class Win32Interop
     [DllImport(U, CharSet = CharSet.Unicode)] public static extern int GetWindowTextW(IntPtr h, char[] buf, int max);
     [DllImport(U, CharSet = CharSet.Unicode)] public static extern int GetClassNameW(IntPtr h, char[] buf, int max);
     [DllImport(U, CharSet = CharSet.Unicode)] public static extern bool PostMessageW(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [DllImport(U, CharSet = CharSet.Unicode)] public static extern int MessageBoxW(IntPtr h, string text, string caption, uint type);
 
     [DllImport(K, SetLastError = true)] public static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
     [DllImport(K, SetLastError = true)] public static extern bool CloseHandle(IntPtr h);

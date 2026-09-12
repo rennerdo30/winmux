@@ -110,6 +110,16 @@ public sealed class ExecutablePathResolverTests : IDisposable
         Assert.Contains("missing-terminal", result.Error);
     }
 
+    [Fact]
+    public void Generic_resolution_supports_foreign_application_descriptors()
+    {
+        var executable = CreateFile("foreign.exe");
+        var resolution = ExecutablePathResolver.Resolve("foreign", _directory, ".EXE");
+
+        Assert.True(resolution.Succeeded, resolution.Error);
+        Assert.Equal(executable, resolution.AbsolutePath, ignoreCase: true);
+    }
+
     private string CreateFile(string name)
     {
         var path = Path.Combine(_directory, name);
