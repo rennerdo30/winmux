@@ -52,6 +52,7 @@ internal sealed record LaunchSpec(
     string Program,
     IReadOnlyList<string> Arguments,
     string? WindowClass,
+    HostStrategy Strategy,
     IntPtr OwnerWindow,
     IReadOnlySet<IntPtr> ExcludedWindows)
 {
@@ -59,6 +60,7 @@ internal sealed record LaunchSpec(
     {
         string? program = null;
         string? windowClass = null;
+        var strategy = HostStrategy.Embed;
         var ownerWindow = IntPtr.Zero;
         var arguments = new List<string>();
         var excluded = new HashSet<IntPtr>();
@@ -69,6 +71,12 @@ internal sealed record LaunchSpec(
             if (!afterSeparator && args[i] == "--") { afterSeparator = true; continue; }
             if (!afterSeparator && args[i] == "--program" && ++i < args.Length) { program = args[i]; continue; }
             if (!afterSeparator && args[i] == "--window-class" && ++i < args.Length) { windowClass = args[i]; continue; }
+            if (!afterSeparator && args[i] == "--strategy")
+            {
+                if (++i >= args.Length) throw new ArgumentException("missing value for --strategy");
+                strategy = ParseStrategy(args[i]);
+                continue;
+            }
             if (!afterSeparator && args[i] == "--owner" && ++i < args.Length && long.TryParse(args[i], out var owner))
             {
                 ownerWindow = new IntPtr(owner);
@@ -83,8 +91,38 @@ internal sealed record LaunchSpec(
         }
 
         if (string.IsNullOrWhiteSpace(program)) throw new ArgumentException("missing --program <path>");
-        return new LaunchSpec(program, arguments, windowClass, ownerWindow, excluded);
+        return new LaunchSpec(program, arguments, windowClass, strategy, ownerWindow, excluded);
     }
+
+    private static HostStrategy ParseStrategy(string value) => value.ToLowerInvariant() switch
+    {
+        "embed" => HostStrategy.Embed,
+        "attach" => HostStrategy.Attach,
+        _ => throw new ArgumentException("--strategy must be either embed or attach"),
+    };
+}
+
+internal enum HostStrategy
+{
+    Embed,
+    Attach,
+}
+
+internal static class HostProtocol
+{
+    public static string Strategy(HostStrategy strategy) =>
+        $"STRATEGY={strategy.ToString().ToLowerInvariant()}";
+
+    public static string Ready(IntPtr child) => $"READY={child.ToInt64()}";
+
+    public static string EmbedFailure(int error) => error switch
+    {
+        5 => "ERROR=application is elevated or higher-integrity; WinMux cannot embed it " +
+            "(win32=5, fallback=attach)",
+        87 => "ERROR=application refused embedding (win32=87, fallback=attach)",
+        0 => "ERROR=application did not become a child of PaneHost (win32=0, fallback=attach)",
+        _ => $"ERROR=SetParent failed with Win32 error {error}",
+    };
 }
 
 internal sealed class PaneHostWindow : IDisposable
@@ -93,18 +131,20 @@ internal sealed class PaneHostWindow : IDisposable
     private const int GwlStyle = -16, GwlExStyle = -20, SwShowNormal = 1, SwRestore = 9;
     private const int WsPopup = unchecked((int)0x80000000), WsVisible = 0x10000000;
     private const long ForeignFrameStyles = 0x00CF0000L;
-    private const uint GaParent = 1, GwOwner = 4, WmClose = 0x0010, WmDestroy = 0x0002, WmSize = 0x0005;
+    private const uint GaParent = 1, GwOwner = 4, WmClose = 0x0010, WmDestroy = 0x0002;
+    private const uint WmMove = 0x0003, WmSize = 0x0005, WmActivate = 0x0006, WmWindowPosChanged = 0x0047;
     private const uint WmAppAdopt = 0x8001, WmAppClosePane = 0x8002;
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const uint SwpNoSize = 0x0001, SwpNoMove = 0x0002, SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010, SwpShowWindow = 0x0040, SwpFrameChanged = 0x0020;
+    private const uint SwpAsyncWindowPos = 0x4000;
 
     private readonly LaunchSpec _launch;
     private readonly WindowProc _windowProc;
     private readonly CancellationTokenSource _shutdown = new();
     private IntPtr _hostWindow;
     private IntPtr _childWindow;
-    private EmbedState? _embed;
+    private HostedWindowState? _hosted;
     private bool _disposed;
 
     public PaneHostWindow(LaunchSpec launch) { _launch = launch; _windowProc = WindowProcImpl; }
@@ -194,27 +234,38 @@ internal sealed class PaneHostWindow : IDisposable
         ? GetClassName(hwnd).Equals(_launch.WindowClass, StringComparison.OrdinalIgnoreCase)
         : GetProcessImageName(hwnd).Equals(Path.GetFileName(_launch.Program), StringComparison.OrdinalIgnoreCase);
 
-    private void Embed(IntPtr child)
+    private void HostApplication(IntPtr child)
     {
         if (!IsWindow(child)) return;
         if (!GetWindowRect(child, out var originalRect)) ThrowLastError("GetWindowRect");
-        _embed = new EmbedState(child, GetAncestor(child, GaParent), GetWindowLongPtrW(child, GwlStyle),
-            GetWindowLongPtrW(child, GwlExStyle), originalRect);
+        _hosted = new HostedWindowState(child, GetAncestor(child, GaParent), GetWindowLongPtrW(child, GwlStyle),
+            GetWindowLongPtrW(child, GwlExStyle), originalRect, _launch.Strategy);
 
         if (IsIconic(child)) ShowWindow(child, SwRestore);
-        SetWindowLongPtrW(child, GwlStyle, new IntPtr(_embed.OriginalStyle.ToInt64() & ~ForeignFrameStyles));
+        if (_launch.Strategy == HostStrategy.Attach)
+        {
+            _childWindow = child;
+            if (!PositionAttachedWindow())
+            {
+                _childWindow = IntPtr.Zero;
+                _hosted = null;
+                WriteProtocol("ERROR=Windows refused to position the application in attach mode");
+                return;
+            }
+
+            WriteProtocol(HostProtocol.Strategy(HostStrategy.Attach));
+            WriteProtocol(HostProtocol.Ready(child));
+            return;
+        }
+
+        SetWindowLongPtrW(child, GwlStyle, new IntPtr(_hosted.OriginalStyle.ToInt64() & ~ForeignFrameStyles));
         Marshal.SetLastPInvokeError(0);
         var oldParent = SetParent(child, _hostWindow);
         var error = Marshal.GetLastPInvokeError();
-        if (oldParent == IntPtr.Zero && error != 0)
+        if ((oldParent == IntPtr.Zero && error != 0) || GetAncestor(child, GaParent) != _hostWindow)
         {
             RestoreForeignWindow();
-            WriteProtocol(error switch
-            {
-                5 => "ERROR=application is elevated; WinMux cannot embed it",
-                87 => "ERROR=application refused embedding; attach mode is required",
-                _ => $"ERROR=SetParent failed with Win32 error {error}",
-            });
+            WriteProtocol(HostProtocol.EmbedFailure(error));
             return;
         }
 
@@ -222,26 +273,53 @@ internal sealed class PaneHostWindow : IDisposable
         ResizeChild();
         SetWindowPos(child, IntPtr.Zero, 0, 0, 0, 0,
             SwpNoSize | SwpNoMove | SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
-        WriteProtocol($"READY={child.ToInt64()}");
+        WriteProtocol(HostProtocol.Strategy(HostStrategy.Embed));
+        WriteProtocol(HostProtocol.Ready(child));
     }
 
     private void ResizeChild()
     {
+        if (_hosted?.Strategy == HostStrategy.Attach)
+        {
+            PositionAttachedWindow();
+            return;
+        }
+
         if (_childWindow == IntPtr.Zero || !IsWindow(_childWindow) || !GetClientRect(_hostWindow, out var rect)) return;
         SetWindowPos(_childWindow, IntPtr.Zero, 0, 0, rect.Right - rect.Left, rect.Bottom - rect.Top,
             SwpNoZOrder | SwpNoActivate | SwpShowWindow);
     }
 
+    private bool PositionAttachedWindow()
+    {
+        if (_childWindow == IntPtr.Zero || !IsWindow(_childWindow) ||
+            !GetWindowRect(_hostWindow, out var rect))
+        {
+            return false;
+        }
+
+        Marshal.SetLastPInvokeError(0);
+        return SetWindowPos(_childWindow, IntPtr.Zero, rect.Left, rect.Top,
+            rect.Right - rect.Left, rect.Bottom - rect.Top,
+            SwpNoActivate | SwpShowWindow | SwpAsyncWindowPos);
+    }
+
     private void RestoreForeignWindow()
     {
-        if (_embed is not { } embed || !IsWindow(embed.Child)) return;
-        SetParent(embed.Child, embed.OriginalParent);
-        SetWindowLongPtrW(embed.Child, GwlStyle, embed.OriginalStyle);
-        SetWindowLongPtrW(embed.Child, GwlExStyle, embed.OriginalExStyle);
-        SetWindowPos(embed.Child, IntPtr.Zero, embed.OriginalRect.Left, embed.OriginalRect.Top,
-            embed.OriginalRect.Right - embed.OriginalRect.Left, embed.OriginalRect.Bottom - embed.OriginalRect.Top,
-            SwpNoZOrder | SwpNoActivate | SwpFrameChanged | SwpShowWindow);
-        _embed = null;
+        if (_hosted is not { } hosted || !IsWindow(hosted.Child)) return;
+        if (hosted.Strategy == HostStrategy.Embed)
+        {
+            SetParent(hosted.Child, hosted.OriginalParent);
+            SetWindowLongPtrW(hosted.Child, GwlStyle, hosted.OriginalStyle);
+            SetWindowLongPtrW(hosted.Child, GwlExStyle, hosted.OriginalExStyle);
+        }
+
+        var restoreFlags = SwpNoZOrder | SwpNoActivate | SwpFrameChanged | SwpShowWindow;
+        if (hosted.Strategy == HostStrategy.Attach) restoreFlags |= SwpAsyncWindowPos;
+        SetWindowPos(hosted.Child, IntPtr.Zero, hosted.OriginalRect.Left, hosted.OriginalRect.Top,
+            hosted.OriginalRect.Right - hosted.OriginalRect.Left, hosted.OriginalRect.Bottom - hosted.OriginalRect.Top,
+            restoreFlags);
+        _hosted = null;
         _childWindow = IntPtr.Zero;
     }
 
@@ -250,9 +328,17 @@ internal sealed class PaneHostWindow : IDisposable
         switch (message)
         {
             case WmAppAdopt:
-                try { Embed(wParam); } catch (Exception ex) { WriteProtocol("ERROR=" + ex.Message); }
+                try { HostApplication(wParam); } catch (Exception ex) { WriteProtocol("ERROR=" + ex.Message); }
                 return IntPtr.Zero;
-            case WmSize: ResizeChild(); return IntPtr.Zero;
+            case WmMove:
+            case WmSize:
+            case WmWindowPosChanged:
+                ResizeChild();
+                break;
+            case WmActivate:
+                if (_hosted?.Strategy == HostStrategy.Attach && (wParam.ToInt64() & 0xffff) != 0)
+                    PositionAttachedWindow();
+                break;
             case WmAppClosePane:
                 var child = _childWindow;
                 RestoreForeignWindow();
@@ -266,6 +352,8 @@ internal sealed class PaneHostWindow : IDisposable
             case WmDestroy: PostQuitMessage(0); return IntPtr.Zero;
             default: return DefWindowProcW(hwnd, message, wParam, lParam);
         }
+
+        return DefWindowProcW(hwnd, message, wParam, lParam);
     }
 
     private static void WriteProtocol(string line) { Console.Out.WriteLine(line); Console.Out.Flush(); }
@@ -306,7 +394,13 @@ internal sealed class PaneHostWindow : IDisposable
     }
     private static void ThrowLastError(string operation) => throw new Win32Exception(Marshal.GetLastWin32Error(), operation);
 
-    private sealed record EmbedState(IntPtr Child, IntPtr OriginalParent, IntPtr OriginalStyle, IntPtr OriginalExStyle, Rect OriginalRect);
+    private sealed record HostedWindowState(
+        IntPtr Child,
+        IntPtr OriginalParent,
+        IntPtr OriginalStyle,
+        IntPtr OriginalExStyle,
+        Rect OriginalRect,
+        HostStrategy Strategy);
     private delegate IntPtr WindowProc(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
