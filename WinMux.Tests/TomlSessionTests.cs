@@ -261,6 +261,7 @@ public class TomlSessionTests
             args    = ["-NoLogo"]
             cwd     = 'C:\work\winmux'
             cwd_source = "shell-reported"
+            cwd_captured_at = 2026-09-10T12:00:00Z
 
             [[windows.panes]]
             id    = "22222222-2222-2222-2222-222222222222"
@@ -321,11 +322,95 @@ public class TomlSessionTests
     }
 
     [Fact]
+    public void Version_zero_is_migrated_to_current_with_deterministic_cwd_provenance()
+    {
+        var legacy = Minimal
+            .Replace("version = 1", "version = 0", StringComparison.Ordinal)
+            .Replace(
+                "kind = \"terminal\"",
+                "kind = \"terminal\"\ncwd = 'C:\\legacy\\work'",
+                StringComparison.Ordinal);
+
+        var migrated = SessionFile.Deserialize(legacy);
+        var pane = migrated.Windows.Single().Root.Pane!;
+
+        Assert.Equal(SessionSnapshot.CurrentVersion, migrated.Version);
+        Assert.Equal(@"C:\legacy\work", pane.Restore.Cwd.Path);
+        Assert.Equal(CwdSource.LaunchDirectory, pane.Restore.Cwd.Source);
+        Assert.Equal(DateTimeOffset.UnixEpoch, pane.Restore.Cwd.CapturedAt);
+
+        var currentText = SessionFile.Serialize(migrated);
+        Assert.Contains("version = 1", currentText, StringComparison.Ordinal);
+        Assert.Contains("cwd_source      = 'launch-directory'", currentText, StringComparison.Ordinal);
+        Assert.Contains("cwd_captured_at = 1970-01-01T00:00:00.000Z", currentText, StringComparison.Ordinal);
+
+        var reloaded = SessionFile.Deserialize(currentText);
+        Assert.Equal(pane.Restore.Cwd, reloaded.Windows.Single().Root.Pane!.Restore.Cwd);
+    }
+
+    [Fact]
+    public void Version_one_cwd_requires_source_metadata()
+    {
+        var bad = Minimal.Replace(
+            "kind = \"terminal\"",
+            "kind = \"terminal\"\ncwd = 'C:\\work'\ncwd_captured_at = 2026-09-12T00:00:00Z",
+            StringComparison.Ordinal);
+
+        var ex = Assert.Throws<SessionFormatException>(() => SessionFile.Deserialize(bad));
+
+        Assert.Contains("cwd_source", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Version_one_cwd_requires_capture_time_metadata()
+    {
+        var bad = Minimal.Replace(
+            "kind = \"terminal\"",
+            "kind = \"terminal\"\ncwd = 'C:\\work'\ncwd_source = 'shell-reported'",
+            StringComparison.Ordinal);
+
+        var ex = Assert.Throws<SessionFormatException>(() => SessionFile.Deserialize(bad));
+
+        Assert.Contains("cwd_captured_at", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_dangling_node_reference_names_the_missing_node()
     {
         var bad = Minimal.Replace("root = \"a\"", "root = \"nope\"", StringComparison.Ordinal);
         var ex = Assert.Throws<SessionFormatException>(() => SessionFile.Deserialize(bad));
         Assert.Contains("nope", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_focused_pane_must_be_reachable_from_the_window_root()
+    {
+        const string unreachable = "22222222-2222-2222-2222-222222222222";
+        const string bad = """
+            version = 1
+            [[windows]]
+            root = "root"
+            focused = "22222222-2222-2222-2222-222222222222"
+
+            [[windows.nodes]]
+            id = "root"
+            kind = "leaf"
+            pane = "11111111-1111-1111-1111-111111111111"
+
+            [[windows.panes]]
+            id = "11111111-1111-1111-1111-111111111111"
+            kind = "terminal"
+
+            [[windows.panes]]
+            id = "22222222-2222-2222-2222-222222222222"
+            kind = "terminal"
+            """;
+
+        var ex = Assert.Throws<SessionFormatException>(() => SessionFile.Deserialize(bad));
+
+        Assert.Contains("focused", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(unreachable, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("reachable", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -444,7 +529,7 @@ public class TomlSessionTests
 
             SessionFile.Save(path, snapshot);
             Assert.True(File.Exists(path));
-            Assert.False(File.Exists(path + ".tmp"), "the temporary file should not survive a successful save");
+            Assert.Empty(Directory.GetFiles(dir, $".{SessionFile.DefaultFileName}.*.tmp"));
 
             var tree = SessionMapper.FromSnapshot(SessionFile.Load(path).Windows.Single());
             Assert.Equal(focused.Id, tree.Focused);

@@ -30,12 +30,12 @@ public static class TomlSessionReader
             throw new SessionFormatException($"Session file is not valid TOML. {ex.Message}");
         }
 
-        var version = (int)Integer(root, "version", "the file root");
-        if (version <= 0)
+        var sourceVersion = (int)Integer(root, "version", "the file root");
+        if (sourceVersion < 0)
             throw new SessionFormatException("Session file has no usable `version`. It was not written by WinMux.");
-        if (version > SessionSnapshot.CurrentVersion)
+        if (sourceVersion > SessionSnapshot.CurrentVersion)
             throw new SessionFormatException(
-                $"Session file is version {version}, but this build understands up to " +
+                $"Session file is version {sourceVersion}, but this build understands up to " +
                 $"{SessionSnapshot.CurrentVersion}. Upgrade WinMux rather than letting it discard your layout.");
 
         var savedAt = OptionalTimestamp(root, "saved_at") ?? default;
@@ -51,15 +51,16 @@ public static class TomlSessionReader
 
         return new SessionSnapshot
         {
-            Version = version,
+            // Reading is also migration: callers and the next save always see the current model.
+            Version = SessionSnapshot.CurrentVersion,
             SavedAt = savedAt,
-            Windows = windows.Select((w, i) => ReadWindow(w, $"windows[{i}]")).ToArray(),
+            Windows = windows.Select((w, i) => ReadWindow(w, $"windows[{i}]", sourceVersion)).ToArray(),
         };
     }
 
-    private static WindowSnapshot ReadWindow(TomlTable window, string where)
+    private static WindowSnapshot ReadWindow(TomlTable window, string where, int sourceVersion)
     {
-        var panes = ReadPanes(window, where);
+        var panes = ReadPanes(window, where, sourceVersion);
         var nodes = ReadNodes(window, where);
         var rootId = String(window, "root", where);
 
@@ -76,17 +77,28 @@ public static class TomlSessionReader
                 $"{where} defines {nodes.Count} nodes but only {reached} are reachable from root \"{rootId}\". " +
                 "Some panes would be silently dropped.");
 
+        var focusedPane = Guid(window, "focused", where);
+        if (!ContainsPane(tree, focusedPane))
+            throw new SessionFormatException(
+                $"{where}.focused is \"{focusedPane:D}\", which does not identify a pane reachable " +
+                $"from root \"{rootId}\".");
+
         return new WindowSnapshot
         {
             Title = Optional(window, "title") is string t ? t : string.Empty,
             Bounds = ReadBounds(window, where),
-            FocusedPane = Guid(window, "focused", where),
+            FocusedPane = focusedPane,
             Root = tree,
         };
     }
 
     private static int CountNodes(NodeSnapshot node) =>
         1 + (node.Children?.Sum(CountNodes) ?? 0);
+
+    private static bool ContainsPane(NodeSnapshot node, System.Guid paneId) =>
+        node.Kind == NodeKinds.Leaf
+            ? node.Pane?.Id == paneId
+            : node.Children?.Any(child => ContainsPane(child, paneId)) == true;
 
     private static Rect ReadBounds(TomlTable window, string where)
     {
@@ -138,7 +150,7 @@ public static class TomlSessionReader
         return result;
     }
 
-    private static Dictionary<Guid, PaneSnapshot> ReadPanes(TomlTable window, string where)
+    private static Dictionary<Guid, PaneSnapshot> ReadPanes(TomlTable window, string where, int sourceVersion)
     {
         var result = new Dictionary<Guid, PaneSnapshot>();
         if (!window.TryGetValue("panes", out var raw) || raw is not TomlTableArray array) return result;
@@ -154,11 +166,14 @@ public static class TomlSessionReader
             var cwd = WorkingDirectory.None;
             if (Optional(t, "cwd") is string path && !string.IsNullOrWhiteSpace(path))
             {
-                var source = Optional(t, "cwd_source") is string s
-                    ? TomlNames.ParseCwdSource(s, at)
-                    : CwdSource.LaunchDirectory;
-                cwd = new WorkingDirectory(path, source, OptionalTimestamp(t, "cwd_captured_at") ?? default);
+                cwd = sourceVersion == 0
+                    ? new WorkingDirectory(path, CwdSource.LaunchDirectory, DateTimeOffset.UnixEpoch)
+                    : ReadCurrentWorkingDirectory(t, at, path);
             }
+            else if (sourceVersion > 0 &&
+                     (Optional(t, "cwd_source") is not null || Optional(t, "cwd_captured_at") is not null))
+                throw new SessionFormatException(
+                    $"{at} contains cwd provenance but no usable `cwd` path.");
 
             var pane = new PaneSnapshot
             {
@@ -182,6 +197,18 @@ public static class TomlSessionReader
                 throw new SessionFormatException($"Duplicate pane id \"{id:D}\" at {at}.");
         }
         return result;
+    }
+
+    private static WorkingDirectory ReadCurrentWorkingDirectory(TomlTable pane, string where, string path)
+    {
+        var source = Optional(pane, "cwd_source") is string sourceText
+            ? TomlNames.ParseCwdSource(sourceText, where)
+            : throw new SessionFormatException(
+                $"{where} has `cwd` but is missing the string key `cwd_source`.");
+        var capturedAt = OptionalTimestamp(pane, "cwd_captured_at")
+            ?? throw new SessionFormatException(
+                $"{where} has `cwd` but is missing the date-time key `cwd_captured_at`.");
+        return new WorkingDirectory(path, source, capturedAt);
     }
 
     // ---------------- typed accessors ----------------
