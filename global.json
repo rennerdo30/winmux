@@ -1,0 +1,19 @@
+{
+  "//": [
+    "Pin the SDK so builds are reproducible, and so the lock files stay valid.",
+    "",
+    "Some packages are referenced implicitly by the SDK rather than by any project file —",
+    "Microsoft.NET.ILLink.Tasks arrives because WinMux.Cli sets PublishSingleFile — and their",
+    "versions follow the SDK's patch level. With a floating SDK, packages.lock.json records a",
+    "version the next patch release changes, and a locked restore fails with NU1004 on a machine",
+    "that is merely more up to date. That is exactly what CI did the first time it ran.",
+    "",
+    "rollForward is disabled rather than latestPatch for the same reason: allowing a newer patch",
+    "would reintroduce the drift the lock files exist to prevent. When the SDK is deliberately",
+    "updated, this file and the lock files change together, in one commit."
+  ],
+  "sdk": {
+    "version": "10.0.400",
+    "rollForward": "disable"
+  }
+}

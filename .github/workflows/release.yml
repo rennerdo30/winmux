@@ -19,9 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # From global.json, not a floating version: SDK-implicit packages such as
+      # Microsoft.NET.ILLink.Tasks are pinned by the lock files, and a newer SDK patch changes
+      # them out from under a locked restore.
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Restore
         run: dotnet restore WinMux.slnx --locked-mode
