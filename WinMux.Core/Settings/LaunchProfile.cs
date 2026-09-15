@@ -10,6 +10,12 @@ public enum ProfileKind
 
     /// <summary>A windowed application, hosted in a PaneHost (ADR 0001/0008).</summary>
     Application,
+
+    /// <summary>A saved SSH host. Opens a terminal pane running the OpenSSH client.</summary>
+    Ssh,
+
+    /// <summary>A saved Remote Desktop host. Opens the Windows client in an application pane.</summary>
+    Rdp,
 }
 
 /// <summary>
@@ -56,8 +62,35 @@ public sealed record LaunchProfile
     /// <summary>Where this came from, so the UI can say so. Not used for matching.</summary>
     public string Source { get; init; } = string.Empty;
 
-    /// <summary>The pane kind this profile opens.</summary>
-    public PaneKind PaneKind => Kind == ProfileKind.Terminal ? Model.PaneKind.Terminal : Model.PaneKind.ForeignApp;
+    /// <summary>
+    /// The remote host, for <see cref="ProfileKind.Ssh"/> and <see cref="ProfileKind.Rdp"/>.
+    ///
+    /// A connection is an ordinary profile rather than a separate list, so that adding one adds it
+    /// to every surface that can open a pane at once (CLAUDE.md section 5a). These four fields are
+    /// what a connection stores instead of a program; <see cref="RemoteConnection"/> turns them
+    /// into one.
+    /// </summary>
+    public string Host { get; init; } = string.Empty;
+
+    /// <summary>Zero means the protocol's default — 22 for SSH, 3389 for RDP.</summary>
+    public int Port { get; init; }
+
+    /// <summary>The remote user. Empty lets the client decide, which is usually right for RDP.</summary>
+    public string User { get; init; } = string.Empty;
+
+    /// <summary>An SSH private key file. Empty uses the agent and the default identities.</summary>
+    public string Identity { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The pane kind this profile opens.
+    ///
+    /// SSH is a terminal because that is what it is; RDP is a hosted window. The connection kinds
+    /// choose an existing provider rather than introducing a pane kind of their own, which is the
+    /// rule in CLAUDE.md section 5a.
+    /// </summary>
+    public PaneKind PaneKind => Kind is ProfileKind.Terminal or ProfileKind.Ssh
+        ? Model.PaneKind.Terminal
+        : Model.PaneKind.ForeignApp;
 
     /// <summary>
     /// Value equality including <see cref="Args"/>.

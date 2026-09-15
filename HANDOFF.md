@@ -20,7 +20,7 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-16: 603 passed, 0 warnings.** Version 0.6.0.
+**Verified 2026-09-16: 625 passed, 0 warnings.** Version 0.6.0.
 Phases 4, 5 and the Phase 6 work are **pushed**; `origin/main` is current as of 2026-09-15.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.

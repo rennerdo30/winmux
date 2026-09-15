@@ -29,6 +29,12 @@ internal sealed class ProfileEditorWindow : Window
     private readonly TextBox _windowClass;
     private readonly TextBox _titleContains;
     private readonly StackPanel _appOnly;
+    private readonly StackPanel _connectionOnly;
+    private readonly StackPanel _programOnly;
+    private readonly TextBox _host;
+    private readonly TextBox _port;
+    private readonly TextBox _user;
+    private readonly TextBox _identity;
 
     /// <summary>The edited profile, or null if the user backed out.</summary>
     public LaunchProfile? Result { get; private set; }
@@ -53,7 +59,14 @@ internal sealed class ProfileEditorWindow : Window
         _windowClass = Field(profile.WindowClass, "Optional — only if the quirks database gets it wrong");
         _titleContains = Field(profile.TitleContains, "Optional — for an app with several windows");
 
-        _kind = Choice([("Terminal", ProfileKind.Terminal), ("Application", ProfileKind.Application)], profile.Kind);
+        _kind = Choice(
+            [
+                ("Terminal", ProfileKind.Terminal),
+                ("Application", ProfileKind.Application),
+                ("SSH connection", ProfileKind.Ssh),
+                ("Remote Desktop connection", ProfileKind.Rdp),
+            ],
+            profile.Kind);
         _kind.SelectionChanged += (_, _) => UpdateKindVisibility();
 
         _strategy = Choice(
@@ -74,16 +87,43 @@ internal sealed class ProfileEditorWindow : Window
         programRow.Children.Add(browse);
         programRow.Children.Add(_program);
 
+        _host = Field(profile.Host, "server.example.com");
+        _port = Field(profile.Port > 0 ? profile.Port.ToString() : string.Empty, "default for the protocol");
+        _user = Field(profile.User, "user name");
+        _identity = Field(profile.Identity, "private key file (optional)");
+
+        _connectionOnly = new StackPanel { Spacing = 6 };
+        _connectionOnly.Children.Add(Section("Connection"));
+        _connectionOnly.Children.Add(Row("Host", _host));
+        _connectionOnly.Children.Add(Row("Port", _port));
+        _connectionOnly.Children.Add(Row("User", _user));
+        _connectionOnly.Children.Add(Row("Identity file", _identity));
+        _connectionOnly.Children.Add(new TextBlock
+        {
+            Text = "No password is stored. Both clients use Windows Credential Manager, which is "
+                 + "where a saved password belongs.",
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = Palette.CaptionSize,
+            Foreground = Palette.MutedTextBrush,
+            Margin = new Thickness(0, 4, 0, 0),
+        });
+
         _appOnly = new StackPanel { Spacing = 6 };
         _appOnly.Children.Add(Section("Window"));
         _appOnly.Children.Add(Row("Hosting", _strategy));
         _appOnly.Children.Add(Row("Window class", _windowClass));
         _appOnly.Children.Add(Row("Title contains", _titleContains));
 
+        // A connection derives its program from the host, so the program field would be a box
+        // whose contents are ignored — and a control that does nothing is worse than no control.
+        _programOnly = new StackPanel { Spacing = 6 };
+        _programOnly.Children.Add(Row("Program", programRow));
+
         var body = new StackPanel { Margin = new Thickness(22, 20, 22, 20), Spacing = 6 };
         body.Children.Add(Row("Name", _name));
         body.Children.Add(Row("Opens", _kind));
-        body.Children.Add(Row("Program", programRow));
+        body.Children.Add(_programOnly);
+        body.Children.Add(_connectionOnly);
         body.Children.Add(Row("Arguments", _args));
         body.Children.Add(Row("Start in", _cwd));
         body.Children.Add(_appOnly);
@@ -129,8 +169,17 @@ internal sealed class ProfileEditorWindow : Window
         UpdateKindVisibility();
     }
 
-    private void UpdateKindVisibility() =>
-        _appOnly.IsVisible = Selected<ProfileKind>(_kind) == ProfileKind.Application;
+    private void UpdateKindVisibility()
+    {
+        var kind = Selected<ProfileKind>(_kind);
+        var connection = RemoteConnection.IsConnection(kind);
+
+        _connectionOnly.IsVisible = connection;
+        _programOnly.IsVisible = !connection;
+
+        // RDP is hosted like any other window, so its hosting options apply; SSH is a terminal.
+        _appOnly.IsVisible = kind is ProfileKind.Application or ProfileKind.Rdp;
+    }
 
     private async Task BrowseAsync()
     {
@@ -167,12 +216,18 @@ internal sealed class ProfileEditorWindow : Window
     {
         var name = _name.Text?.Trim() ?? string.Empty;
         var program = _program.Text?.Trim() ?? string.Empty;
-        if (name.Length == 0 || program.Length == 0)
+        var host = _host.Text?.Trim() ?? string.Empty;
+        var connection = RemoteConnection.IsConnection(Selected<ProfileKind>(_kind));
+
+        // A connection needs a host where everything else needs a program; both need a name.
+        // Refuse rather than save something that cannot open, and mark the field that is missing
+        // rather than reporting a generic failure.
+        var missingTarget = connection ? host.Length == 0 : program.Length == 0;
+        if (name.Length == 0 || missingTarget)
         {
-            // Refuse rather than save something that cannot open. The two required fields are the
-            // two the list and the launcher both need.
             _name.BorderBrush = name.Length == 0 ? Palette.DangerBrush : Palette.EdgeBrush;
-            _program.BorderBrush = program.Length == 0 ? Palette.DangerBrush : Palette.EdgeBrush;
+            _program.BorderBrush = !connection && program.Length == 0 ? Palette.DangerBrush : Palette.EdgeBrush;
+            _host.BorderBrush = connection && host.Length == 0 ? Palette.DangerBrush : Palette.EdgeBrush;
             return;
         }
 
@@ -182,6 +237,10 @@ internal sealed class ProfileEditorWindow : Window
             Name = name,
             Kind = Selected<ProfileKind>(_kind),
             Program = program,
+            Host = host,
+            Port = int.TryParse(_port.Text?.Trim(), out var port) && port is > 0 and <= 65535 ? port : 0,
+            User = _user.Text?.Trim() ?? string.Empty,
+            Identity = _identity.Text?.Trim() ?? string.Empty,
             Args = (_args.Text ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries),
             WorkingDirectory = _cwd.Text?.Trim() ?? string.Empty,
             Strategy = Selected<HostStrategy>(_strategy),

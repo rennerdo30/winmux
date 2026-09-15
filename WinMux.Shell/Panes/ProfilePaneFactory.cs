@@ -21,7 +21,15 @@ internal static class ProfilePaneFactory
             ? new WorkingDirectory(profile.WorkingDirectory, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow)
             : inherited ?? WorkingDirectory.None;
 
-        return profile.Kind == ProfileKind.Terminal
+        // A connection is resolved into a program and arguments first, so everything below treats
+        // it exactly like any other profile — one code path for launching, whatever the source.
+        if (RemoteConnection.IsConnection(profile.Kind))
+        {
+            var command = RemoteConnection.Resolve(profile);
+            profile = profile with { Program = command.Program, Args = command.Args };
+        }
+
+        return profile.PaneKind == PaneKind.Terminal
             ? Terminal(profile, cwd)
             : Application(profile, cwd);
     }

@@ -22,6 +22,36 @@ The shipped terminals are seeded on first run and are editable and deletable lik
 Whatever you add appears everywhere at once: the New menu, an empty pane's launcher, the command
 palette and the CLI, because all of them read the same list.
 
+## Remote connections
+
+An **SSH** or **Remote Desktop** connection is a profile too, which is the point: saving one adds it
+to the New menu, an empty pane's launcher, the command palette and the CLI at once, exactly like a
+local program.
+
+Choose `SSH connection` or `Remote Desktop connection` in the profile editor and fill in the host —
+plus, optionally, a port, a user and an SSH identity file. WinMux builds the command:
+
+| Kind | Runs | Opens |
+|---|---|---|
+| SSH | `ssh.exe [-p port] [-i identity] [user@]host` | a terminal pane |
+| Remote Desktop | `mstsc.exe /v:host[:port]` | a hosted application pane |
+
+Both clients ship with Windows, so there is nothing to install. The default port is left off the
+command line rather than passed explicitly, so an SSH connection still honours whatever your
+`ssh_config` says about that host. Anything in the profile's **Arguments** is appended last, so it
+can override what WinMux built.
+
+<Aside type="caution" title="No passwords, deliberately">
+WinMux stores no password, for any connection, anywhere. The profiles file is plain text and always
+will be.
+
+SSH uses your agent and your keys. Remote Desktop prompts and — if you tick the box — remembers the
+credential in **Windows Credential Manager**, which is the system's own encrypted store and the
+right place for it. That is also why the Remote Desktop connection has no user field on the command
+line: `mstsc` has no switch for one, and adding a half-built credential store to work around that
+would be worse than using the one Windows provides.
+</Aside>
+
 ## Hosting an application
 
 Ordinary applications are **embedded**: the window becomes a child of a host process that WinMux
