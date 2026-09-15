@@ -39,10 +39,22 @@
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Ask PaneHost where it actually built instead of guessing. The guess used to be
+       bin\$(Configuration)\, but PaneHost is x64-only and so builds to bin\x64\$(Configuration)\:
+       the copy found nothing, and on this machine quietly shipped a stale artifact left behind in
+       the old path. A missing PaneHost.exe only surfaces much later, as a foreign-app pane that
+       refuses to start, so this fails the build instead (CLAUDE.md section 8: no silent failure). -->
   <Target Name="CopyPaneHost" AfterTargets="Build">
+    <MSBuild Projects="..\WinMux.PaneHost\WinMux.PaneHost.csproj"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);Platform=$(Platform)">
+      <Output TaskParameter="TargetOutputs" ItemName="PaneHostTarget" />
+    </MSBuild>
     <ItemGroup>
-      <PaneHostOutput Include="..\WinMux.PaneHost\bin\$(Configuration)\net10.0-windows\WinMux.PaneHost.*" />
+      <PaneHostOutput Include="%(PaneHostTarget.RootDir)%(PaneHostTarget.Directory)WinMux.PaneHost.*" />
     </ItemGroup>
+    <Error Condition="'@(PaneHostOutput)' == ''"
+           Text="WinMux.PaneHost produced no output to copy beside WinMux.exe. Foreign-app panes cannot start without it." />
     <Copy SourceFiles="@(PaneHostOutput)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
