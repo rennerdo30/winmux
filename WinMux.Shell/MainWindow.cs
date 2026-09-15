@@ -419,7 +419,8 @@ internal sealed class MainWindow : Window
             Rename: pane => Run(RenamePaneAsync(pane)),
             CloseTab: pane => Run(CloseTabAsync(pane)),
             AddTab: stack => Run(AddTabToStackAsync(stack)),
-            MoveStrip: SetTabPlacement);
+            MoveStrip: SetTabPlacement,
+            MoveTab: MoveTab);
 
         foreach (var strip in arrangement.TabStrips)
         {
@@ -796,6 +797,8 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.ResizeDown, () => ResizeFocused(FocusDirection.Down));
         _actions.Register(ShellActionNames.ShowPalette, ShowPalette);
         _actions.Register(ShellActionNames.FindInPane, ShowSearch);
+        _actions.Register(ShellActionNames.MoveTabEarlier, () => MoveTab(-1));
+        _actions.Register(ShellActionNames.MoveTabLater, () => MoveTab(1));
         _actions.Register(ShellActionNames.SendPrefix, SendPrefix);
         _actions.RegisterAsync(ShellActionNames.NewTerminalCmd, _ => new ValueTask(AddTabAsync(TerminalProfiles.Cmd)));
         _actions.RegisterAsync(ShellActionNames.NewTerminalWindowsPowerShell,
@@ -846,6 +849,19 @@ internal sealed class MainWindow : Window
         palette.Closed += (_, _) => _palette = null;
         _palette = palette;
         palette.ShowOver(this);
+    }
+
+    /// <summary>Reorder the focused tab within its strip.</summary>
+    private void MoveTab(int delta)
+    {
+        if (!_tree.MoveTab(delta))
+        {
+            _message = "the focused pane cannot move any further in its tab group";
+            UpdateStatus();
+            return;
+        }
+
+        Relayout();
     }
 
     /// <summary>

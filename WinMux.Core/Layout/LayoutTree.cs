@@ -384,5 +384,28 @@ public sealed class LayoutTree
         return true;
     }
 
+    /// <summary>
+    /// Move the focused pane's tab within its stack, without wrapping.
+    ///
+    /// Not wrapping is deliberate and the opposite of <see cref="CycleTab"/>: cycling past the end
+    /// is what you want when *selecting* a tab, and teleporting a tab from one end of the strip to
+    /// the other is never what you meant when dragging one.
+    /// </summary>
+    public bool MoveTab(int delta)
+    {
+        if (delta == 0) return false;
+
+        var leaf = Find(_focused);
+        LayoutNode? child = leaf;
+        var parent = leaf?.Parent;
+        while (parent is not null && parent is not StackNode) { child = parent; parent = parent.Parent; }
+        if (parent is not StackNode stack || child is null) return false;
+
+        var from = stack.IndexOf(child);
+        if (from < 0) return false;
+
+        return stack.MoveChild(from, from + delta);
+    }
+
     public LayoutTree Clone() => new(_root.Clone(), _focused) { Bounds = Bounds };
 }

@@ -188,6 +188,26 @@ public sealed class StackNode : LayoutNode
     public LayoutNode Active => _children[_activeIndex];
 
     /// <summary>
+    /// Move a child to another position, keeping whichever child was active active.
+    ///
+    /// By identity rather than by index: reordering must not change which tab you are looking at,
+    /// and an index survives a move only by accident.
+    /// </summary>
+    internal bool MoveChild(int from, int to)
+    {
+        if (from < 0 || from >= _children.Count) return false;
+        to = Math.Clamp(to, 0, _children.Count - 1);
+        if (from == to) return false;
+
+        var active = _children[_activeIndex];
+        var moved = _children[from];
+        _children.RemoveAt(from);
+        _children.Insert(to, moved);
+        _activeIndex = _children.IndexOf(active);
+        return true;
+    }
+
+    /// <summary>
     /// Which edge this stack's tab strip occupies. Per stack, not per window: a vertical strip
     /// suits a stack of long titles, while its sibling three inches away may want none of that.
     /// </summary>

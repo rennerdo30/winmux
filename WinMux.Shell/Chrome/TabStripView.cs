@@ -23,7 +23,8 @@ internal sealed record TabStripCommands(
     Action<PaneId> Rename,
     Action<PaneId> CloseTab,
     Action<StackNode> AddTab,
-    Action<StackNode, TabStripPlacement> MoveStrip);
+    Action<StackNode, TabStripPlacement> MoveStrip,
+    Action<int> MoveTab);
 
 /// <summary>
 /// One stack's tabs, drawn in the band the layout engine reserved for them.
@@ -209,14 +210,18 @@ internal static class TabStripView
             Content = Icons.More(),
             HorizontalAlignment = vertical ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
             HorizontalContentAlignment = vertical ? HorizontalAlignment.Left : HorizontalAlignment.Center,
-            [ToolTip.TipProperty] = "Where these tabs sit",
+            [ToolTip.TipProperty] = "More tab actions",
         };
         button.Classes.Add(Theme.IconButton);
 
+        // A kebab means "more actions", so it holds them rather than only the strip's placement.
         var menu = new ContextMenu
         {
-            ItemsSource = new[]
+            ItemsSource = new Control[]
             {
+                Item("Move this tab earlier", () => commands.MoveTab(-1)),
+                Item("Move this tab later", () => commands.MoveTab(1)),
+                new Separator(),
                 PlacementItem(strip, commands, TabStripPlacement.Top, "Tabs on top"),
                 PlacementItem(strip, commands, TabStripPlacement.Bottom, "Tabs on the bottom"),
                 PlacementItem(strip, commands, TabStripPlacement.Left, "Tabs on the left"),
