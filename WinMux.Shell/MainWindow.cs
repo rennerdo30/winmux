@@ -118,6 +118,9 @@ internal sealed class MainWindow : Window
     private CommandPaletteWindow? _palette;
     private IDisposable? _foregroundWatch;
 
+    /// <summary>The open-windows tray, when it is up. One, like the palette and the find bar.</summary>
+    private WindowPickerWindow? _windowTray;
+
     /// <summary>The one find bar, for the same reason the palette is one: asking twice means "find".</summary>
     private TerminalSearchWindow? _search;
     private readonly SessionController _session;
@@ -221,6 +224,8 @@ internal sealed class MainWindow : Window
         // by the resize border on each edge. Without this the caption buttons sit past the right
         // edge of the screen and cannot be clicked.
         dock.Bind(MarginProperty, this.GetObservable(OffScreenMarginProperty));
+
+        EnableWindowDrop();
 
         // The canvas shows through the divider gutters, so it is the line between panes. The margin
         // is what makes the outermost panes tiles rather than a filled window: without it a pane
@@ -809,6 +814,7 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.ResizeDown, () => ResizeFocused(FocusDirection.Down));
         _actions.Register(ShellActionNames.ShowPalette, ShowPalette);
         _actions.Register(ShellActionNames.FindInPane, ShowSearch);
+        _actions.Register(ShellActionNames.ShowOpenWindows, ShowWindowTray);
         _actions.Register(ShellActionNames.MoveTabEarlier, () => MoveTab(-1));
         _actions.Register(ShellActionNames.MoveTabLater, () => MoveTab(1));
         _actions.Register(ShellActionNames.SendPrefix, SendPrefix);
@@ -890,6 +896,75 @@ internal sealed class MainWindow : Window
             UpdateStatus();
             UpdateTabStrips(_tree.Arrange());
         });
+    }
+
+    /// <summary>
+    /// The tray of windows that are already open, which can be dragged onto a pane.
+    ///
+    /// Modeless on purpose: a modal dialog makes its owner uninteractive, so there would be nothing
+    /// to drag onto. The existing modal picker stays for "attach into *this* pane", which is a
+    /// different question with a different answer.
+    /// </summary>
+    private void ShowWindowTray()
+    {
+        if (_windowTray is { } open)
+        {
+            open.Activate();
+            return;
+        }
+
+        var tray = new WindowPickerWindow(PlatformServices.Windows, [_shellHwnd, .. ClaimedWindows()], draggable: true);
+        tray.Closed += (_, _) => _windowTray = null;
+        _windowTray = tray;
+        tray.Show(this);
+        ShowMessage("drag a window onto a pane to put it there");
+    }
+
+    /// <summary>
+    /// Accept a window dragged from the tray, into whichever pane it was dropped on.
+    ///
+    /// The drop point is in canvas coordinates and the arrangement is too, so the pane is found by
+    /// asking the layout rather than by hit-testing controls — a pane hosting a native window has
+    /// no Avalonia control under the pointer to find.
+    /// </summary>
+    private void EnableWindowDrop()
+    {
+        DragDrop.SetAllowDrop(_canvas, true);
+
+        _canvas.AddHandler(DragDrop.DragOverEvent, (object? _, DragEventArgs e) =>
+        {
+            e.DragEffects = PaneAt(e.GetPosition(_canvas)) is null
+                ? DragDropEffects.None
+                : DragDropEffects.Move;
+            e.Handled = true;
+        });
+
+        _canvas.AddHandler(DragDrop.DropEvent, (object? _, DragEventArgs e) =>
+        {
+            e.Handled = true;
+            if (e.DataTransfer?.TryGetValue(WindowPickerWindow.WindowDragFormat) is not { } dragged) return;
+            if (PaneAt(e.GetPosition(_canvas)) is not { } pane) return;
+
+            Run(ReplacePaneAsync(pane, AdoptedPane(dragged.Window), "attached " + dragged.Window.Title));
+        });
+    }
+
+    /// <summary>Which visible pane covers a point in canvas coordinates.</summary>
+    private PaneId? PaneAt(Avalonia.Point point)
+    {
+        var arrangement = _tree.Arrange();
+        foreach (var pane in _tree.Panes)
+        {
+            if (!arrangement.IsVisible(pane.Id)) continue;
+            var rect = arrangement[pane.Id];
+            if (point.X >= rect.X && point.X < rect.X + rect.Width &&
+                point.Y >= rect.Y && point.Y < rect.Y + rect.Height)
+            {
+                return pane.Id;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Reorder the focused tab within its strip.</summary>

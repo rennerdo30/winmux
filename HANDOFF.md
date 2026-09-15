@@ -73,6 +73,10 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
   `IForegroundWindowMonitor` (Win32 `SetWinEventHook`) tells the shell when the user focuses a
   window one of its panes stands in for, so clicking into an Explorer pane no longer leaves the
   focused pane pointing at a terminal elsewhere (CLAUDE.md section 6).
+- **A running window can be dragged into a pane** — `Ctrl+B O` opens a modeless tray of the
+  windows already open, and a row dragged onto a pane is adopted there. Dragging the
+  application's *own* window onto WinMux is not possible: Windows delivers a window-move to the
+  window being moved, not to whatever it passes over, so there is no drop to receive.
 
 ## The next action
 
@@ -80,7 +84,7 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
 screen; what is left is feature work, and the next real finding will come from use.
 
 When picking that feature work up, in rough order of what the product is missing:
-**dragging a running window into a pane** and provider discovery and packaging. Snap layouts are a separate, known cost of drawing our
+provider discovery and packaging, and snap layouts. Snap layouts are a separate, known cost of drawing our
 own caption ([ADR 0016](docs/adr/0016-windows-11-chrome.md)) and need a new `IHostWindowService`
 capability to recover.
 

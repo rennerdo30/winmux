@@ -35,6 +35,7 @@ public static class ShellActionNames
     public const string FindInPane = "find-in-pane";
     public const string MoveTabEarlier = "move-tab-earlier";
     public const string MoveTabLater = "move-tab-later";
+    public const string ShowOpenWindows = "show-open-windows";
     public const string SendPrefix = "send-prefix";
     public const string NewTerminalCmd = "new-terminal-cmd";
     public const string NewTerminalWindowsPowerShell = "new-terminal-windows-powershell";
@@ -77,6 +78,7 @@ public static class ShellActionNames
         FindInPane,
         MoveTabEarlier,
         MoveTabLater,
+        ShowOpenWindows,
         SendPrefix,
         NewTerminalCmd,
         NewTerminalWindowsPowerShell,
