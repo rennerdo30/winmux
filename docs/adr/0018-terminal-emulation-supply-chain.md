@@ -38,6 +38,26 @@ published", because the package *claims* a repository and an exact commit that c
 That is either a repository made private after publishing, or one never made public. Either way the
 pinned commit is unverifiable, so the metadata offers the appearance of provenance without any.
 
+## Who publishes it
+
+Worth separating from "single author", which sounds like an anonymous account and is not.
+
+`b-y-t-e` is a GitHub account created in **2013** with **37 public repositories**, most of them
+unrelated day-job work going back a decade. This is a long-standing developer publishing under their
+own name (the package copyright reads "Andrzej Ból"), not a throwaway identity. That does not make
+the code reviewable, but it substantially changes the *deliberate supply-chain attack* reading,
+which is the scenario that usually motivates this kind of concern.
+
+`Terminal.Avalonia` is specifically **absent** from those 37 — so it was made private or deleted,
+rather than never linked.
+
+One useful thing turned up in the same search: five weeks before first publishing
+`Terminal.Emulation`, the same account **forked
+[`tomlm/Iciclecreek.Avalonia.Terminal`](https://github.com/tomlm/Iciclecreek.Avalonia.Terminal)** —
+MIT, public, 30 stars, actively updated. Whether `Terminal.Emulation` descends from it is unknown
+and unprovable from here, but it exists, it is readable, and it does the same job. That matters for
+the cost of option 4 below: a replacement would not start from nothing.
+
 ## What is already true in our favour
 
 - **The seam holds.** `ITerminalEngine` in `WinMux.Terminal` is ours, and ADR 0002 required that
@@ -80,13 +100,18 @@ an engineering question.
    unchanged — still unreadable, now also unpatchable.
 3. **Ask the author to publish the source.** Free, might work, and would settle it outright. Nobody
    has asked.
-4. **Replace it.** The `ITerminalEngine` seam means the shell does not change. The engine does not
-   exist yet, and ADR 0002 measured what it takes: a correct VT500 parser with reflow, alternate
-   screen, double-width cells and the query/response sequences TUIs hang without. Weeks, and a
-   regression surface the size of every terminal program anyone runs.
+4. **Replace it.** The `ITerminalEngine` seam means the shell does not change. ADR 0002 measured
+   what a *from-scratch* engine takes — a correct VT500 parser with reflow, alternate screen,
+   double-width cells and the query/response sequences TUIs hang without — which is weeks, with a
+   regression surface the size of every terminal program anyone runs. But it need not be from
+   scratch: `tomlm/Iciclecreek.Avalonia.Terminal` is public, MIT and maintained, and adapting it
+   behind the existing seam is a far smaller job than writing a parser. Nobody has evaluated it
+   against ADR 0002's benchmark.
 
-**Recommendation: 3, then 1.** Asking costs nothing and could remove the objection entirely; pinning
-is already done. 4 is the honest fallback and should not be started until 3 has been tried.
+**Recommendation: 3, then 1, with 4 costed properly first.** Asking costs nothing and could remove
+the objection entirely; pinning is already done. Before treating 4 as expensive, run ADR 0002's
+benchmark against `Iciclecreek.Avalonia.Terminal` — if it is close, the whole question becomes
+"swap to the readable one", which needs no negotiation with anybody.
 
 ## Consequences
 

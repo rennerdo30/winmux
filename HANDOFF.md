@@ -66,9 +66,13 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
   bar became three segments carrying the captured cwd with its provenance and the session's save
   state — the two facts that show the product works, previously nowhere in the interface.
 - **Scrollback search**, and **symbol bindings on non-US keyboards**. Bindings written as "%" or
-  ":" were matched by physical key, which encodes a US layout, so on a German keyboard the palette
-  had no key at all; they now match the character Avalonia reports as `KeySymbol`. Search is
-  `TerminalSearchModel` plus a find bar built like the palette, bound to the prefix and "/".
+  ":" were matched by physical key, and `KeyStroke`'s table encodes a US ANSI keyboard. Measured on
+  the development machine, whose layouts are en-US and ja-JP on **Japanese 106/109 hardware**:
+  there `:` is an *unshifted* OemSemicolon and `"` is Shift+D2, where the table expects
+  Shift+OemSemicolon and Shift+OemQuotes. So the command palette and split-rows had no working key
+  at all. They now match the character Avalonia reports as `KeySymbol`; verified on screen, the
+  palette opens on `Ctrl+B :`. Search is `TerminalSearchModel` plus a find bar built like the
+  palette, bound to the prefix and "/".
 - **Tab reordering** by key, menu and pointer drag, and **focus reconciliation**: a new
   `IForegroundWindowMonitor` (Win32 `SetWinEventHook`) tells the shell when the user focuses a
   window one of its panes stands in for, so clicking into an Explorer pane no longer leaves the
@@ -116,8 +120,11 @@ wanted.
   [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md): MIT, single author, five weeks of
   history, and a declared repository that 404s. Content hashes are now pinned in
   `packages.lock.json`, which closes the silent-substitution risk. Four options are costed there;
-  the recommendation is **ask the author to publish the source, then keep pinning**. Nobody has
-  asked — that is the next move and it is a message, not a commit.
+  the recommendation is **ask the author to publish the source, then keep pinning** — nobody has
+  asked, and that is a message rather than a commit. A second lead found the same day: the author
+  forked the public, MIT, maintained `tomlm/Iciclecreek.Avalonia.Terminal` five weeks before
+  publishing, so a replacement would not start from scratch. Benchmark that against ADR 0002's
+  numbers before assuming replacement is expensive.
 - **An X11 port needs its own host executable, not a shim.** PaneHost keeps its 35 imports
   deliberately (ADR 0013, decision 5). Do not read that as unfinished Phase 5 work.
 
@@ -175,6 +182,12 @@ wanted.
   at the size it believes it has, and everything past that width falls outside the real window.
 - Do not rasterise an SVG with cairosvg, rlPyCairo or svglib+renderPM — all need a cairo Windows
   does not ship, or fail on rounded rectangles. Headless Chrome works (`assets/build-icon.py`).
+
+**Keyboards**
+- Do not assume `KeyStroke`'s symbol table describes the keyboard in front of you. It is US ANSI,
+  and this machine is Japanese 106/109: `:` unshifted, `"` on Shift+2. `VkKeyScanEx` answers the
+  question for every installed layout in a few lines of PowerShell — do that before theorising
+  about why a symbol binding does not fire.
 
 **Judgement**
 - Do not render a terminal row as one `FormattedText` with one brush. It looks correct on an

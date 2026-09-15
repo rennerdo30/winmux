@@ -8,9 +8,11 @@ namespace WinMux.Shell.Tests;
 /// Bindings written as characters, on keyboards that are not American.
 ///
 /// `Ctrl+B` then `:` opens the command palette. Parsing ":" gives Shift+OemSemicolon, which is
-/// where a colon lives on a US keyboard; on a German one it is Shift+Period, so the binding could
-/// never fire and the palette had no key at all. The prefix armed, the next key matched nothing,
-/// and the status bar said "no binding for OemSemicolon" — which is true and useless.
+/// where a colon lives on a US ANSI keyboard. On the Japanese 106/109 keyboard this was found on,
+/// `:` is its own *unshifted* key — so the binding could never fire and the palette had no key at
+/// all. The prefix armed, the next key matched nothing, and the status bar said "no binding for
+/// OemSemicolon", which is true and useless. `"` was broken the same way: the table wants
+/// Shift+OemQuotes, JIS puts it on Shift+2.
 ///
 /// The fix matches those bindings against the character the keyboard actually produced
 /// (<c>KeyEventArgs.KeySymbol</c>) rather than against the key that produces it in Redmond.
@@ -41,10 +43,13 @@ public sealed class KeyboardLayoutTests
         return new KeymapRouter(table, actions);
     }
 
-    /// <summary>A German keyboard's colon: Shift and the period key, reporting ":" as its symbol.</summary>
-    private static readonly KeyStroke GermanColon = new(Key.OemPeriod, KeyModifiers.Shift);
+    /// <summary>
+    /// A Japanese 106/109 keyboard's colon: the semicolon key, unshifted. Measured with
+    /// <c>VkKeyScanEx</c> on the machine this bug was found on, not guessed.
+    /// </summary>
+    private static readonly KeyStroke JisColon = new(Key.OemSemicolon);
 
-    /// <summary>A US keyboard's colon: Shift and the semicolon key.</summary>
+    /// <summary>A US ANSI keyboard's colon: Shift and the semicolon key.</summary>
     private static readonly KeyStroke UsColon = new(Key.OemSemicolon, KeyModifiers.Shift);
 
     [Fact]
@@ -60,13 +65,13 @@ public sealed class KeyboardLayoutTests
     }
 
     [Fact]
-    public void A_symbol_binding_fires_on_a_german_keyboard_too()
+    public void A_symbol_binding_fires_on_a_japanese_keyboard_too()
     {
         // The whole point: a different physical key, the same character, the same action.
         var router = Router(out _, out var invoked);
 
         router.Route(KeyStroke.Parse("Ctrl+B"), null);
-        var result = router.Route(GermanColon, ":");
+        var result = router.Route(JisColon, ":");
 
         Assert.Equal(KeymapRouteKind.ActionDispatched, result.Kind);
         Assert.Equal(["show-palette"], invoked);
@@ -79,7 +84,7 @@ public sealed class KeyboardLayoutTests
         var router = Router(out _, out var invoked);
 
         router.Route(KeyStroke.Parse("Ctrl+B"), null);
-        var result = router.Route(GermanColon, symbol: null);
+        var result = router.Route(JisColon, symbol: null);
 
         Assert.Equal(KeymapRouteKind.UnboundPrefixedKey, result.Kind);
         Assert.Empty(invoked);
@@ -105,7 +110,7 @@ public sealed class KeyboardLayoutTests
         var router = Router(out _, out var invoked);
 
         router.Route(KeyStroke.Parse("Ctrl+B"), null);
-        var result = router.Route(new KeyStroke(Key.OemPeriod, KeyModifiers.Shift | KeyModifiers.Control), ":");
+        var result = router.Route(new KeyStroke(Key.OemSemicolon, KeyModifiers.Control), ":");
 
         Assert.Equal(KeymapRouteKind.UnboundPrefixedKey, result.Kind);
         Assert.Empty(invoked);
