@@ -9,6 +9,7 @@ using WinMux.Core.Model;
 using WinMux.Core.Session;
 using WinMux.Panes;
 using WinMux.Shell.Actions;
+using WinMux.Shell.Chrome;
 using WinMux.Shell.Cwd;
 using WinMux.Shell.FileBrowser;
 using WinMux.Shell.Keymap;
@@ -28,8 +29,19 @@ namespace WinMux.Shell;
 internal sealed class MainWindow : Window
 {
     private readonly Canvas _canvas = new();
-    private readonly StackPanel _tabBar = new() { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Margin = new Thickness(6, 4) };
-    private readonly TextBlock _status = new() { Margin = new Thickness(8, 3), FontSize = 12 };
+
+    /// <summary>
+    /// The per-stack tab strips currently on screen, rebuilt from the arrangement each layout.
+    /// There is one per stack, drawn where that stack is — see <see cref="TabStripView"/>.
+    /// </summary>
+    private readonly List<Control> _tabStrips = [];
+    private readonly TextBlock _status = new()
+    {
+        Margin = new Thickness(10, 4),
+        FontSize = 11.5,
+        Foreground = Palette.MutedTextBrush,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+    };
     private readonly Dictionary<PaneId, IPaneRuntime> _runtimes = [];
     private readonly PaneProviderRegistry _providers;
     private readonly ForeignAppPaneProvider _foreignProvider;
@@ -85,21 +97,17 @@ internal sealed class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.Manual;
             Position = new PixelPoint(tree.Bounds.X, tree.Bounds.Y);
         }
-        Background = new SolidColorBrush(Color.FromRgb(0x18, 0x18, 0x25));
+        Background = Palette.WindowBrush;
 
         var dock = new DockPanel();
-        var tabs = new Border
-        {
-            Background = new SolidColorBrush(Color.FromRgb(0x24, 0x27, 0x3a)),
-            Child = _tabBar,
-            IsVisible = false,
-        };
-        _tabBar.Tag = tabs;
-        DockPanel.SetDock(tabs, Dock.Top);
-        dock.Children.Add(tabs);
+        var toolbar = ShellToolbar.Build(action => DispatchNamedAction(action), SetFocusedTabPlacement);
+        DockPanel.SetDock(toolbar, Dock.Top);
+        dock.Children.Add(toolbar);
         var statusBar = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x31, 0x32, 0x44)),
+            Background = Palette.SurfaceBrush,
+            BorderBrush = Palette.EdgeBrush,
+            BorderThickness = new Thickness(0, 1, 0, 0),
             Child = _status,
         };
         // Chrome lives where panes never do (CLAUDE.md section 6): a native window hosted in a pane
@@ -109,7 +117,8 @@ internal sealed class MainWindow : Window
         dock.Children.Add(_canvas);
         Content = dock;
 
-        _canvas.Background = new SolidColorBrush(Color.FromRgb(0x18, 0x18, 0x25));
+        // The canvas shows through the divider gutters, so it is the line between panes.
+        _canvas.Background = Palette.WindowBrush;
         _canvas.PropertyChanged += (_, e) => { if (e.Property == BoundsProperty) Relayout(); };
         _canvas.PointerPressed += BeginDividerDrag;
         _canvas.PointerMoved += ContinueDividerDrag;
@@ -194,7 +203,7 @@ internal sealed class MainWindow : Window
             _message = $"{pane.Title}: {runtime.StatusMessage}";
         }
         UpdateStatus();
-        UpdateTabBar();
+        UpdateTabStrips(_tree.Arrange());
         _session.RequestSave();
     }
 
@@ -226,37 +235,113 @@ internal sealed class MainWindow : Window
         }
 
         UpdateStatus();
-        UpdateTabBar();
+        UpdateTabStrips(arrangement);
         _session.RequestSave();
     }
 
-    private void UpdateTabBar()
+    /// <summary>
+    /// Draw one tab strip per stack, in the band the layout engine reserved for it.
+    ///
+    /// Rebuilt wholesale on every layout rather than diffed. The strips are small and there are as
+    /// many as there are stacks — usually one or two — so the cost is nothing next to the bugs that
+    /// come from keeping a second model of the tree in sync with the tree.
+    /// </summary>
+    private void UpdateTabStrips(Arrangement arrangement)
     {
-        _tabBar.Children.Clear();
-        var leaf = _tree.Find(_tree.Focused);
-        var stack = FindEnclosingStack(leaf);
-        if (_tabBar.Tag is Control container) container.IsVisible = stack is not null;
-        if (stack is null) return;
+        foreach (var strip in _tabStrips) _canvas.Children.Remove(strip);
+        _tabStrips.Clear();
 
-        for (var index = 0; index < stack.Children.Count; index++)
+        var commands = new TabStripCommands(
+            Activate: FocusPane,
+            CloseTab: pane => Run(CloseTabAsync(pane)),
+            AddTab: stack => Run(AddTabToStackAsync(stack)),
+            MoveStrip: SetTabPlacement);
+
+        foreach (var strip in arrangement.TabStrips)
         {
-            var child = stack.Children[index];
-            var target = child.Leaves().First().Pane.Id;
-            var title = string.Join(" + ", child.Leaves().Select(item => item.Pane.Title));
-            var button = new Button
-            {
-                Content = title,
-                Padding = new Thickness(10, 3),
-                FontWeight = index == stack.ActiveIndex ? FontWeight.Bold : FontWeight.Normal,
-                Opacity = index == stack.ActiveIndex ? 1.0 : 0.72,
-            };
-            button.Click += (_, _) =>
-            {
-                _tree.Focus(target);
-                _runtimes.GetValueOrDefault(target)?.Focus();
-                Relayout();
-            };
-            _tabBar.Children.Add(button);
+            var view = TabStripView.Build(strip, _tree.Focused, commands);
+            Canvas.SetLeft(view, strip.Rect.X);
+            Canvas.SetTop(view, strip.Rect.Y);
+            view.Width = strip.Rect.Width;
+            view.Height = strip.Rect.Height;
+            _canvas.Children.Add(view);
+            _tabStrips.Add(view);
+        }
+    }
+
+    /// <summary>
+    /// A button click cannot await. Without this the task is unobserved, so a provider that threw
+    /// while creating a pane would leave the user looking at a button that did nothing and said
+    /// nothing — exactly the silent failure CLAUDE.md section 8 rules out.
+    /// </summary>
+    private void Run(Task work) => _ = Observe(work);
+
+    private async Task Observe(Task work)
+    {
+        try
+        {
+            await work;
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            UpdateStatus();
+        }
+    }
+
+    private void FocusPane(PaneId pane)
+    {
+        _tree.Focus(pane);
+        _runtimes.GetValueOrDefault(pane)?.Focus();
+        Relayout();
+    }
+
+    /// <summary>Closing a tab is closing its pane, and goes through the same path.</summary>
+    private async Task CloseTabAsync(PaneId pane)
+    {
+        FocusPane(pane);
+        await CloseFocusedAsync();
+    }
+
+    private Task AddTabToStackAsync(StackNode stack)
+    {
+        // Add beside the stack's active tab so the new one lands in this stack rather than
+        // wherever focus happens to be — the user clicked a specific "+".
+        var beside = stack.Active.Leaves().First().Pane.Id;
+        return AddTabAsync(NewTerminalPane(), "new tab", beside);
+    }
+
+    private void SetTabPlacement(StackNode stack, TabStripPlacement placement)
+    {
+        if (stack.TabStrip == placement) return;
+        stack.TabStrip = placement;
+        _message = $"tabs moved to the {placement.ToString().ToLowerInvariant()}";
+        Relayout();
+    }
+
+    /// <summary>The toolbar and keymap act on whichever stack holds the focused pane.</summary>
+    private void SetFocusedTabPlacement(TabStripPlacement placement)
+    {
+        if (FindEnclosingStack(_tree.Find(_tree.Focused)) is not { } stack)
+        {
+            _message = "the focused pane is not in a tab group yet — use Tab this pane first";
+            UpdateStatus();
+            return;
+        }
+        SetTabPlacement(stack, placement);
+    }
+
+    /// <summary>A tab group whose tabs run down the side, created in one step.</summary>
+    private async Task AddVerticalTabAsync()
+    {
+        await AddTabAsync(NewTerminalPane(), "new tab, tabs on the left");
+        if (FindEnclosingStack(_tree.Find(_tree.Focused)) is { } stack)
+        {
+            stack.TabStrip = TabStripPlacement.Left;
+            Relayout();
         }
     }
 
@@ -359,6 +444,11 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.FocusDown, () => MoveFocus(FocusDirection.Down));
         _actions.RegisterAsync(ShellActionNames.ClosePane, _ => new ValueTask(CloseFocusedAsync()));
         _actions.RegisterAsync(ShellActionNames.NewTab, _ => new ValueTask(AddTabAsync()));
+        _actions.RegisterAsync(ShellActionNames.NewTabVertical, _ => new ValueTask(AddVerticalTabAsync()));
+        _actions.Register(ShellActionNames.MoveTabsTop, () => SetFocusedTabPlacement(TabStripPlacement.Top));
+        _actions.Register(ShellActionNames.MoveTabsBottom, () => SetFocusedTabPlacement(TabStripPlacement.Bottom));
+        _actions.Register(ShellActionNames.MoveTabsLeft, () => SetFocusedTabPlacement(TabStripPlacement.Left));
+        _actions.Register(ShellActionNames.MoveTabsRight, () => SetFocusedTabPlacement(TabStripPlacement.Right));
         _actions.Register(ShellActionNames.NextTab, () => CycleTab(1));
         _actions.Register(ShellActionNames.PreviousTab, () => CycleTab(-1));
         _actions.Register(ShellActionNames.SaveSession, SaveSession);

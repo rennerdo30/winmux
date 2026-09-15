@@ -44,7 +44,7 @@
        the copy found nothing, and on this machine quietly shipped a stale artifact left behind in
        the old path. A missing PaneHost.exe only surfaces much later, as a foreign-app pane that
        refuses to start, so this fails the build instead (CLAUDE.md section 8: no silent failure). -->
-  <Target Name="CopyPaneHost" AfterTargets="Build">
+  <Target Name="ResolvePaneHostOutput">
     <MSBuild Projects="..\WinMux.PaneHost\WinMux.PaneHost.csproj"
              Targets="GetTargetPath"
              Properties="Configuration=$(Configuration);Platform=$(Platform)">
@@ -55,7 +55,16 @@
     </ItemGroup>
     <Error Condition="'@(PaneHostOutput)' == ''"
            Text="WinMux.PaneHost produced no output to copy beside WinMux.exe. Foreign-app panes cannot start without it." />
+  </Target>
+
+  <Target Name="CopyPaneHost" AfterTargets="Build" DependsOnTargets="ResolvePaneHostOutput">
     <Copy SourceFiles="@(PaneHostOutput)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Publish needs its own copy: CopyPaneHost targets $(OutDir), and a published dist\ that is
+       missing PaneHost.exe looks perfectly fine until the first foreign-app pane refuses to start. -->
+  <Target Name="CopyPaneHostOnPublish" AfterTargets="Publish" DependsOnTargets="ResolvePaneHostOutput">
+    <Copy SourceFiles="@(PaneHostOutput)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

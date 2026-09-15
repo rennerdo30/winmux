@@ -4,6 +4,7 @@
 [Dd]ebug/
 [Rr]elease/
 artifacts/
+dist/
 *.user
 *.suo
 
@@ -38,3 +39,7 @@ desktop.ini
 
 # published CLI output
 dist/
+
+# The live session file WinMux writes beside itself when run from the repo.
+/session.toml
+/*.toml.corrupt-*

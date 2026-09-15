@@ -28,6 +28,14 @@ internal static class TomlNames
         (CwdSource.ShellReported, "shell-reported"),
     ];
 
+    private static readonly (TabStripPlacement Value, string Text)[] TabStrips =
+    [
+        (TabStripPlacement.Top, "top"),
+        (TabStripPlacement.Bottom, "bottom"),
+        (TabStripPlacement.Left, "left"),
+        (TabStripPlacement.Right, "right"),
+    ];
+
     private static readonly (HostStrategy Value, string Text)[] Strategies =
     [
         (HostStrategy.Auto, "auto"),
@@ -41,6 +49,7 @@ internal static class TomlNames
     public static string Text(SplitDirection v) => Find(Directions, v);
     public static string Text(CwdSource v) => Find(CwdSources, v);
     public static string Text(HostStrategy v) => Find(Strategies, v);
+    public static string Text(TabStripPlacement v) => Find(TabStrips, v);
 
     public static PaneKind ParsePaneKind(string s, string where)
     {
@@ -52,6 +61,7 @@ internal static class TomlNames
     public static SplitDirection ParseDirection(string s, string where) => Parse(Directions, s, "split direction", where);
     public static CwdSource ParseCwdSource(string s, string where) => Parse(CwdSources, s, "cwd source", where);
     public static HostStrategy ParseStrategy(string s, string where) => Parse(Strategies, s, "host strategy", where);
+    public static TabStripPlacement ParseTabStrip(string s, string where) => Parse(TabStrips, s, "tab strip placement", where);
 
     private static string Find<T>((T Value, string Text)[] map, T value) where T : struct, Enum
     {

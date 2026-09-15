@@ -5,14 +5,17 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 5 complete.** `WinMux.exe` runs persistent ConPTY/VT terminal panes, foreign
+**State: Phase 5 complete, plus the Phase 6 GUI work below.** `WinMux.exe` runs persistent ConPTY/VT terminal panes, foreign
 applications selected through a shipped quirks database and isolated in one top-level PaneHost
 per pane, and a built-in file browser — all three as **pane providers** behind the public
 `WinMux.Panes` contract, so a fourth kind needs no Core or layout change
 ([ADR 0012](docs/adr/0012-phase-4-pane-providers-and-file-browser.md)). Both embed and attach
 modes, automatic refusal fallback, and live switching ship. The platform layer is extracted:
 `WinMux.Platform` states what an OS must provide and `WinMux.Platform.Win32` provides it, so the
-shell declares **zero P/Invoke** ([ADR 0013](docs/adr/0013-phase-5-platform-layer.md)). Phase 0:
+shell declares **zero P/Invoke** ([ADR 0013](docs/adr/0013-phase-5-platform-layer.md)). Tab groups
+nest anywhere in the tree, each with its own strip on any edge, and every layout operation is a
+toolbar button as well as a key ([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md)).
+Phase 0:
 ADRs [0001](docs/adr/0001-out-of-process-pane-hosts.md),
 [0002](docs/adr/0002-terminal-stack.md), [0003](docs/adr/0003-foreign-app-compatibility.md),
 [0004](docs/adr/0004-cwd-capture.md). Product code: `WinMux.Core` (layout, session model, TOML —
@@ -126,6 +129,7 @@ Session
            └── Leaf    { Pane }
 
 Pane = { id, kind, title, PaneState }
+Stack additionally carries `TabStrip`: Top | Bottom | Left | Right
   kind: validated, case-normalized string — "terminal" | "file-browser" | "foreign-app" | "com.example.…"
 ```
 
@@ -143,6 +147,13 @@ Adding a pane kind must not touch Core, the tree, persistence or the CLI.
 The file browser is the documented exception to "a pane is a process": it is trusted in-process
 WinMux UI, because a subprocess boundary buys nothing there. Terminal and foreign-app panes keep
 theirs.
+
+A `Stack` may appear anywhere a node may, including inside another `Stack`
+([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md)). Its tab strip is **reserved
+geometry**, not decoration: `Layouter` carves the band out of the stack's rectangle before placing
+the active child, and reports it on the `Arrangement`. That is what makes the strip safe to draw
+(section 6) and what makes nested tab groups expressible at all — a single bar docked to the window
+can only ever describe one stack.
 
 **Restore descriptor** — the persisted per-pane payload:
 - `kind`, `title`
@@ -338,6 +349,14 @@ launch visibly rather than being ignored. The shell resolves rules but never cal
 - **Keymap: one binding table, tmux-style prefix by default** (configurable, no-prefix allowed).
   Every action addressable by name from the command palette and from a CLI (`winmux split -h`),
   because a CLI makes the whole thing scriptable and testable.
+- **The prefix is the fast path, never the only path.** Every layout operation is also a toolbar
+  button and, for tabs, a control on the strip itself. All four surfaces — key, button, palette,
+  CLI — dispatch the *same named action*, so there is one implementation and four ways to ask.
+  An action may ship without a key (`move-tabs-*` do), but never without a visible control; the
+  keymap tests enforce the exemption list rather than letting it drift.
+- **Chrome colours live in `WinMux.Shell/Chrome/Theme.cs`**, and interaction states are Avalonia
+  *styles*, not properties set per control. Setting `Background` on a Button replaces the value
+  Fluent's template animates and silently removes its hover and pressed feedback.
 
 ## 7. Phase 0 — spikes (do these first)
 

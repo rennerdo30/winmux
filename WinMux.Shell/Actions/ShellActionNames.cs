@@ -15,6 +15,9 @@ public static class ShellActionNames
 
     public const string ClosePane = "close-pane";
     public const string NewTab = "new-tab";
+
+    /// <summary>A tab group whose tabs run down the side rather than across the top.</summary>
+    public const string NewTabVertical = "new-tab-vertical";
     public const string NextTab = "next-tab";
     public const string PreviousTab = "previous-tab";
     public const string SaveSession = "save-session";
@@ -34,6 +37,11 @@ public static class ShellActionNames
     public const string ConfigureCwdReporting = "configure-cwd-reporting";
     public const string ToggleForeignHostStrategy = "toggle-foreign-host-strategy";
 
+    public const string MoveTabsTop = "move-tabs-top";
+    public const string MoveTabsBottom = "move-tabs-bottom";
+    public const string MoveTabsLeft = "move-tabs-left";
+    public const string MoveTabsRight = "move-tabs-right";
+
     public static IReadOnlyList<string> All { get; } =
     [
         SplitColumns,
@@ -44,6 +52,7 @@ public static class ShellActionNames
         FocusDown,
         ClosePane,
         NewTab,
+        NewTabVertical,
         NextTab,
         PreviousTab,
         SaveSession,
@@ -61,5 +70,9 @@ public static class ShellActionNames
         OpenTerminalHere,
         ConfigureCwdReporting,
         ToggleForeignHostStrategy,
+        MoveTabsTop,
+        MoveTabsBottom,
+        MoveTabsLeft,
+        MoveTabsRight,
     ];
 }

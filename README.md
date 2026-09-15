@@ -117,8 +117,22 @@ the target; portability is a design discipline, not a promise.
 ## Run it
 
 ```powershell
+.\scripts\run.ps1                                          # build and launch
+.\scripts\run.ps1 -Session .\examples\tabs-and-splits.toml  # nested tab groups
+```
+
+Or by hand:
+
+```powershell
 dotnet build WinMux.slnx -c Release
 .\WinMux.Shell\bin\x64\Release\net10.0-windows\WinMux.exe [session.toml]
+```
+
+For a folder you can copy elsewhere:
+
+```powershell
+.\scripts\publish.ps1                  # -> dist\Release
+.\scripts\publish.ps1 -SelfContained   # also carries the .NET runtime
 ```
 
 To see the product phases rather than only run unit tests, use the visible walkthroughs:
@@ -128,8 +142,10 @@ To see the product phases rather than only run unit tests, use the visible walkt
 .\scripts\phase3-demo.ps1 -Configuration Release
 ```
 
-The default keymap is tmux-style: `Ctrl+B`, then `%`/`"` to split, arrows to move focus,
-`Shift+arrows` to resize, `c` for a tab, `n`/`p` to cycle, `x` to close, `w` to save, `A` to
+Every layout operation is a toolbar button, so none of this has to be memorised — but the default
+keymap is tmux-style: `Ctrl+B`, then `%`/`"` to split, arrows to move focus,
+`Shift+arrows` to resize, `c` for a tab, `v` for a tab group with its tabs down the side,
+`n`/`p` to cycle, `x` to close, `w` to save, `A` to
 toggle a foreign pane between embed and attach, and `:` for
 the command palette. `1`–`4` open cmd, Windows PowerShell, PowerShell 7, or WSL profiles; `i` opens
 cwd-reporting setup. Pass

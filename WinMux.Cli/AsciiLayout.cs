@@ -15,7 +15,7 @@ internal static class AsciiLayout
 {
     public static string Render(LayoutTree tree, int columns, int rows)
     {
-        var arrangement = Layouter.Arrange(tree.Root, new Rect(0, 0, columns, rows), dividerThickness: 1);
+        var arrangement = Layouter.Arrange(tree.Root, new Rect(0, 0, columns, rows), LayoutMetrics.CharacterGrid);
 
         var grid = new char[rows, columns];
         for (int y = 0; y < rows; y++)

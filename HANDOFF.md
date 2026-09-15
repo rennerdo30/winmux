@@ -2,6 +2,12 @@
 
 ## Where we are
 
+**Phase 6 (GUI) has started and its first slice is done:** tab groups nest anywhere in the tree,
+each with its own strip on any edge, and every layout operation is a toolbar button as well as a
+key. The tab strip is reserved geometry emitted by the layout engine, which is what keeps it from
+being painted over by a foreign app's window. See
+[ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md).
+
 **Phase 5 is complete:** the platform layer is extracted. `WinMux.Platform` (net10.0, Core-only,
 no P/Invoke) states what an operating system must provide — `IHostWindowService`,
 `IProcessInspector`, `IUserNotifier`, `WindowHandle` — and `WinMux.Platform.Win32/Windows/`
@@ -11,7 +17,8 @@ it kept are unit-tested against fakes for the first time. See
 layout contracts did not move.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-Verified 2026-09-15: **zero build warnings; 315/315 tests passing**. Visible acceptance is still
+Verified 2026-09-15: **zero build warnings; 344/344 tests passing**.
+Run it with `scripts/run.ps1`; `scripts/publish.ps1` produces a copyable `dist/Release`. Visible acceptance is still
 `scripts/phase4-demo.ps1` (needs **pwsh 7**, not Windows PowerShell 5.1); `-VerifyOnly` runs the
 measured checks without the long-running walkthrough.
 
@@ -36,6 +43,20 @@ measured checks without the long-running walkthrough.
   because `Platform_references_no_platform_assembly` alone would have passed an unused platform
   package — the same blind spot `CoreIsPlatformFreeTests` once had.
 
+**Also 2026-09-15** — Phase 6's first slice
+([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md)).
+
+- `StackNode` carries a `TabStrip` placement (top/bottom/left/right), persisted, defaulting to top
+  and omitted from the file when it is the default. Old sessions load unchanged.
+- `Layouter` reserves the strip out of the stack's rectangle and reports it on the `Arrangement`.
+  One strip per stack, wherever the stack is — the old single top bar could only ever describe one.
+- A toolbar, per-stack strips with `+`/close/placement menus, and a centralised `Chrome/Theme.cs`.
+- `scripts/run.ps1`, `scripts/publish.ps1` (to `dist/`), and `examples/tabs-and-splits.toml`.
+- **A shipped build bug, found while producing a testable exe:** the shell copied PaneHost from
+  `bin/$(Configuration)` while PaneHost, being x64-only, builds to `bin/x64/$(Configuration)`.
+  It had been shipping a three-day-old artifact; on a clean clone it would have copied nothing,
+  silently. Now resolved via `GetTargetPath`, and the build fails if there is nothing to copy.
+
 **Earlier: 2026-09-13** — Codex implemented Phase 4; re-verified and committed 2026-09-15.
 
 - `PaneKind` became a validated, case-normalized string instead of a closed enum. The enum made
@@ -59,14 +80,16 @@ finished and passing.
 
 ## The next action
 
-**Run the Phase 4/5 visual walkthrough and confirm nothing regressed on screen.**
-`pwsh -File scripts/phase4-demo.ps1`. The extraction changed how every placement reaches Windows,
-and the four repaint workarounds are precisely the things no test can verify — a foreign pane that
-paints the desktop behind it instead of its own content is the failure mode to look for.
+**Look at it, with a foreign app in a tab group.** `scripts/run.ps1 -Session examples/cmd-and-explorer.toml`,
+then Ctrl+B c to tab the Explorer pane and move the strip to the left. Two things can only be
+checked by eye: that Explorer still paints its own content after Phase 5 rerouted every placement
+call, and that a tab strip beside a native pane is not painted over by it. The layout guarantees
+they do not overlap; whether Windows agrees is the open question.
 
-After that, the roadmap's open items are unchanged and none is started: provider discovery and
-packaging, tab/pane reordering, foreign-window focus reconciliation, terminal selection and
-scrollback navigation. Pick one; there is no dependency between them.
+After that, the roadmap's open items are unchanged: provider discovery and packaging, tab and pane
+**reordering** (the strips are the surface it attaches to), foreign-window focus reconciliation,
+terminal selection and scrollback navigation — the last is the sharpest gap, because the engine
+keeps scrollback and can address it while the control has no wheel handler at all.
 
 ## Blocked / needs a human
 
@@ -105,5 +128,13 @@ scrollback navigation. Pick one; there is no dependency between them.
 - Do not put palette/modal chrome over the pane canvas; native windows paint above it.
 - Do not add a method to `WinMux.Platform` before something calls it, and do not write `Rect`
   unqualified in a file that imports Avalonia — it has one of its own, in device-independent
-  doubles (ADR 0013).
+  doubles (ADR 0013). The same is true of `TabStrip` (ADR 0014): assume any short geometric or
+  widget-shaped name in Core has an Avalonia namesake.
+- Do not set `Background` directly on a Button to style it. It replaces the value Fluent's template
+  animates, so the control loses hover and pressed feedback and reads as broken (ADR 0014). Style
+  the templated `ContentPresenter` instead.
+- Do not reuse the horizontal tab-strip thickness for a vertical strip; 28px of titles is a column
+  of ellipses (ADR 0014). `LayoutMetrics` carries both.
+- Do not guess another project's output path in a copy target. PaneHost is x64-only and builds to
+  `bin/x64/...`; ask MSBuild with `GetTargetPath`.
 - `E:\Development\winmux` and `D:\Development\winmux` are the same project via subst/junction.

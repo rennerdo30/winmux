@@ -47,6 +47,7 @@ public sealed record KeymapConfiguration
         new("Down", ShellActionNames.FocusDown, scope),
         new("X", ShellActionNames.ClosePane, scope),
         new("C", ShellActionNames.NewTab, scope),
+        new("V", ShellActionNames.NewTabVertical, scope),
         new("N", ShellActionNames.NextTab, scope),
         new("P", ShellActionNames.PreviousTab, scope),
         new("W", ShellActionNames.SaveSession, scope),

@@ -20,6 +20,29 @@ public enum SplitDirection
 
 public enum FocusDirection { Left, Right, Up, Down }
 
+/// <summary>
+/// Which edge of a stack its tab strip occupies.
+///
+/// This is layout, not decoration: the strip is *reserved out of* the stack's rectangle, so the
+/// active child never sits underneath it. That matters more here than in an ordinary UI toolkit,
+/// because a pane may host a native window that paints above anything the shell draws
+/// (CLAUDE.md section 6) — a strip drawn over a pane would simply disappear behind Explorer.
+/// </summary>
+public enum TabStripPlacement
+{
+    /// <summary>A horizontal strip above the content. The conventional default.</summary>
+    Top,
+
+    /// <summary>A horizontal strip below the content.</summary>
+    Bottom,
+
+    /// <summary>A vertical strip to the left. Fits long titles and many tabs.</summary>
+    Left,
+
+    /// <summary>A vertical strip to the right.</summary>
+    Right,
+}
+
 public abstract class LayoutNode
 {
     /// <summary>Null only for the root. Maintained by the containers, never set by callers.</summary>
@@ -164,12 +187,22 @@ public sealed class StackNode : LayoutNode
 
     public LayoutNode Active => _children[_activeIndex];
 
-    public StackNode(IEnumerable<LayoutNode> children, int activeIndex = 0)
+    /// <summary>
+    /// Which edge this stack's tab strip occupies. Per stack, not per window: a vertical strip
+    /// suits a stack of long titles, while its sibling three inches away may want none of that.
+    /// </summary>
+    public TabStripPlacement TabStrip { get; set; } = TabStripPlacement.Top;
+
+    public StackNode(
+        IEnumerable<LayoutNode> children,
+        int activeIndex = 0,
+        TabStripPlacement tabStrip = TabStripPlacement.Top)
     {
         foreach (var c in children) { c.Parent = this; _children.Add(c); }
         if (_children.Count == 0)
             throw new ArgumentException("A stack needs at least one child.", nameof(children));
         ActiveIndex = activeIndex;
+        TabStrip = tabStrip;
     }
 
     internal void InsertChild(int index, LayoutNode child)
@@ -200,7 +233,7 @@ public sealed class StackNode : LayoutNode
 
     public override IEnumerable<LeafNode> Leaves() => _children.SelectMany(c => c.Leaves());
 
-    public override LayoutNode Clone() => new StackNode(_children.Select(c => c.Clone()), _activeIndex);
+    public override LayoutNode Clone() => new StackNode(_children.Select(c => c.Clone()), _activeIndex, TabStrip);
 
-    public override string ToString() => $"Stack({_children.Count}, active={_activeIndex})";
+    public override string ToString() => $"Stack({_children.Count}, active={_activeIndex}, tabs={TabStrip})";
 }

@@ -138,7 +138,8 @@ public static class TomlSessionReader
                     id, kind, null, null,
                     StringList(t, "children", at),
                     null,
-                    (int)Integer(t, "active", at)),
+                    (int)Integer(t, "active", at),
+                    OptionalString(t, "tabs", at) is { } tabs ? TomlNames.ParseTabStrip(tabs, at) : null),
 
                 _ => throw new SessionFormatException(
                     $"Unknown node kind \"{kind}\" at {at}. Expected \"leaf\", \"split\" or \"stack\"."),
@@ -220,6 +221,18 @@ public static class TomlSessionReader
     private static string String(TomlTable t, string key, string where) =>
         Optional(t, key) as string
         ?? throw new SessionFormatException($"{where} is missing the string key `{key}`.");
+
+    /// <summary>
+    /// A string key that may be absent. A key that is present but not a string still fails: the
+    /// difference between "not written" and "written wrong" is exactly what a user needs told.
+    /// </summary>
+    private static string? OptionalString(TomlTable t, string key, string where) => Optional(t, key) switch
+    {
+        null => null,
+        string s => s,
+        var other => throw new SessionFormatException(
+            $"{where}.{key} should be a string, found {other.GetType().Name}."),
+    };
 
     private static long Integer(TomlTable t, string key, string where) => Optional(t, key) switch
     {

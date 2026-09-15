@@ -55,6 +55,12 @@ public sealed record NodeSnapshot
 
     // stack
     public int? ActiveIndex { get; init; }
+
+    /// <summary>
+    /// Which edge the stack's tabs occupy. Absent in files written before tab placement existed,
+    /// and absent for the conventional top strip, so old sessions load unchanged.
+    /// </summary>
+    public TabStripPlacement? TabStrip { get; init; }
 }
 
 public sealed record PaneSnapshot

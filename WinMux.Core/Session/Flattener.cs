@@ -10,7 +10,8 @@ internal sealed record FlatNode(
     SplitDirection? Direction,
     IReadOnlyList<string> Children,
     IReadOnlyList<double>? Ratios,
-    int? ActiveIndex);
+    int? ActiveIndex,
+    TabStripPlacement? TabStrip = null);
 
 internal sealed record FlatTree(string RootId, IReadOnlyList<FlatNode> Nodes, IReadOnlyList<PaneSnapshot> Panes);
 
@@ -68,7 +69,8 @@ internal static class Flattener
                     nodes.Add(null!);
                     var childIds = children.Select(Visit).ToArray();
                     nodes[placeholder] = new FlatNode(
-                        id, NodeKinds.Stack, null, null, childIds, null, node.ActiveIndex ?? 0);
+                        id, NodeKinds.Stack, null, null, childIds, null, node.ActiveIndex ?? 0,
+                        node.TabStrip);
                     return id;
                 }
 
@@ -126,6 +128,7 @@ internal static class Flattener
                         {
                             Kind = NodeKinds.Stack,
                             ActiveIndex = node.ActiveIndex ?? 0,
+                            TabStrip = node.TabStrip,
                             Children = node.Children.Select(Build).ToArray(),
                         };
 

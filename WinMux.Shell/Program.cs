@@ -16,7 +16,12 @@ internal sealed class App : Application
     public WinMux.Shell.Keymap.KeymapConfiguration Keymap { get; init; } = WinMux.Shell.Keymap.KeymapConfiguration.TmuxDefaults();
     public bool Restored { get; init; }
 
-    public override void Initialize() => Styles.Add(new FluentTheme());
+    public override void Initialize()
+    {
+        Styles.Add(new FluentTheme());
+        // After Fluent, so the chrome's own styles win where they overlap.
+        Styles.Add(Chrome.Theme.Build());
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {

@@ -47,6 +47,7 @@ public static class SessionMapper
         {
             Kind = NodeKinds.Stack,
             ActiveIndex = stack.ActiveIndex,
+            TabStrip = stack.TabStrip,
             Children = stack.Children.Select(ToSnapshot).ToArray(),
         },
 
@@ -93,7 +94,7 @@ public static class SessionMapper
             case NodeKinds.Stack:
             {
                 var children = RequireChildren(node, minimum: 2);
-                return new StackNode(children, node.ActiveIndex ?? 0);
+                return new StackNode(children, node.ActiveIndex ?? 0, node.TabStrip ?? TabStripPlacement.Top);
             }
 
             default:

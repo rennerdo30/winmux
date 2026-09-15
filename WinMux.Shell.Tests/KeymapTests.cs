@@ -103,12 +103,49 @@ public class KeymapTests
         Assert.Equal(1, calls);
     }
 
+    /// <summary>
+    /// Actions that ship with no key on purpose. Each is reachable from the toolbar's Tab menu and
+    /// from the ⋮ button on any tab strip, and all four are in the command palette and the CLI like
+    /// every other named action — they are simply not worth a prefix key apiece.
+    /// </summary>
+    private static readonly string[] MenuOnlyActions =
+    [
+        ShellActionNames.MoveTabsTop,
+        ShellActionNames.MoveTabsBottom,
+        ShellActionNames.MoveTabsLeft,
+        ShellActionNames.MoveTabsRight,
+    ];
+
     [Fact]
-    public void Default_table_covers_every_phase_one_action()
+    public void Every_action_has_a_default_key_unless_it_is_deliberately_menu_only()
     {
         var table = new KeyBindingTable(KeymapConfiguration.TmuxDefaults());
 
-        Assert.Empty(ShellActionNames.All.Except(table.Bindings.Select(x => x.ActionName)));
+        var unbound = ShellActionNames.All
+            .Except(table.Bindings.Select(x => x.ActionName))
+            .Except(MenuOnlyActions)
+            .ToArray();
+
+        Assert.True(unbound.Length == 0,
+            "These actions have no default key and are not listed as menu-only, so nothing reaches " +
+            "them but the palette: " + string.Join(", ", unbound) +
+            ". Either bind one, or add it to MenuOnlyActions and give it a button.");
+    }
+
+    [Fact]
+    public void A_menu_only_action_really_is_an_action()
+    {
+        // The exemption above is only safe while it names actions that exist. A typo would silently
+        // excuse a real action from ever being bound.
+        Assert.Empty(MenuOnlyActions.Except(ShellActionNames.All));
+    }
+
+    [Fact]
+    public void No_action_is_listed_as_menu_only_and_also_bound()
+    {
+        var table = new KeyBindingTable(KeymapConfiguration.TmuxDefaults());
+
+        Assert.Empty(MenuOnlyActions.Intersect(table.Bindings.Select(x => x.ActionName)));
     }
 
     [Fact]

@@ -117,7 +117,11 @@ public class ArrangementTests
         Assert.True(arranged.IsVisible(b.Id));
         Assert.False(arranged.IsVisible(a.Id));
         Assert.Equal(Rect.Empty, arranged[a.Id]);
-        Assert.Equal(new Rect(0, 0, 200, 200), arranged[b.Id]);
+
+        // The active tab gets what is left after the stack's tab strip, not the whole rectangle —
+        // the strip is reserved geometry so a native pane can never paint over its own tabs.
+        // See TabStripLayoutTests.
+        Assert.Equal(new Rect(0, Layouter.TabStripThickness, 200, 200 - Layouter.TabStripThickness), arranged[b.Id]);
     }
 
     [Fact]

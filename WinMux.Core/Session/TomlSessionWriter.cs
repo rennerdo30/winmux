@@ -80,6 +80,9 @@ public static class TomlSessionWriter
             case NodeKinds.Stack:
                 Kv(sb, NodeKeyWidth, "children", StrArray(node.Children));
                 Kv(sb, NodeKeyWidth, "active", node.ActiveIndex!.Value.ToString(CultureInfo.InvariantCulture));
+                // Omitted when it is the default, so the common file stays as short as it was.
+                if (node.TabStrip is { } strip and not TabStripPlacement.Top)
+                    Kv(sb, NodeKeyWidth, "tabs", Str(TomlNames.Text(strip)));
                 break;
         }
     }
