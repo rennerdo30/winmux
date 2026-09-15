@@ -78,7 +78,7 @@ public class TomlSessionTests
     /// an independent parser rather than against itself.
     /// </summary>
     [Theory]
-    [InlineData(@"C:\Users\renne\AppData\Local\Temp")]
+    [InlineData(@"C:\Users\example\AppData\Local\Temp")]
     [InlineData(@"C:\path with spaces\and ünïcode")]
     [InlineData("it's a directory")]
     [InlineData("quote\" and backslash\\ together")]

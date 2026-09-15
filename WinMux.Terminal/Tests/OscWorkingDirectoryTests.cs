@@ -35,7 +35,7 @@ public sealed class OscWorkingDirectoryTests
     [InlineData("file:///C:/Users/Renn%C3%A9/Project%20One", "C:/Users/Renné/Project One")]
     [InlineData("file://localhost/C:/Users/Test", "C:/Users/Test")]
     [InlineData("file://C:/Users/Test", "C:/Users/Test")]
-    [InlineData("file://wsl-host/home/renne/Project%20%E6%97%A5%E6%9C%AC%E8%AA%9E", "/home/renne/Project 日本語")]
+    [InlineData("file://wsl-host/home/example/Project%20%E6%97%A5%E6%9C%AC%E8%AA%9E", "/home/example/Project 日本語")]
     [InlineData("file://wsl-host/tmp/space and 日本語", "/tmp/space and 日本語")]
     public void Osc7DecodesFileUrlAndPreservesPathKind(string url, string expected)
     {
