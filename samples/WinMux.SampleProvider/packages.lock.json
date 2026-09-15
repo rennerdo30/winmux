@@ -42,7 +42,7 @@
         "type": "Project",
         "dependencies": {
           "Avalonia": "[12.1.2, )",
-          "WinMux.Core": "[0.6.0, )"
+          "WinMux.Core": "[0.7.0, )"
         }
       }
     }

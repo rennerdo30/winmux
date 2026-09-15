@@ -107,7 +107,7 @@
       "wmux": {
         "type": "Project",
         "dependencies": {
-          "WinMux.Core": "[0.6.0, )"
+          "WinMux.Core": "[0.7.0, )"
         }
       }
     }

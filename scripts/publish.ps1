@@ -60,12 +60,37 @@ $common = @(
 
 Write-Host "Packaging WinMux $version ($Configuration, win-x64)..." -ForegroundColor Cyan
 
-# The shell carries PaneHost and the quirks database with it (see CopyPaneHostOnPublish).
-dotnet publish $shellProject @common
-if ($LASTEXITCODE -ne 0) { throw "Publishing WinMux.Shell failed with exit code $LASTEXITCODE." }
+# Publishing for a RID makes NuGet add an empty "net10.0/win-x64" section to every
+# packages.lock.json. The sections are harmless in themselves, but CI restores *without* a RID and
+# --locked-mode then fails NU1004 across the whole solution -- which is exactly how preparing 0.7.0
+# broke the build, because the rewritten files looked like part of the change and got committed.
+#
+# Setting RestorePackagesWithLockFile=false is refused outright (NU1005) while lock files exist, so
+# the fix is blunter and more obviously correct: remember them, and put them back afterwards.
+# Packaging does not get to decide what the lock files say.
+$lockFiles = Get-ChildItem -LiteralPath $repo -Recurse -Filter 'packages.lock.json' |
+    Where-Object { $_.FullName -notmatch '[\\/](obj|bin)[\\/]' }
+$lockContents = @{}
+foreach ($lockFile in $lockFiles) {
+    $lockContents[$lockFile.FullName] = [System.IO.File]::ReadAllBytes($lockFile.FullName)
+}
 
-dotnet publish (Join-Path $repo 'WinMux.Cli\WinMux.Cli.csproj') @common
-if ($LASTEXITCODE -ne 0) { throw "Publishing WinMux.Cli failed with exit code $LASTEXITCODE." }
+try {
+    # The shell carries PaneHost and the quirks database with it (see CopyPaneHostOnPublish).
+    dotnet publish $shellProject @common
+    if ($LASTEXITCODE -ne 0) { throw "Publishing WinMux.Shell failed with exit code $LASTEXITCODE." }
+
+    dotnet publish (Join-Path $repo 'WinMux.Cli\WinMux.Cli.csproj') @common
+    if ($LASTEXITCODE -ne 0) { throw "Publishing WinMux.Cli failed with exit code $LASTEXITCODE." }
+}
+finally {
+    foreach ($path in $lockContents.Keys) {
+        if ((Get-FileHash -LiteralPath $path).Hash -ne
+            (Get-FileHash -InputStream ([System.IO.MemoryStream]::new($lockContents[$path]))).Hash) {
+            [System.IO.File]::WriteAllBytes($path, $lockContents[$path])
+        }
+    }
+}
 
 # Things a person unzipping this will want and cannot rebuild.
 Copy-Item -LiteralPath (Join-Path $repo 'LICENSE') -Destination $Destination

@@ -203,6 +203,16 @@ that a future session recognises them as answers rather than rediscovering them 
 - Do not put palette or modal chrome over the pane canvas; native windows paint above it.
 
 **Build and tooling**
+- Do not commit the `packages.lock.json` changes that a publish produces. `dotnet publish -r win-x64`
+  adds an empty `net10.0/win-x64` section to every lock file; CI restores *without* a RID and
+  `--locked-mode` then fails NU1004 across the whole solution. It looked like part of the version
+  bump and went in with it, turning CI red. `publish.ps1` now snapshots the lock files and puts them
+  back, because `RestorePackagesWithLockFile=false` is refused outright (NU1005) while they exist.
+- Do not check that a packaged file *exists* and call it verified. `publish.ps1` required both
+  `WinMux.exe` and `winmux.exe`, and `UpdateInstaller` checks archives for `WinMux.exe` — all three
+  were satisfied by one file, because Windows filenames are case-insensitive and the CLI had
+  overwritten the shell. Check what the file is: the PE subsystem is 2 for the GUI and 3 for a
+  console application.
 - Do not `dotnet build` a single x64 project then run `bin/x64/Release/...` — a bare project build
   lands in `bin/Release/` and you test a stale exe. Build the solution.
 - Do not guess another project's output path in a copy target; ask MSBuild with `GetTargetPath`.

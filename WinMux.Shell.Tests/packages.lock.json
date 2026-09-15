@@ -355,11 +355,11 @@
           "Avalonia.Themes.Fluent": "[12.1.2, )",
           "FluentFTP": "[54.2.1, )",
           "SSH.NET": "[2026.0.0, )",
-          "WinMux.Core": "[0.6.0, )",
-          "WinMux.Panes": "[0.6.0, )",
-          "WinMux.Platform.Win32": "[0.6.0, )",
-          "WinMux.Pty": "[0.6.0, )",
-          "WinMux.Terminal": "[0.6.0, )"
+          "WinMux.Core": "[0.7.0, )",
+          "WinMux.Panes": "[0.7.0, )",
+          "WinMux.Platform.Win32": "[0.7.0, )",
+          "WinMux.Pty": "[0.7.0, )",
+          "WinMux.Terminal": "[0.7.0, )"
         }
       },
       "winmux.core": {
@@ -372,20 +372,20 @@
         "type": "Project",
         "dependencies": {
           "Avalonia": "[12.1.2, )",
-          "WinMux.Core": "[0.6.0, )"
+          "WinMux.Core": "[0.7.0, )"
         }
       },
       "winmux.platform": {
         "type": "Project",
         "dependencies": {
-          "WinMux.Core": "[0.6.0, )"
+          "WinMux.Core": "[0.7.0, )"
         }
       },
       "winmux.platform.win32": {
         "type": "Project",
         "dependencies": {
-          "WinMux.Core": "[0.6.0, )",
-          "WinMux.Platform": "[0.6.0, )"
+          "WinMux.Core": "[0.7.0, )",
+          "WinMux.Platform": "[0.7.0, )"
         }
       },
       "winmux.pty": {
