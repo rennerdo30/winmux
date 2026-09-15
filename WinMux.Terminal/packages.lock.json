@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "Terminal.Emulation": {
+        "type": "Direct",
+        "requested": "[0.3.3, )",
+        "resolved": "0.3.3",
+        "contentHash": "rKT+Ccu5knBeGXC5y6FwgSDz5jHoiICYMj+tR7ZTZNafet8kZDZeDxvlkIj/h0uZexcWs2/2KHPJaZYOyZytUQ=="
+      }
+    }
+  }
+}

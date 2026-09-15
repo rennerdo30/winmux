@@ -22,4 +22,21 @@
     <RepositoryUrl>https://github.com/rennerdo30/winmux</RepositoryUrl>
   </PropertyGroup>
 
+  <!--
+    Lock the dependency graph, with hashes.
+
+    WinMux depends on Terminal.Emulation, a package whose declared source repository does not
+    resolve and whose whole history is five weeks old (ADR 0018). The supply-chain decision that
+    situation demands is the user's, but recording exactly which bytes a build used does not need
+    a decision and closes the worst version of the risk: a package replaced under the same version
+    number, restored silently, and shipped.
+
+    A restore that no longer matches packages.lock.json now fails instead of quietly resolving
+    something else. When a dependency is deliberately changed, the lock file changes with it in the
+    same commit — that is the point, not an inconvenience.
+  -->
+  <PropertyGroup>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
 </Project>

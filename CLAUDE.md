@@ -67,8 +67,12 @@ Why:
 terminal control of Windows-Terminal quality and that writing one might sink the stack. Measured:
 `Terminal.Emulation` is a VT500 engine that parses at 14–36 MiB/s — 3–10× faster than ConPTY
 delivers — with correct reflow, alternate screen, double-width cells and OSC 8. **Adopt it, behind
-our own `ITerminalEngine` interface**, because it is a 5-week-old single-author package whose
-source repository is not public. Its types must never reach `WinMux.Core`.
+our own `ITerminalEngine` interface**, because it is a single-author package whose declared source
+repository does not resolve. Its types must never reach `WinMux.Core`.
+Re-examined 2026-09-15 in [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md): MIT, five
+weeks of history, ~1.2K downloads, and a repository URL pinned to a commit that 404s. The build now
+carries `packages.lock.json` with content hashes, which removes the "replaced under the same version
+number" risk without pre-empting the v1 call — the options and a recommendation are in that ADR.
 
 Two numbers worth carrying forward:
 - **ConPTY's round-trip floor is ~0.08 ms** (cmd). A full 60 Hz frame is available for rendering.

@@ -90,6 +90,9 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
   for the whole wedge**: 201 ms detached, 4,386 ms attached, identical across six runs. The
   constraint stands; CLAUDE.md section 5 described the wrong symptom for three phases.
   [ADR 0017](docs/adr/0017-input-queue-attachment.md).
+- **Dependencies are now hash-locked.** `packages.lock.json` for all 17 projects, so a restore that
+  does not match fails instead of quietly resolving something else
+  ([ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md)).
 
 ## The next action
 
@@ -109,8 +112,12 @@ wanted.
   same scale, so nothing has exercised mixed DPI. Someone must set different display scales and run
   `scripts/phase4-demo.ps1` across them before fidelity is claimed.
 - **Higher-integrity attach is constrained by UIPI.** Failures are visible; WinMux will not elevate.
-- **`Terminal.Emulation` 0.3.3 has no public source.** A supply-chain decision before v1. The owned
-  `ITerminalEngine` seam bounds the replacement cost but does not make the call.
+- **`Terminal.Emulation` needs a v1 decision.** Assessed 2026-09-15 in
+  [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md): MIT, single author, five weeks of
+  history, and a declared repository that 404s. Content hashes are now pinned in
+  `packages.lock.json`, which closes the silent-substitution risk. Four options are costed there;
+  the recommendation is **ask the author to publish the source, then keep pinning**. Nobody has
+  asked — that is the next move and it is a message, not a commit.
 - **An X11 port needs its own host executable, not a shim.** PaneHost keeps its 35 imports
   deliberately (ADR 0013, decision 5). Do not read that as unfinished Phase 5 work.
 
