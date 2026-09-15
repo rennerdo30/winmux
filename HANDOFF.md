@@ -85,6 +85,11 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
   `samples/WinMux.SampleProvider` is a working `com.example.clock` pane and the reference for
   writing one; `examples/external-provider.toml` opens it. ADR 0012 has claimed since Phase 4
   that a fourth pane kind needs no Core change — that is now demonstrated rather than asserted.
+- **Spike 5 measured input-queue attachment**, open since Phase 0. Input is *not* starved: 10/10
+  keystrokes at ~1 ms with the queues attached and the other process wedged. **Taking focus blocks
+  for the whole wedge**: 201 ms detached, 4,386 ms attached, identical across six runs. The
+  constraint stands; CLAUDE.md section 5 described the wrong symptom for three phases.
+  [ADR 0017](docs/adr/0017-input-queue-attachment.md).
 
 ## The next action
 
@@ -103,8 +108,6 @@ wanted.
 - **Mixed-scale multi-monitor is unmeasured.** The development machine has two monitors at the
   same scale, so nothing has exercised mixed DPI. Someone must set different display scales and run
   `scripts/phase4-demo.ps1` across them before fidelity is claimed.
-- **Input-queue starvation is unmeasured** (ADR 0001, finding 4). Until it is, keep PaneHost
-  top-level and never reparent it into the shell.
 - **Higher-integrity attach is constrained by UIPI.** Failures are visible; WinMux will not elevate.
 - **`Terminal.Emulation` 0.3.3 has no public source.** A supply-chain decision before v1. The owned
   `ITerminalEngine` seam bounds the replacement cost but does not make the call.

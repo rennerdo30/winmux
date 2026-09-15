@@ -33,9 +33,8 @@ ADRs [0005](docs/adr/0005-layout-engine.md), [0006](docs/adr/0006-session-file-f
 [ADR 0010](docs/adr/0010-phase-2-persistence-runtime.md), and Phase 3 by
 [ADR 0011](docs/adr/0011-phase-3-foreign-app-runtime.md).
 
-**Not done yet:** physical mixed-scale multi-monitor verification, and measuring whether input-queue
-attachment actually starves the shell (section 9). Both need a human with hardware or a harness that
-synthesizes real input.
+**Not done yet:** physical mixed-scale multi-monitor verification. It needs two displays set to
+different scales, so it needs a human.
 
 ---
 
@@ -248,12 +247,15 @@ is required reading. The traps, each of which has bitten shipping products:
   goes through a dedicated layout thread or `SWP_ASYNCWINDOWPOS`; every other cross-process call
   (`SendMessage`, `SetFocus`, `DestroyWindow`, `SetParent`) has the same hazard and no async flag.
 - **Input queue attachment.** `SetParent` across processes attaches the two threads' input queues,
-  *transitively*. One hung app hangs everyone attached to it — including the WinMux UI thread.
-  **This is why pane hosting is out-of-process** (below). Non-negotiable.
-  *Status: unverified.* Spike 3 chained `shell → host → app` and the shell stayed responsive, but
-  the harness measures message-loop liveness and cannot see input starvation, which is this trap's
-  actual symptom. Treat as true and unproven: do not chain `SetParent` from the shell to a pane
-  host until someone tests it with synthesized input.
+  *transitively*. **This is why pane hosting is out-of-process** (below). Non-negotiable.
+  **Measured in spike 5** ([ADR 0017](docs/adr/0017-input-queue-attachment.md)) — and the symptom is
+  not the one this entry claimed for three phases. Input is **not** starved: with the queues
+  attached and the other process wedged, keystrokes still arrived 10/10 at about a millisecond.
+  What blocks is **focus**: taking the foreground cost 201 ms detached and **4,386 ms attached**,
+  the entire remaining duration of the wedge, reproducible to two milliseconds across six runs.
+  So attachment does not add a new failure; it widens the one above, from calls on a foreign window
+  to any call about focus anywhere in the attached set — including on our own windows. A shell that
+  shares an input queue with a frozen app freezes the next time a pane is selected.
 - **DPI mismatch.** Hosting an app with different DPI awareness misbehaves unless mixed-mode
   hosting is enabled explicitly (`SetThreadDpiHostingBehavior(DPI_HOSTING_BEHAVIOR_MIXED)`).
   Declare WinMux per-monitor-v2 and test on a mixed-DPI multi-monitor setup — it is not optional,
@@ -445,7 +447,18 @@ copy remains evidence. The cwd profiles moved into `WinMux.Shell/Cwd/Profiles/` 
    **PowerShell's PEB is permanently stale and WSL's is meaningless**, so the shell snippets are
    mandatory, not optional. See [ADR 0004](docs/adr/0004-cwd-capture.md) and `spikes/04-cwd/`.
 
+5. ~~**Input-queue attachment.**~~ **Done, 2026-09-15.** Synthesized keyboard input against a
+   window whose queue is attached to a wedged process. Input is unaffected; taking focus blocks for
+   the full duration of the wedge (201 ms → 4,386 ms). See
+   [ADR 0017](docs/adr/0017-input-queue-attachment.md) and `spikes/05-input-queue/`.
+
 Write one short ADR per spike in `docs/adr/`. Record what failed, not just what worked.
+
+**Every measurement harness needs a control case that must pass before its interesting number is
+believed.** Three times in two days a harness, not the product, produced the alarming result: a
+DPI-unaware screenshot that "proved" chrome did not render, and an input spike that reported
+starvation while also silently delivering no input at all in its healthy control
+([ADR 0016](docs/adr/0016-windows-11-chrome.md), [ADR 0017](docs/adr/0017-input-queue-attachment.md)).
 
 ## 8. Working agreements
 
@@ -471,9 +484,9 @@ Write one short ADR per spike in `docs/adr/`. Record what failed, not just what 
   past v1, but the process model should not make it impossible later.
 - Adopting already-running apps (drag a running window into a pane) — v1 or later?
 - Multi-monitor: one WinMux window per monitor, or one spanning window with per-monitor tabs?
-- **Does input-queue attachment actually starve the shell of input?** Spike 3 could not see it
-  (ADR 0001, finding 4). Needs a harness that synthesizes real input. Until then, chaining
-  `SetParent` from the shell to a pane host stays forbidden.
+- ~~**Does input-queue attachment actually starve the shell of input?**~~ **Answered — no, but
+  focus blocks instead, which is worse.** Spike 5, [ADR 0017](docs/adr/0017-input-queue-attachment.md).
+  Chaining `SetParent` from the shell to a pane host stays forbidden, now for a measured reason.
 
 ## 10. Session handoff
 

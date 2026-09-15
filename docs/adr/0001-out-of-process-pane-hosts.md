@@ -121,3 +121,12 @@ detach (T6) restores parent, style, ex-style and rect exactly.
 - **`IsHungAppWindow` + `SendMessageTimeout` are insufficient to test the input-queue claim.**
   Both probe message-loop liveness. Choosing them meant the headline assertion of section 5
   went unmeasured; this was only noticed when T3 came back green.
+
+---
+
+## Addendum, 2026-09-15 — finding 4 is measured
+
+Finding 4 left input-queue starvation unverified, and the constraint that depends on it unproven.
+Spike 5 measured it: **input is not starved, but focus operations block for the full duration of a
+wedge** — 201 ms detached against 4,386 ms with the queues attached. The constraint stands and the
+reasoning behind it is corrected in [ADR 0017](0017-input-queue-attachment.md).
