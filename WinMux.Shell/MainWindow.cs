@@ -36,6 +36,14 @@ internal sealed class MainWindow : Window
     /// There is one per stack, drawn where that stack is — see <see cref="TabStripView"/>.
     /// </summary>
     private readonly List<Control> _tabStrips = [];
+
+    /// <summary>
+    /// The visible handle in each divider gutter, rebuilt with the strips on every layout.
+    ///
+    /// The gutters were always draggable and always invisible: six pixels of window background
+    /// with no handle and no cursor change, so nothing said a pane could be resized at all.
+    /// </summary>
+    private readonly List<Control> _dividerHandles = [];
     private readonly TextBlock _status = new()
     {
         Margin = new Thickness(10, 4),
@@ -293,6 +301,19 @@ internal sealed class MainWindow : Window
     {
         foreach (var strip in _tabStrips) _canvas.Children.Remove(strip);
         _tabStrips.Clear();
+        foreach (var handle in _dividerHandles) _canvas.Children.Remove(handle);
+        _dividerHandles.Clear();
+
+        foreach (var divider in arrangement.Dividers)
+        {
+            var handle = DividerHandle.Build(divider);
+            Canvas.SetLeft(handle, divider.Rect.X);
+            Canvas.SetTop(handle, divider.Rect.Y);
+            handle.Width = divider.Rect.Width;
+            handle.Height = divider.Rect.Height;
+            _canvas.Children.Add(handle);
+            _dividerHandles.Add(handle);
+        }
 
         var commands = new TabStripCommands(
             Activate: FocusPane,
@@ -494,6 +515,8 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.MoveTabsRight, () => SetFocusedTabPlacement(TabStripPlacement.Right));
         _actions.Register(ShellActionNames.NextTab, () => CycleTab(1));
         _actions.Register(ShellActionNames.PreviousTab, () => CycleTab(-1));
+        _actions.RegisterAsync(ShellActionNames.ShowSettings, _ => new ValueTask(ShowSettingsAsync()));
+        _actions.RegisterAsync(ShellActionNames.OpenSession, _ => new ValueTask(OpenSessionAsync()));
         _actions.Register(ShellActionNames.SaveSession, SaveSession);
         _actions.RegisterAsync(ShellActionNames.SaveSessionAs, _ => new ValueTask(SaveSessionAsAsync()));
         _actions.Register(ShellActionNames.ResizeLeft, () => ResizeFocused(FocusDirection.Left));
@@ -579,9 +602,11 @@ internal sealed class MainWindow : Window
         var cwd = directory is { Length: > 0 }
             ? new WorkingDirectory(directory, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow)
             : focused?.Restore.Cwd;
+        // Inherit from the focused terminal first — "another one of these" is almost always what a
+        // split means — and fall back to the profile the user chose in settings.
         profile ??= focused?.Kind == PaneKind.Terminal && !string.IsNullOrWhiteSpace(focused.Restore.Program)
             ? new TerminalProfile(focused.Title, focused.Restore.Program!, focused.Restore.Args)
-            : TerminalProfiles.Cmd;
+            : TerminalProfiles.ByName(Settings.ShellSettings.Current.DefaultTerminal);
         var pane = Pane.Terminal(profile.Name, profile.Program,
             cwd is { IsKnown: true }
                 ? new WorkingDirectory(cwd.Path, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow)
@@ -659,7 +684,14 @@ internal sealed class MainWindow : Window
     private async Task AddTabAsync(Pane pane, string message, PaneId? beside = null)
     {
         var runtime = await CreateNewRuntimeAsync(pane);
-        var id = _tree.AddTab(beside ?? _tree.Focused, pane);
+        var target = beside ?? _tree.Focused;
+        var existing = FindEnclosingStack(_tree.Find(target));
+        var id = _tree.AddTab(target, pane);
+
+        // A group that already existed keeps whatever placement it was given; only a brand new one
+        // takes the default, so changing the setting never rearranges someone's open layout.
+        if (existing is null && FindEnclosingStack(_tree.Find(id)) is { } created)
+            created.TabStrip = Settings.ShellSettings.Current.DefaultTabPlacement;
         AddRuntime(pane, runtime);
         _message = message;
         Relayout();
@@ -763,6 +795,151 @@ internal sealed class MainWindow : Window
         {
             _paneCloseInProgress = false;
         }
+    }
+
+    private async Task ShowSettingsAsync()
+    {
+        var dialog = new SettingsWindow(
+            Settings.ShellSettings.Current,
+            _session.SessionPath,
+            Settings.ShellSettings.Path);
+
+        await dialog.ShowDialog(this);
+
+        if (dialog.Result is { } chosen)
+        {
+            _message = Settings.ShellSettings.Update(chosen) ?? "settings saved";
+            UpdateStatus();
+        }
+
+        // The cwd page is its own dialog, and stacking modals on top of each other is how people
+        // lose track of which one they are answering.
+        if (dialog.OpenCwdReporting) await ShowCwdIntegrationAsync(onlyIfUnseen: false);
+    }
+
+    /// <summary>
+    /// Open a saved layout, replacing the one on screen.
+    ///
+    /// Destructive by nature — the panes you are looking at have to close first — so it asks, and
+    /// it validates the file **before** touching anything live. A file that will not parse leaves
+    /// the current session exactly as it was.
+    ///
+    /// Foreign applications are detached rather than killed, the same as at shutdown: they were
+    /// adopted, and adopting something is not a licence to close it.
+    /// </summary>
+    private async Task OpenSessionAsync()
+    {
+        var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open session",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("WinMux session") { Patterns = ["*.toml"] },
+            ],
+        });
+
+        if (picked.Count == 0)
+        {
+            _message = "open cancelled";
+            UpdateStatus();
+            return;
+        }
+
+        var path = picked[0].TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            _message = "that location is not a file WinMux can read";
+            UpdateStatus();
+            return;
+        }
+
+        // Read and validate first. SessionFile.Load quarantines and refuses a malformed file rather
+        // than starting empty (ADR 0006), and there is no reason to close a single pane until the
+        // replacement is known to be good.
+        SessionSnapshot snapshot;
+        try
+        {
+            snapshot = SessionFile.Load(path);
+        }
+        catch (Exception ex) when (ex is SessionFormatException or IOException or UnauthorizedAccessException)
+        {
+            _message = "could not open that session: " + ex.Message;
+            UpdateStatus();
+            return;
+        }
+
+        if (_session.WindowCount > 1)
+        {
+            _message = "close the other WinMux windows first; opening a session replaces all of them";
+            UpdateStatus();
+            return;
+        }
+
+        var extra = snapshot.Windows.Count > 1
+            ? Environment.NewLine + Environment.NewLine +
+              $"That session has {snapshot.Windows.Count} windows. Only the first is opened here; " +
+              "the rest stay in the file until you save."
+            : string.Empty;
+
+        var confirmed = !Settings.ShellSettings.Current.ConfirmBeforeClosingPanes || await NoticeWindow.ConfirmAsync(
+            this,
+            "Open this session?",
+            $"The {_tree.Panes.Count()} pane(s) in this window will be closed first. Terminals end; " +
+            "foreign applications are detached and keep running." + extra,
+            "Open session");
+        if (!confirmed)
+        {
+            _message = "open cancelled";
+            UpdateStatus();
+            return;
+        }
+
+        await ReplaceSessionAsync(snapshot, path);
+    }
+
+    private async Task ReplaceSessionAsync(SessionSnapshot snapshot, string path)
+    {
+        _cwdCaptureTimer.Stop();
+        _message = "closing panes safely…";
+        UpdateStatus();
+
+        var runtimes = _runtimes.Values.ToArray();
+        var results = await Task.WhenAll(
+            runtimes.Select(runtime => CloseRuntimeSafelyAsync(runtime, PaneCloseReason.ShellShutdown)));
+
+        if (results.FirstOrDefault(result => !result.Succeeded) is { } failed)
+        {
+            _cwdCaptureTimer.Start();
+            _message = "kept the current session because a pane could not close safely: " + failed.Message;
+            UpdateStatus();
+            return;
+        }
+
+        foreach (var runtime in runtimes)
+        {
+            _canvas.Children.Remove(runtime.View);
+            await runtime.DisposeAsync();
+        }
+        _runtimes.Clear();
+
+        // Point the autosaver at the new file before the first save, and without writing the old
+        // layout into it.
+        var switched = await _session.SwitchFileAsync(path);
+        if (!switched.Succeeded)
+        {
+            _message = "could not switch session file: " + switched.Error?.Message;
+            UpdateStatus();
+        }
+
+        var window = snapshot.Windows[0];
+        _tree = SessionMapper.FromSnapshot(window);
+        Title = string.IsNullOrWhiteSpace(window.Title) ? "WinMux" : window.Title;
+
+        await StartPanesAsync();
+        _cwdCaptureTimer.Start();
+        _message = "opened " + _session.SessionPath;
+        UpdateStatus();
     }
 
     /// <summary>

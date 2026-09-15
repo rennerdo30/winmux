@@ -143,6 +143,9 @@ keeps scrollback and can address it while the control has no wheel handler at al
 - Do not `dotnet build` WinMux.Shell.csproj alone and then run `bin/x64/Release/...`. The project
   is x64 only through the solution mapping, so a bare project build lands in `bin/Release/` and you
   test a stale exe. Build the solution (ADR 0014 addendum).
+- Do not put a right-aligned group in the toolbar. Docked right, or in a Grid Auto column, it
+  reports sensible bounds and paints nothing — unexplained, see ADR 0014. Toolbar controls go in
+  the main StackPanel.
 - Do not put `SnapshotProcesses` on an interactive path. It costs 123 ms for ~330 processes while
   the working-directory read it enables costs 0.12 ms; `CachedProcessInspector` now shares one list
   across panes and refreshes in the background. Eight panes cost 821 ms per capture pass without it.

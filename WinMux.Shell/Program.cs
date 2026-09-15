@@ -16,6 +16,17 @@ internal sealed class App : Application
     public WinMux.Shell.Keymap.KeymapConfiguration Keymap { get; init; } = WinMux.Shell.Keymap.KeymapConfiguration.TmuxDefaults();
     public bool Restored { get; init; }
 
+    private Avalonia.Platform.PlatformColorValues? _platformColors;
+
+    private void ApplyTheme()
+    {
+        if (_platformColors is not { } colors) return;
+        Chrome.Palette.Apply(colors);
+        RequestedThemeVariant = Chrome.Palette.IsDark
+            ? Avalonia.Styling.ThemeVariant.Dark
+            : Avalonia.Styling.ThemeVariant.Light;
+    }
+
     public override void Initialize()
     {
         Styles.Add(new FluentTheme());
@@ -27,20 +38,28 @@ internal sealed class App : Application
         // pick up the platform here: Fluent kept resolving its light control colours while our own
         // brushes painted dark, so every templated control — the active tab, the dialogs — came out
         // light-on-dark. Asking Windows and saying the answer out loud is unambiguous.
+        Settings.ShellSettings.Load();
+        Chrome.Palette.Preference = Settings.ShellSettings.Current.Theme;
+
         var settings = PlatformSettings;
         if (settings is not null)
         {
-            Apply(settings.GetColorValues());
-            settings.ColorValuesChanged += (_, values) => Dispatcher.UIThread.Post(() => Apply(values));
+            _platformColors = settings.GetColorValues();
+            ApplyTheme();
+            settings.ColorValuesChanged += (_, values) => Dispatcher.UIThread.Post(() =>
+            {
+                _platformColors = values;
+                ApplyTheme();
+            });
         }
 
-        void Apply(Avalonia.Platform.PlatformColorValues values)
+        // A change to the theme preference has to repaint against the *platform's* colours, which
+        // are the accent and the system variant — so they are kept rather than re-queried.
+        Settings.ShellSettings.Changed += () =>
         {
-            RequestedThemeVariant = values.ThemeVariant == Avalonia.Platform.PlatformThemeVariant.Dark
-                ? Avalonia.Styling.ThemeVariant.Dark
-                : Avalonia.Styling.ThemeVariant.Light;
-            Chrome.Palette.Apply(values);
-        }
+            Chrome.Palette.Preference = Settings.ShellSettings.Current.Theme;
+            ApplyTheme();
+        };
 
         // After Fluent, so the chrome's own styles win where they overlap.
         Styles.Add(Chrome.Theme.Build());

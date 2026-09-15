@@ -221,3 +221,44 @@ The layout could be saved but not saved *elsewhere*. `save-session-as` opens a f
 autosaver, replaces it, and moves `SessionPath`. Flushing first matters, because a pending debounced
 write against the old path would otherwise be lost, which is precisely what priority 1 forbids.
 It is on the Save button's dropdown, in the palette and in the CLI, with no key binding.
+
+---
+
+## Addendum — open, settings, and a resize affordance
+
+Three gaps found by using the app, all of the same kind: the capability existed, the interface
+did not.
+
+- **Pane resizing has worked since ADR 0005** and nobody could tell. The gutter was six pixels of
+  window background with no handle, no hover state and no cursor. `DividerHandle` draws a grip and
+  sets a resize cursor; it handles no events, because `MainWindow` already owns the drag against
+  the arrangement's divider rectangles and two owners would eventually disagree about where a
+  divider is.
+- **Open session** replaces the layout on screen. It validates the file before closing anything, so
+  a file that will not parse leaves the current session untouched, and it detaches foreign apps
+  rather than killing them — they were adopted, and adopting something is not a licence to close
+  it. `SwitchFileAsync` is deliberately not `SaveAsAsync`: the old layout belongs in the old file,
+  flushed there before the switch, and the newly opened file is left as it was on disk.
+- **Settings** persist to `%APPDATA%\WinMux\settings.toml`. Four entries, each changing something
+  visible: theme, default terminal, where a new tab group puts its tabs, and whether an action that
+  closes running panes asks first. Unlike a session, an unreadable settings file never stops WinMux
+  starting — it falls back to defaults and reports *which key* was wrong, because starting
+  differently without saying so is the worse failure.
+
+### What failed
+
+- **The right-aligned toolbar group did not render, and I could not find out why.** Save, Settings
+  and the palette were a separate group docked to the right. They painted nothing — not the
+  buttons, and not a debug background on the panel itself — while `LayoutUpdated` reported the group
+  visible at sensible bounds (`1357, 6, 119×28`) with three children. A `DockPanel` with the group
+  docked first, a `Grid` with an `Auto` column, and removing the explicit `HorizontalAlignment` all
+  behaved the same. The identical controls render correctly when added to the main `StackPanel`,
+  which is where they now live — and where Windows Terminal keeps its equivalents. The toolbar row
+  scrolls when the window is narrow, so a button can be off-screen but never silently absent.
+  Shipping chrome that depends on unexplained behaviour was the worse option; this is recorded as
+  unexplained rather than fixed.
+- **Screenshot-driven debugging has a cost I underestimated.** Capturing the app meant repeatedly
+  taking the foreground on a machine somebody was using, and one capture returned their browser
+  instead of WinMux. Pixel sampling also produced a false positive — a "present" reading that was
+  the tail of the *Close pane* label, which sent the diagnosis in the wrong direction for a while.
+  Instrumenting the layout and reading the numbers settled in one run what four screenshots had not.

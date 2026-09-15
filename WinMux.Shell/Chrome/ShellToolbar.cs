@@ -75,37 +75,43 @@ internal static class ShellToolbar
         bar.Children.Add(Command(Icons.Close(16), "Close pane", "Close the focused pane",
             ShellActionNames.ClosePane, dispatch));
 
-        var right = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 2,
-            Margin = new Thickness(8, 6),
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        right.Children.Add(SplitButton(
+        bar.Children.Add(Divider());
+
+        // Session and settings live in the same row as everything else.
+        //
+        // They were a separate right-aligned group, docked to the right of the toolbar, and they
+        // did not render — not the buttons, not a debug background on the panel itself — while the
+        // layout system reported the group as visible with sensible bounds. The identical controls
+        // render correctly in this StackPanel. Rather than ship chrome that depends on behaviour
+        // nobody can explain, they sit in the flow, which is also where Windows Terminal keeps its
+        // equivalents. The row scrolls when the window is too narrow, so a button can be off-screen
+        // but never silently absent.
+        bar.Children.Add(SplitButton(
             Icons.Save(), string.Empty, "Save the session now",
             () => dispatch(ShellActionNames.SaveSession),
             [
+                ("Open session…", ShellActionNames.OpenSession),
                 ("Save", ShellActionNames.SaveSession),
                 ("Save as…", ShellActionNames.SaveSessionAs),
             ],
             dispatch));
-        right.Children.Add(IconOnly(Icons.Commands(), "All commands by name (Ctrl+B then :)",
+        bar.Children.Add(IconOnly(Icons.Settings(), "Settings", ShellActionNames.ShowSettings, dispatch));
+        bar.Children.Add(IconOnly(Icons.Commands(), "All commands by name (Ctrl+B then :)",
             ShellActionNames.ShowPalette, dispatch));
 
-        var dock = new DockPanel { LastChildFill = false };
-        DockPanel.SetDock(bar, Dock.Left);
-        DockPanel.SetDock(right, Dock.Right);
-        dock.Children.Add(bar);
-        dock.Children.Add(right);
+        var layout = new ScrollViewer
+        {
+            Content = bar,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Hidden,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+        };
 
         return new Border
         {
             Background = Palette.RaisedBrush,
             BorderBrush = Palette.EdgeBrush,
             BorderThickness = new Thickness(0, 0, 0, 1),
-            Child = dock,
+            Child = layout,
         };
     }
 

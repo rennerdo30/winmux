@@ -110,6 +110,8 @@ public class KeymapTests
     /// </summary>
     private static readonly string[] MenuOnlyActions =
     [
+        ShellActionNames.ShowSettings,
+        ShellActionNames.OpenSession,
         ShellActionNames.SaveSessionAs,
         ShellActionNames.MoveTabsTop,
         ShellActionNames.MoveTabsBottom,

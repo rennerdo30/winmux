@@ -33,6 +33,9 @@ internal sealed class SessionController : IDisposable
 
     public string SessionPath { get; private set; }
 
+    /// <summary>How many top-level windows this session currently owns.</summary>
+    public int WindowCount => _windows.Count;
+
     public void Register(MainWindow window)
     {
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
@@ -100,6 +103,36 @@ internal sealed class SessionController : IDisposable
         _autosaver.SaveCompleted += OnSaveCompleted;
         SessionPath = destination;
         return SaveNow();
+    }
+
+    /// <summary>
+    /// Start working in a different file **without** writing the current layout into it.
+    ///
+    /// This is what opening a session needs and <see cref="SaveAsAsync"/> is not: the old layout
+    /// belongs in the old file. It is flushed there first, so nothing pending is lost, and the new
+    /// file is left exactly as it was on disk until the caller asks for a save.
+    /// </summary>
+    public async Task<SessionSaveResult> SwitchFileAsync(string path)
+    {
+        if (_disposed != 0)
+            return new SessionSaveResult(false, new ObjectDisposedException(nameof(SessionController)));
+
+        var destination = Path.GetFullPath(path);
+        _captureDebounce.Stop();
+
+        var pending = await _autosaver.FlushAsync().ConfigureAwait(true);
+        if (!pending.Succeeded) return pending;
+
+        if (string.Equals(destination, SessionPath, StringComparison.OrdinalIgnoreCase))
+            return new SessionSaveResult(true);
+
+        _autosaver.SaveCompleted -= OnSaveCompleted;
+        await _autosaver.DisposeAsync().ConfigureAwait(true);
+
+        _autosaver = new SessionAutosaver(destination);
+        _autosaver.SaveCompleted += OnSaveCompleted;
+        SessionPath = destination;
+        return new SessionSaveResult(true);
     }
 
     /// <summary>Persist current intent before any foreign application is detached.</summary>

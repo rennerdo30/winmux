@@ -91,6 +91,24 @@ internal static class Icons
         10,
         new Polyline { Points = { new Point(5, 6.5), new Point(8, 9.5), new Point(11, 6.5) } });
 
+    /// <summary>A gear, for settings.</summary>
+    public static Control Settings() => Draw(
+        new Ellipse
+        {
+            Width = 4.6, Height = 4.6,
+            Margin = new Thickness(5.7, 5.7, 0, 0),
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+        },
+        new ShapePath
+        {
+            Data = Geometry.Parse(
+                "M 8,2.4 L 9.3,3.6 L 11,3.2 L 11.7,4.8 L 13.1,5.4 L 12.8,7.1 " +
+                "L 13.9,8.4 L 12.8,9.7 L 13.1,11.4 L 11.7,12 L 11,13.6 L 9.3,13.2 " +
+                "L 8,14.4 L 6.7,13.2 L 5,13.6 L 4.3,12 L 2.9,11.4 L 3.2,9.7 " +
+                "L 2.1,8.4 L 3.2,7.1 L 2.9,5.4 L 4.3,4.8 L 5,3.2 L 6.7,3.6 Z"),
+        });
+
     /// <summary>Three dots, for a menu.</summary>
     public static Control More() => Draw(
         Dot(4.5), Dot(8), Dot(11.5));

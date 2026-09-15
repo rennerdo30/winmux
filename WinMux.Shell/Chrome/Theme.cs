@@ -5,6 +5,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Styling;
+using WinMux.Core.Settings;
 
 namespace WinMux.Shell.Chrome;
 
@@ -37,8 +38,14 @@ internal static class Palette
     public static readonly SolidColorBrush MutedTextBrush = new();
     public static readonly SolidColorBrush FaintTextBrush = new();
 
-    /// <summary>True while the system is in dark mode. Panes are dark either way; chrome is not.</summary>
+    /// <summary>True while the chrome is painted dark. Panes are dark either way; chrome is not.</summary>
     public static bool IsDark { get; private set; } = true;
+
+    /// <summary>
+    /// What the user asked for. <see cref="ThemePreference.System"/> follows Windows and changes
+    /// with it; the other two pin the scheme and ignore the platform.
+    /// </summary>
+    public static ThemePreference Preference { get; set; } = ThemePreference.System;
 
     /// <summary>
     /// Windows 11's UI face. "Variable Text" is the optical size meant for body copy; falling back
@@ -58,7 +65,12 @@ internal static class Palette
     /// </summary>
     public static void Apply(PlatformColorValues values)
     {
-        IsDark = values.ThemeVariant == PlatformThemeVariant.Dark;
+        IsDark = Preference switch
+        {
+            ThemePreference.Dark => true,
+            ThemePreference.Light => false,
+            _ => values.ThemeVariant == PlatformThemeVariant.Dark,
+        };
         var accent = values.AccentColor1;
 
         if (IsDark)

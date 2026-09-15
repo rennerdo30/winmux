@@ -20,6 +20,8 @@ public static class ShellActionNames
     public const string NewTabVertical = "new-tab-vertical";
     public const string NextTab = "next-tab";
     public const string PreviousTab = "previous-tab";
+    public const string ShowSettings = "show-settings";
+    public const string OpenSession = "open-session";
     public const string SaveSession = "save-session";
     public const string SaveSessionAs = "save-session-as";
 
@@ -56,6 +58,8 @@ public static class ShellActionNames
         NewTabVertical,
         NextTab,
         PreviousTab,
+        ShowSettings,
+        OpenSession,
         SaveSession,
         SaveSessionAs,
         ResizeLeft,
