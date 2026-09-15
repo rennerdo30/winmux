@@ -14,6 +14,7 @@ internal sealed class FileBrowserModel
 
     private readonly Pane _pane;
     private readonly IFileBrowserFileSystem _fileSystem;
+    private readonly FileBrowserClipboard _clipboard;
     private readonly string _fallbackDirectory;
     private IReadOnlyList<FileBrowserNavigationItem> _entries = [];
     private string? _unavailableRestoreDirectory;
@@ -32,7 +33,8 @@ internal sealed class FileBrowserModel
     public FileBrowserModel(
         Pane pane,
         string fallbackDirectory,
-        IFileBrowserFileSystem? fileSystem = null)
+        IFileBrowserFileSystem? fileSystem = null,
+        FileBrowserClipboard? clipboard = null)
     {
         ArgumentNullException.ThrowIfNull(pane);
         ArgumentException.ThrowIfNullOrWhiteSpace(fallbackDirectory);
@@ -44,6 +46,7 @@ internal sealed class FileBrowserModel
 
         _pane = pane;
         _fileSystem = fileSystem ?? SystemFileBrowserFileSystem.Instance;
+        _clipboard = clipboard ?? FileBrowserClipboard.Shared;
         _fallbackDirectory = NormalizeForDisplay(fallbackDirectory);
 
         Restore();
@@ -151,6 +154,310 @@ internal sealed class FileBrowserModel
         var unavailable = CurrentDirectory;
         _unavailableRestoreDirectory ??= unavailable;
         LoadFallback($"Directory '{unavailable}' is unavailable. {error}");
+    }
+
+    /// <summary>Whether this filesystem can be changed at all; false hides every modifying command.</summary>
+    public bool CanModify => _fileSystem.CanModify;
+
+    /// <summary>Whether a delete can be undone here. False means Delete must warn, not pretend.</summary>
+    public bool CanRecoverDeletes => _fileSystem.CanRecoverDeletes;
+
+    /// <summary>True when there is something to paste into this directory.</summary>
+    public bool CanPaste => CanModify && _clipboard.HasContent;
+
+    public bool CreateDirectory(string name, CancellationToken cancellationToken = default)
+    {
+        if (!Guard(out var refusal) || !ValidName(name, out refusal))
+        {
+            StatusMessage = refusal;
+            return false;
+        }
+
+        return Perform(
+            () =>
+            {
+                var target = Unique(CurrentDirectory, name.Trim(), isDirectory: true);
+                _fileSystem.CreateDirectory(target);
+                return target;
+            },
+            cancellationToken,
+            created => $"Created '{NameOf(created)}'.",
+            "Cannot create the folder.");
+    }
+
+    public bool RenameSelected(string newName, CancellationToken cancellationToken = default)
+    {
+        if (SelectedItem is not { } item)
+        {
+            StatusMessage = "Select something to rename first.";
+            return false;
+        }
+
+        if (!Guard(out var refusal) || !ValidName(newName, out refusal))
+        {
+            StatusMessage = refusal;
+            return false;
+        }
+
+        var trimmed = newName.Trim();
+        if (_fileSystem.PathComparer.Equals(item.Name, trimmed))
+        {
+            StatusMessage = null;
+            return true;
+        }
+
+        return Perform(
+            () =>
+            {
+                var target = Unique(CurrentDirectory, trimmed, item.IsDirectory);
+                _fileSystem.Move(item.Path, target, item.IsDirectory);
+                return target;
+            },
+            cancellationToken,
+            renamed => $"Renamed to '{NameOf(renamed)}'.",
+            $"Cannot rename '{item.Name}'.");
+    }
+
+    public bool DeleteSelected(bool permanent, CancellationToken cancellationToken = default)
+    {
+        if (SelectedItem is not { } item)
+        {
+            StatusMessage = "Select something to delete first.";
+            return false;
+        }
+
+        if (!Guard(out var refusal))
+        {
+            StatusMessage = refusal;
+            return false;
+        }
+
+        if (!permanent && !CanRecoverDeletes)
+        {
+            // Never quietly upgrade a recoverable delete into an unrecoverable one.
+            StatusMessage = "This location has no Recycle Bin. Use Shift+Delete to delete permanently.";
+            return false;
+        }
+
+        return Perform(
+            () =>
+            {
+                _fileSystem.Delete(item.Path, item.IsDirectory, permanent);
+                return null;
+            },
+            cancellationToken,
+            _ => permanent ? $"Deleted '{item.Name}' permanently." : $"Moved '{item.Name}' to the Recycle Bin.",
+            $"Cannot delete '{item.Name}'.");
+    }
+
+    /// <summary>Put the selection on the clipboard. <paramref name="isMove"/> true is a cut.</summary>
+    public bool HoldSelected(bool isMove)
+    {
+        if (SelectedItem is not { } item)
+        {
+            StatusMessage = "Select something first.";
+            return false;
+        }
+
+        if (isMove && !Guard(out var refusal))
+        {
+            StatusMessage = refusal;
+            return false;
+        }
+
+        _clipboard.Set(item.Path, item.IsDirectory, isMove);
+        StatusMessage = $"{(isMove ? "Cut" : "Copied")} '{item.Name}'.";
+        return true;
+    }
+
+    public bool Paste(CancellationToken cancellationToken = default)
+    {
+        if (!_clipboard.HasContent)
+        {
+            StatusMessage = "There is nothing to paste.";
+            return false;
+        }
+
+        if (!Guard(out var refusal))
+        {
+            StatusMessage = refusal;
+            return false;
+        }
+
+        var source = _clipboard.Path!;
+        var isDirectory = _clipboard.IsDirectory;
+        var isMove = _clipboard.IsMove;
+        var name = NameOf(source);
+
+        // Moving a directory inside itself destroys it, and the OS error for it is unhelpful.
+        // Checked here so the message names the actual problem.
+        if (isDirectory && IsSelfOrDescendant(source, CurrentDirectory))
+        {
+            StatusMessage = $"Cannot paste '{name}' into itself.";
+            return false;
+        }
+
+        if (isMove && _fileSystem.PathComparer.Equals(_fileSystem.GetParentDirectory(source) ?? "", CurrentDirectory))
+        {
+            _clipboard.Clear();
+            StatusMessage = $"'{name}' is already here.";
+            return true;
+        }
+
+        return Perform(
+            () =>
+            {
+                var target = Unique(CurrentDirectory, name, isDirectory);
+                if (isMove)
+                {
+                    _fileSystem.Move(source, target, isDirectory);
+                }
+                else
+                {
+                    _fileSystem.Copy(source, target, isDirectory, cancellationToken);
+                }
+
+                if (isMove) _clipboard.Clear();
+                return target;
+            },
+            cancellationToken,
+            pasted => $"{(isMove ? "Moved" : "Copied")} '{NameOf(pasted)}' here.",
+            $"Cannot paste '{name}'.");
+    }
+
+    /// <summary>
+    /// Run a modifying operation, then reload the directory so the result is visible, selecting
+    /// whatever the operation produced. Failures leave the view untouched and say why.
+    /// </summary>
+    private bool Perform(
+        Func<string?> operation,
+        CancellationToken cancellationToken,
+        Func<string?, string> success,
+        string failurePrefix)
+    {
+        string? produced;
+        try
+        {
+            produced = operation();
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = $"{failurePrefix} It was cancelled.";
+            Refresh(CancellationToken.None);
+            return false;
+        }
+        catch (Exception ex) when (IsFileSystemFailure(ex))
+        {
+            StatusMessage = $"{failurePrefix} {ex.Message}";
+            return false;
+        }
+
+        Refresh(cancellationToken);
+        if (produced is not null)
+        {
+            SelectQuietly(produced);
+        }
+
+        StatusMessage = success(produced);
+        PersistState();
+        return true;
+    }
+
+    /// <summary>Select a path if it is present, without turning its absence into a complaint.</summary>
+    private void SelectQuietly(string path)
+    {
+        SelectedItem = _entries.FirstOrDefault(entry => _fileSystem.PathComparer.Equals(entry.Path, path));
+    }
+
+    private bool Guard(out string? refusal)
+    {
+        refusal = CanModify ? null : "This location is read-only.";
+        return refusal is null;
+    }
+
+    /// <summary>
+    /// A name must be a single component. Rejecting separators is not fussiness: a name of
+    /// <c>..\\elsewhere</c> would place the result outside the directory the user is looking at.
+    /// </summary>
+    private static bool ValidName(string? name, out string? refusal)
+    {
+        var trimmed = name?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            refusal = "A name cannot be empty.";
+            return false;
+        }
+
+        if (trimmed is "." or "..")
+        {
+            refusal = $"'{trimmed}' is not a usable name.";
+            return false;
+        }
+
+        if (trimmed.AsSpan().IndexOfAny('/', '\\', ':') >= 0)
+        {
+            refusal = "A name cannot contain a path separator.";
+            return false;
+        }
+
+        if (trimmed.AsSpan().IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            refusal = "That name contains characters a file cannot have.";
+            return false;
+        }
+
+        refusal = null;
+        return true;
+    }
+
+    /// <summary>
+    /// A destination that does not exist yet: "report.txt" becomes "report (2).txt".
+    ///
+    /// This is what keeps every operation non-destructive. Overwriting on a name collision is the
+    /// single most expensive mistake a file manager can make, and asking the user is a dialog that
+    /// still ends in someone clicking through it.
+    /// </summary>
+    private string Unique(string directory, string name, bool isDirectory)
+    {
+        var candidate = _fileSystem.Combine(directory, name);
+        if (!Exists(candidate)) return candidate;
+
+        var stem = isDirectory ? name : Path.GetFileNameWithoutExtension(name);
+        var extension = isDirectory ? string.Empty : Path.GetExtension(name);
+
+        for (var index = 2; index < int.MaxValue; index++)
+        {
+            candidate = _fileSystem.Combine(directory, $"{stem} ({index}){extension}");
+            if (!Exists(candidate)) return candidate;
+        }
+
+        throw new IOException("no free name is available in this directory");
+    }
+
+    private bool Exists(string path) => _fileSystem.DirectoryExists(path) || _fileSystem.FileExists(path);
+
+    /// <summary>Whether <paramref name="candidate"/> is <paramref name="root"/> or lives inside it.</summary>
+    private bool IsSelfOrDescendant(string root, string candidate)
+    {
+        for (var walk = candidate; walk is not null; walk = _fileSystem.GetParentDirectory(walk))
+        {
+            if (_fileSystem.PathComparer.Equals(walk, root)) return true;
+        }
+
+        return false;
+    }
+
+    private string NameOf(string? path) =>
+        path is null ? string.Empty : path[(LastSeparator(path) + 1)..];
+
+    private static int LastSeparator(string path)
+    {
+        for (var index = path.Length - 1; index >= 0; index--)
+        {
+            if (path[index] is '/' or '\\') return index;
+        }
+
+        return -1;
     }
 
     private void Restore()

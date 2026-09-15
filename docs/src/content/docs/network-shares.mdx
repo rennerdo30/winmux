@@ -148,7 +148,9 @@ Stated plainly so nobody waits for it:
 - **No built-in SMB or NFS client.** Mount it with Windows; WinMux browses the result.
 - **No SFTP, FTP or SCP browsing yet.** Unlike SMB and NFS, Windows has nothing to delegate to
   here, so these need real work rather than a document. They are wanted and not yet built.
-- **No file transfer.** The file browser navigates and selects; it does not copy, move or delete.
-  This is true of local files too.
+- **File transfer works, within one filesystem.** Copy, cut, paste, rename, new folder and delete
+  all work on a share exactly as they do locally — see [Keyboard](/keyboard/#in-a-file-browser-pane).
+  Windows is doing the work, so a UNC path is just a path. What is *not* built yet is copying
+  between two different filesystems, which only becomes a question when SFTP arrives.
 - **No credential storage of its own**, for a share or anything else. Windows Credential Manager
   holds it, and you can inspect and delete what is in there without trusting WinMux to do it.

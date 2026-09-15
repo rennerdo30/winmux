@@ -172,7 +172,17 @@ public sealed class FileBrowserUncTests
 
         public string? GetParentDirectory(string path) => Directory.GetParent(path)?.FullName;
 
+        public string Combine(string directory, string name) => Path.Combine(directory, name);
+
         public bool DirectoryExists(string path) => _directories.ContainsKey(GetFullPath(path));
+
+        public bool FileExists(string path)
+        {
+            var parent = GetParentDirectory(path);
+            return parent is not null &&
+                   _directories.TryGetValue(GetFullPath(parent), out var entries) &&
+                   entries.Any(entry => !entry.IsDirectory && PathComparer.Equals(entry.Path, GetFullPath(path)));
+        }
 
         public IEnumerable<FileBrowserNavigationItem> EnumerateEntries(string path) =>
             _directories.TryGetValue(GetFullPath(path), out var entries)

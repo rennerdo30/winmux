@@ -44,6 +44,29 @@ pane. Anything you type returns the view to the live screen.
 
 `Ctrl+Shift+C` copies the selection, `Ctrl+Shift+V` and `Shift+Insert` paste.
 
+## In a file-browser pane
+
+These need no prefix; they act on the selected entry in the pane that has focus.
+
+| Key | Does |
+|---|---|
+| `Enter` | Open the folder |
+| `Backspace` | Parent folder |
+| `F5` | Refresh |
+| `Ctrl+Shift+N` | New folder |
+| `F2` | Rename |
+| `Ctrl+C` / `Ctrl+X` | Copy / cut |
+| `Ctrl+V` | Paste here |
+| `Delete` | Delete to the Recycle Bin |
+| `Shift+Delete` | Delete permanently, after confirming |
+| `Ctrl+Enter` | Open a terminal here |
+
+Right-click gives the same list with the shortcuts beside it. Copy in one pane and paste in another:
+the clipboard is shared between file-browser panes, which is most of the reason to have two.
+
+Nothing here overwrites. Pasting onto a name that exists produces `report (2).txt`, and so does
+renaming onto one, so a collision never costs you the original file.
+
 <Aside title="Keyboards that are not American">
 A binding written as a character — `%`, `:`, `"` — is matched against **the character your keyboard
 produces**, not the key that produces it on a US keyboard.

@@ -40,4 +40,7 @@ internal static class PlatformServices
 
     /// <summary>Somewhere to keep a password that is not a file WinMux owns.</summary>
     public static ICredentialStore Credentials { get; } = new Win32CredentialStore();
+
+    /// <summary>Deleting a file the way the user can undo it.</summary>
+    public static IFileTrash Trash { get; } = new Win32FileTrash();
 }

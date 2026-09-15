@@ -20,9 +20,9 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-16: 648 passed, 0 warnings.** Version 0.6.0.
-Everything through the credential store is **pushed** (`7dae17f`); the network-share work described
-below is the only thing newer than `origin/main`.
+**Verified 2026-09-16: 670 passed, 0 warnings.** Version 0.6.0.
+Everything through the network-share guide is **pushed** (`f96a586`); the file-operations work
+described below is the only thing newer than `origin/main`.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
@@ -72,6 +72,11 @@ needs to know happened, and where the reasoning lives.
 - **SSH and Remote Desktop are profiles**, not a new pane kind — one list behind every surface that
   opens a pane (CLAUDE.md section 5a). `ICredentialStore` landed with them, backed by Windows
   Credential Manager, so that no password ever reaches a file WinMux owns.
+- **The file browser can change files, not just look at them.** New folder, rename, cut/copy/paste
+  and delete, each with a key, a context-menu entry and — for the common ones — a button. Nothing
+  overwrites: a name collision becomes `report (2).txt`, so a mistake never costs the original.
+  Delete goes to the Recycle Bin through `IFileTrash`, and a *failed* recycle is never quietly
+  upgraded to a permanent delete.
 - **Network shares are Windows' job, and that is now decided and written down.** WinMux adds no SMB
   or NFS client: Windows mounts a share, WinMux browses the path. An SMBLibrary dependency was
   costed (LGPL-3.0 is compatible with MIT — weak copyleft, linking does not relicense us) and then
@@ -84,10 +89,11 @@ needs to know happened, and where the reasoning lives.
 was seen working on screen; what is left is the class of finding that only comes from use, and this
 project has now had two sessions of code-reading produce less than one screenshot did.
 
-The one real gap left in the file browser is **transfer**: it navigates and selects, but cannot
-copy, move or delete — locally or on a share. That, and SFTP/FTP browsing behind
-`IFileBrowserFileSystem` (unblocked now that `ICredentialStore` exists), are the next pieces of
-engineering rather than taste calls.
+**SFTP and FTP** are the one piece of the 2026-09-16 connection work still unbuilt. The seam is
+ready: `IFileBrowserFileSystem` now carries the write operations, `ICredentialStore` holds the
+passwords, and file transfer within a filesystem is done and tested. What is missing is a client for
+either protocol, and copying *between* two filesystems — which only becomes a question once a second
+one exists.
 
 The two things still queued are taste calls rather than gaps, both from the 2026-09-15 critique:
 the toolbar is uniform icon+label with a divider after every group, where Explorer's command bar has
@@ -198,6 +204,27 @@ that a future session recognises them as answers rather than rediscovering them 
 - Do not add a property to `WinMuxSettings` without adding it to `SettingsFile` as well. The file is
   hand-written rather than serialised from the type, so a forgotten property compiles and silently
   resets on every launch; that happened twice before `SettingsRoundTripTests` existed to catch it.
+
+**Avalonia threading and focus**
+- Do not touch a control inside the lambda handed to `RunNavigationAsync` — it runs on a background
+  thread via `Task.Run`, and reading `TextBox.Text` there throws "the calling thread cannot access
+  this object". Read the control on the UI thread and capture the value. The file browser's address
+  bar did this from Phase 4 and **typing a path and pressing Enter never worked once**; nothing
+  caught it because no test constructs the pane.
+- Do not rebuild a `ListBox`'s items without putting focus back. Clearing the items destroys the
+  focused row, so the next keystroke goes nowhere — copy-then-paste from the keyboard silently did
+  nothing. Restore it from a `Dispatcher.Post` at `Input` priority, not inline: the new rows are not
+  laid out yet and focusing an unarranged control fails quietly.
+- Do not build a `KeyGesture` with `KeyGesture.Parse`. It validates at run time and throws — `"Del"`
+  is not a name it knows — and the exception escaped a provider's `CreateAsync`, so the whole pane
+  became uncreatable. `new KeyGesture(Key.Delete, KeyModifiers.None)` is checked by the compiler.
+
+**Driving the UI from a script**
+- Always `AppActivate` (or click) before `SendKeys`. A key sent to an unfocused window goes to
+  whatever *is* focused, which looks exactly like a feature that does not work.
+- A modal left open blocks every later click and key, and produces the same silent nothing. Three
+  separate "bugs" in one session were one un-dismissed dialog. Screenshot before concluding, and
+  check for a dialog first.
 
 **Network paths**
 - Do not give `cmd.exe` a UNC working directory. It prints a warning nobody sees and starts in

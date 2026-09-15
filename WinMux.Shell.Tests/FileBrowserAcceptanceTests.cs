@@ -73,6 +73,8 @@ public sealed class FileBrowserAcceptanceTests : IDisposable
         public string GetFullPath(string path) => Path.GetFullPath(path);
         public bool DirectoryExists(string path) => true;
         public string? GetParentDirectory(string path) => null;
+        public string Combine(string directory, string name) => Path.Combine(directory, name);
+        public bool FileExists(string path) => false;
 
         public IEnumerable<FileBrowserNavigationItem> EnumerateEntries(string path)
         {
