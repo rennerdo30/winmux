@@ -123,8 +123,8 @@ the target; portability is a design discipline, not a promise.
   the seam honest is a discipline rather than a promise.
 - **Phase 6 — the interface.** **In progress.** Nested tab groups with strips on any edge, a
   toolbar covering every layout operation, Mica and the system accent, profiles and the application
-  catalogue, empty panes, window adoption, renaming, settings. Still missing: terminal selection
-  and scrollback, tab and pane reordering, dragging a window into a pane.
+  catalogue, empty panes, window adoption, renaming, terminal scrollback and selection, settings.
+  Still missing: tab and pane reordering, dragging a window into a pane, scrollback search.
 
 ## Run it
 

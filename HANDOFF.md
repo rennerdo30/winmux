@@ -13,10 +13,11 @@ strip on any edge ([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.m
 application can be put in a pane through a Start Menu picker, kept as a profile, or adopted from a
 window that is already open ([ADR 0015](docs/adr/0015-profiles-app-catalog-and-empty-panes.md)).
 Panes can be renamed — double-click a tab, right-click it, or `Ctrl+B ,` as in tmux — and the name
-outranks whatever the program inside calls itself.
+outranks whatever the program inside calls itself. Terminals scroll back through their history and
+support mouse selection with copy.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-15: 404 passed, 0 warnings.** Version 0.6.0.
+**Verified 2026-09-15: 424 passed, 0 warnings.** Version 0.6.0.
 **Nothing has been pushed since `68103d5`** (Phase 3), which is where `origin/main` still sits.
 Everything after it — Phases 4, 5 and all of the Phase 6 work — exists only on this machine.
 (A count of commits is deliberately not written here: it would be wrong the moment this file is
@@ -44,6 +45,9 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
 - **Renaming** — `RestoreDescriptor.TitleIsCustom` makes a user-chosen name outrank the automatic
   one, which matters because cmd sets its console title on almost every command and would otherwise
   undo the rename within seconds.
+- **Scrollback and selection** — `TerminalViewport` holds the arithmetic (where the view sits,
+  what a drag covers) in absolute row coordinates, so a selection survives new output and a parked
+  view does not slide. The engine had kept 5,000 rows since Phase 1 with no way to look at them.
 
 ## The next action
 
@@ -53,9 +57,9 @@ the author: a foreign app inside a tab group (does Explorer still paint its own 
 tab strip beside it survive?), and the empty-pane launcher adopting a running window.
 
 Then, in rough order of what the product is missing:
-**terminal selection and scrollback** (the engine keeps scrollback and the control has no wheel
-handler — the sharpest gap), tab and pane **reordering**, **foreign-window focus reconciliation**,
-dragging a window into a pane, provider discovery and packaging.
+tab and pane **reordering**, **foreign-window focus reconciliation**, dragging a window into a
+pane, and provider discovery and packaging. Terminal search over the scrollback is the obvious
+follow-on now that the history is reachable.
 
 ## Blocked / needs a human
 
@@ -109,6 +113,9 @@ dragging a window into a pane, provider discovery and packaging.
   does not ship, or fail on rounded rectangles. Headless Chrome works (`assets/build-icon.py`).
 
 **Judgement**
+- Do not intercept unshifted PageUp in a terminal; it belongs to the program in the pane, which is
+  why scrollback uses Shift+PageUp. Anything the user types must also snap the view back to the
+  live screen, or typing into history looks like the terminal has frozen.
 - Do not let an automatic title overwrite a name the user chose. A shell sets its console title
   constantly, so a rename without `TitleIsCustom` reverts within seconds and looks like a bug in
   the rename rather than in the title handling.

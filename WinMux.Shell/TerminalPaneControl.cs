@@ -23,6 +23,13 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     private static readonly IBrush BackgroundBrush = new SolidColorBrush(Color.FromRgb(0x10, 0x12, 0x18));
     private static readonly IBrush CursorBrush = new SolidColorBrush(Color.FromArgb(0x90, 0x88, 0xc0, 0xd0));
     private static readonly IBrush FocusBrush = new SolidColorBrush(Color.FromRgb(0x5e, 0x81, 0xac));
+    private static readonly IBrush SelectionBrush = new SolidColorBrush(Color.FromArgb(0x66, 0x82, 0xaa, 0xff));
+    private static readonly IBrush ScrollbarBrush = new SolidColorBrush(Color.FromArgb(0x55, 0xd8, 0xde, 0xe9));
+
+    /// <summary>Rows per wheel notch. Three is what every terminal on this machine uses.</summary>
+    private const int WheelRows = 3;
+
+    private const double ScrollbarWidth = 4;
 
     private readonly object _gate = new();
     private readonly string _program;
@@ -31,6 +38,9 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     private readonly Dictionary<string, string> _environment;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly ITerminalEngine _engine;
+
+    private readonly TerminalViewport _viewport = new();
+    private bool _dragging;
 
     private IPtySession? _session;
     private Task? _startTask;
@@ -97,8 +107,10 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         var renderBounds = new Rect(Bounds.Size);
         context.FillRectangle(BackgroundBrush, renderBounds, 0);
 
+        // The cursor belongs to the live screen. Drawing it while the user is reading history
+        // would put it on an unrelated row and imply typing would land there.
         var cursor = _engine.Cursor;
-        if (cursor.Visible && cursor.Row >= 0 && cursor.Row < _engine.Rows)
+        if (_viewport.IsFollowing && cursor.Visible && cursor.Row >= 0 && cursor.Row < _engine.Rows)
         {
             context.FillRectangle(
                 CursorBrush,
@@ -108,7 +120,19 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
         var columns = _engine.Columns;
         var visibleRows = Math.Min(_engine.Rows, Math.Max(0, (int)(Bounds.Height / CellHeight)));
-        var firstRow = Math.Max(0, _engine.TotalRows - _engine.Rows);
+        var firstRow = _viewport.TopRow(_engine.TotalRows, _engine.Rows);
+
+        // Selection goes down before the glyphs so the text stays readable through it.
+        for (var row = 0; row < visibleRows; row++)
+        {
+            if (_viewport.RowSpan(firstRow + row, columns) is not { } span) continue;
+            context.FillRectangle(
+                SelectionBrush,
+                new Rect(span.Start * CellWidth, row * CellHeight,
+                    (span.End - span.Start) * CellWidth, CellHeight),
+                0);
+        }
+
         var cells = new TerminalCell[columns];
         var line = new StringBuilder(columns);
 
@@ -145,16 +169,138 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             context.DrawText(text, new Point(0, row * CellHeight));
         }
 
+        DrawScrollbar(context, visibleRows);
+
         if (IsKeyboardFocusWithin)
         {
             context.DrawRectangle(new Pen(FocusBrush), renderBounds.Deflate(0.5), 0);
         }
     }
 
+    /// <summary>
+    /// A thin indicator on the right, drawn only once there is history to be in.
+    ///
+    /// Without it, scrolling back looks like the terminal has simply stopped updating: there is no
+    /// other cue that the view has left the live screen.
+    /// </summary>
+    private void DrawScrollbar(DrawingContext context, int visibleRows)
+    {
+        var total = _engine.TotalRows;
+        if (total <= visibleRows || visibleRows <= 0) return;
+
+        var height = Bounds.Height;
+        var thumbHeight = Math.Max(24, height * visibleRows / total);
+        var travel = height - thumbHeight;
+        var top = _viewport.TopRow(total, _engine.Rows);
+        var maxTop = Math.Max(1, total - visibleRows);
+        var y = travel * top / maxTop;
+
+        context.FillRectangle(
+            ScrollbarBrush,
+            new Rect(Bounds.Width - ScrollbarWidth - 2, y, ScrollbarWidth, thumbHeight),
+            (float)(ScrollbarWidth / 2));
+    }
+
+    /// <summary>The absolute cell under a point, clamped so a drag outside the control still works.</summary>
+    private TerminalPosition PositionAt(Point point)
+    {
+        var columns = Math.Max(1, _engine.Columns);
+        var column = Math.Clamp((int)Math.Round(point.X / CellWidth), 0, columns);
+        var row = _viewport.TopRow(_engine.TotalRows, _engine.Rows) +
+                  Math.Clamp((int)(point.Y / CellHeight), 0, Math.Max(0, _engine.Rows - 1));
+        return new TerminalPosition(Math.Clamp(row, 0, Math.Max(0, _engine.TotalRows - 1)), column);
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if (_engine.ScrollbackCount <= 0) return;
+
+        if (_viewport.Scroll((int)(e.Delta.Y * WheelRows), _engine.ScrollbackCount))
+        {
+            InvalidateVisual();
+        }
+        // Handled either way: a terminal that let the wheel bubble would scroll the pane container
+        // when it reached the end of its own history.
+        e.Handled = true;
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (!_dragging) return;
+        _viewport.ExtendSelection(PositionAt(e.GetPosition(this)));
+        InvalidateVisual();
+        e.Handled = true;
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (!_dragging) return;
+        _dragging = false;
+        e.Pointer.Capture(null);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Select the word under a position, the way a double-click does everywhere else.
+    ///
+    /// Path separators count as word characters, because the thing a person double-clicks in a
+    /// terminal is nearly always a path or a file name.
+    /// </summary>
+    private void SelectWordAt(TerminalPosition at)
+    {
+        var columns = _engine.Columns;
+        var cells = new TerminalCell[columns];
+        var info = _engine.CopyRow(at.Row, cells);
+        var length = Math.Min(info.Length, columns);
+        if (length == 0 || at.Column >= length) return;
+
+        static bool IsWord(char c) => char.IsLetterOrDigit(c) || c is '_' or '-' or '.' or '/' or '\\' or ':' or '~';
+
+        var start = at.Column;
+        var end = at.Column;
+        while (start > 0 && IsWord(Glyph(cells[start - 1]))) start--;
+        while (end < length && IsWord(Glyph(cells[end]))) end++;
+        if (end <= start) return;
+
+        _viewport.SetSelection(new TerminalPosition(at.Row, start), new TerminalPosition(at.Row, end));
+    }
+
+    private void SelectLineAt(TerminalPosition at) => _viewport.SetSelection(
+        new TerminalPosition(at.Row, 0),
+        new TerminalPosition(at.Row, _engine.Columns));
+
+    private static char Glyph(TerminalCell cell) =>
+        cell.IsBlank || cell.Character == '\0' ? ' ' : cell.Character;
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
         Focus();
+
+        var point = e.GetCurrentPoint(this);
+        if (!point.Properties.IsLeftButtonPressed) return;
+
+        var at = PositionAt(point.Position);
+        switch (e.ClickCount)
+        {
+            case 2:
+                SelectWordAt(at);
+                break;
+            case >= 3:
+                SelectLineAt(at);
+                break;
+            default:
+                _viewport.BeginSelection(at);
+                _dragging = true;
+                e.Pointer.Capture(this);
+                break;
+        }
+
+        InvalidateVisual();
+        e.Handled = true;
     }
 
     protected override void OnTextInput(TextInputEventArgs e)
@@ -174,7 +320,37 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
             e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.C)
         {
-            _ = CopyVisibleTextAsync();
+            _ = CopySelectionAsync();
+            e.Handled = true;
+            return;
+        }
+
+        // Shift+PageUp/Down and Ctrl+Shift+Home/End move the view. Unshifted PageUp belongs to the
+        // program in the pane — less and vim both use it — so it is never intercepted.
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key is Key.PageUp or Key.PageDown)
+        {
+            var page = Math.Max(1, _engine.Rows - 1);
+            if (_viewport.Scroll(e.Key == Key.PageUp ? page : -page, _engine.ScrollbackCount))
+                InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && e.KeyModifiers.HasFlag(KeyModifiers.Shift) &&
+            e.Key is Key.Home or Key.End)
+        {
+            var moved = e.Key == Key.Home
+                ? _viewport.ScrollToTop(_engine.ScrollbackCount)
+                : _viewport.ScrollToBottom();
+            if (moved) InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Escape && _viewport.HasSelection)
+        {
+            _viewport.ClearSelection();
+            InvalidateVisual();
             e.Handled = true;
             return;
         }
@@ -346,10 +522,17 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     private void OnEngineUpdated()
     {
-        if (_disposed == 0)
-        {
-            Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
-        }
+        if (_disposed != 0) return;
+
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                // Told about growth before redrawing: while the user is reading history, new
+                // output must not drag the text upward under them.
+                _viewport.OnBufferGrew(_engine.TotalRows, _engine.ScrollbackCount);
+                InvalidateVisual();
+            },
+            DispatcherPriority.Render);
     }
 
     private void OnEngineTitleChanged(string title)
@@ -384,8 +567,22 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         }
     }
 
+    /// <summary>
+    /// Anything the user sends returns the view to the bottom and drops the selection.
+    ///
+    /// Typing while parked in history and seeing nothing happen is the single most confusing thing
+    /// a scrollback implementation can do.
+    /// </summary>
+    private void SnapToLiveScreen()
+    {
+        var moved = _viewport.ScrollToBottom();
+        moved |= _viewport.ClearSelection();
+        if (moved) InvalidateVisual();
+    }
+
     private async Task WriteInputAsync(ReadOnlyMemory<byte> bytes)
     {
+        SnapToLiveScreen();
         try
         {
             await WriteAsync(bytes, _lifetime.Token).ConfigureAwait(false);
@@ -396,6 +593,50 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
         {
         }
+    }
+
+    /// <summary>
+    /// Copy the selection, or the visible screen when nothing is selected.
+    ///
+    /// Falling back rather than doing nothing keeps the behaviour that existed before selection
+    /// did, and "copy what I am looking at" is a reasonable reading of the shortcut anyway.
+    /// </summary>
+    private Task CopySelectionAsync() =>
+        _viewport.Selection is { } selection ? CopyRangeAsync(selection.Start, selection.End) : CopyVisibleTextAsync();
+
+    private async Task CopyRangeAsync(TerminalPosition start, TerminalPosition end)
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+
+        var columns = _engine.Columns;
+        var cells = new TerminalCell[columns];
+        var text = new StringBuilder();
+
+        for (var row = start.Row; row <= end.Row && row < _engine.TotalRows; row++)
+        {
+            Array.Clear(cells);
+            var info = _engine.CopyRow(row, cells);
+            var length = Math.Min(info.Length, columns);
+
+            var from = row == start.Row ? Math.Min(start.Column, length) : 0;
+            var to = row == end.Row ? Math.Min(end.Column, length) : length;
+
+            var line = new StringBuilder(Math.Max(0, to - from));
+            for (var column = from; column < to; column++)
+            {
+                if (cells[column].IsWideTrailing) continue;
+                if (cells[column].IsBlank || cells[column].Character == '\0') line.Append(' ');
+                else cells[column].AppendGlyph(line);
+            }
+
+            // Trailing blanks are padding in a cell grid, not content. Every terminal trims them,
+            // and pasting a copied path with forty spaces after it is a small misery.
+            if (row < end.Row) text.AppendLine(line.ToString().TrimEnd());
+            else text.Append(line.ToString().TrimEnd());
+        }
+
+        await clipboard.SetTextAsync(text.ToString());
     }
 
     private async Task CopyVisibleTextAsync()
