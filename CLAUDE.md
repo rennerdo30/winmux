@@ -336,6 +336,41 @@ Implemented in Phase 3 by `WinMux.Platform.Win32`. The measured seed is copied b
 executable image, class, and optional title substring; malformed/future files stop foreign-app
 launch visibly rather than being ignored. The shell resolves rules but never calls a foreign HWND.
 
+## 5a. Profiles — the extension point users touch
+
+WinMux is a **power-user Windows application**, and the bar for its interface is the same one it
+sets for its internals: if WinMux can do something, there is a way to ask for it without editing a
+file. A capability with no interface is not a feature, it is a note to the author.
+
+That rule failed twice and both failures are instructive. Pane resizing worked from
+[ADR 0005](docs/adr/0005-layout-engine.md) and had no handle, no cursor and no hover state, so
+nobody knew it existed. Foreign-app panes shipped in Phase 3 and could only be created by
+hand-writing a TOML file, so in practice nobody could put an application in a pane at all.
+
+**A profile is a named thing you can put in a pane.** One concept covers terminals and
+applications, because to the layout they are the same: a program, its arguments, a working
+directory, and — for a windowed application — how to find and host its window.
+
+- Profiles are **user data**, stored beside the settings, not compiled in. The shipped terminals
+  are seeded on first run and are editable and deletable like any other.
+- A profile is created from **the installed-application catalog** (the Start Menu, resolved through
+  `IAppCatalog`), from **browsing for a program**, or by typing one in. The catalog is the default
+  path because a power user should not have to know where an executable lives.
+- Anything that opens a pane — the toolbar, the palette, the CLI, an empty pane's launcher —
+  offers the same profile list. Adding a profile adds it everywhere at once.
+- `PaneKind` stays the provider contract
+  ([ADR 0012](docs/adr/0012-phase-4-pane-providers-and-file-browser.md)). A profile chooses **which
+  provider** runs and **what it runs**; it is not a new pane kind.
+
+**An empty pane is a first-class state.** A pane with nothing in it shows the same launcher —
+profiles, the app catalog, and the running windows it could adopt — so "make a pane, then decide"
+is a supported workflow rather than a gap between splitting and choosing.
+
+**Resolving a shortcut is platform work.** Enumerating the Start Menu and following a `.lnk` to its
+target is Win32, so it lives behind `IAppCatalog` in `WinMux.Platform` and is implemented in
+`WinMux.Platform.Win32` — the shell keeps its zero `DllImport`
+([ADR 0013](docs/adr/0013-phase-5-platform-layer.md)).
+
 ## 6. UI constraints
 
 - **Native child windows always paint above the host's own drawing.** Any pane hosting a native

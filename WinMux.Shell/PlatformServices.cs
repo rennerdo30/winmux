@@ -25,4 +25,7 @@ internal static class PlatformServices
 
     /// <summary>Saying something when startup fails before a window exists.</summary>
     public static IUserNotifier Notifier { get; } = new Win32UserNotifier();
+
+    /// <summary>The applications this machine has, for the profile and pane launchers.</summary>
+    public static IAppCatalog Apps { get; } = new Win32AppCatalog();
 }

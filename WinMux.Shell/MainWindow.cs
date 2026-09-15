@@ -120,7 +120,11 @@ internal sealed class MainWindow : Window
         Background = Palette.WindowBrush;
 
         var dock = new DockPanel();
-        var toolbar = ShellToolbar.Build(action => DispatchNamedAction(action), SetFocusedTabPlacement);
+        var toolbar = ShellToolbar.Build(
+            action => DispatchNamedAction(action),
+            SetFocusedTabPlacement,
+            (profile, split) => Run(OpenProfileAsync(profile, split)),
+            () => Settings.ShellProfiles.All);
         DockPanel.SetDock(toolbar, Dock.Top);
         dock.Children.Add(toolbar);
         var statusBar = new Border
@@ -606,7 +610,9 @@ internal sealed class MainWindow : Window
         // split means — and fall back to the profile the user chose in settings.
         profile ??= focused?.Kind == PaneKind.Terminal && !string.IsNullOrWhiteSpace(focused.Restore.Program)
             ? new TerminalProfile(focused.Title, focused.Restore.Program!, focused.Restore.Args)
-            : TerminalProfiles.ByName(Settings.ShellSettings.Current.DefaultTerminal);
+            : Settings.ShellProfiles.DefaultTerminal() is { } configured
+                ? new TerminalProfile(configured.Name, configured.Program, configured.Args)
+                : TerminalProfiles.Cmd;
         var pane = Pane.Terminal(profile.Name, profile.Program,
             cwd is { IsKnown: true }
                 ? new WorkingDirectory(cwd.Path, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow)
@@ -662,15 +668,43 @@ internal sealed class MainWindow : Window
         }
     }
 
-    private async Task SplitFocusedAsync(SplitDirection direction)
+    private Task SplitFocusedAsync(SplitDirection direction) =>
+        SplitFocusedAsync(direction, NewTerminalPane(),
+            direction == SplitDirection.Columns ? "split into columns" : "split into rows");
+
+    private async Task SplitFocusedAsync(SplitDirection direction, Pane pane, string message)
     {
-        var pane = NewTerminalPane();
         var runtime = await CreateNewRuntimeAsync(pane);
         var id = _tree.Split(_tree.Focused, direction, pane);
         AddRuntime(pane, runtime);
-        _message = direction == SplitDirection.Columns ? "split into columns" : "split into rows";
+        _message = message;
         Relayout();
         _runtimes.GetValueOrDefault(id)?.Focus();
+    }
+
+    /// <summary>
+    /// Open a profile in a new tab. The single entry point every surface uses, so the toolbar, the
+    /// palette, an empty pane's launcher and the CLI cannot drift apart.
+    /// </summary>
+    internal Task OpenProfileAsync(Core.Settings.LaunchProfile profile, bool split = false,
+        SplitDirection direction = SplitDirection.Columns)
+    {
+        var inherited = _tree.GetPane(_tree.Focused)?.Restore.Cwd;
+        var pane = ProfilePaneFactory.Create(profile, inherited);
+        return split
+            ? SplitFocusedAsync(direction, pane, $"opened {profile.Name}")
+            : AddTabAsync(pane, "opened " + profile.Name);
+    }
+
+    internal Task OpenProfileAsync(string profileId)
+    {
+        if (Settings.ShellProfiles.ById(profileId) is not { } profile)
+        {
+            _message = $"no profile called \"{profileId}\"";
+            UpdateStatus();
+            return Task.CompletedTask;
+        }
+        return OpenProfileAsync(profile);
     }
 
     private Task AddTabAsync() => AddTabAsync(NewTerminalPane(), "new tab");
@@ -801,14 +835,24 @@ internal sealed class MainWindow : Window
     {
         var dialog = new SettingsWindow(
             Settings.ShellSettings.Current,
+            Settings.ShellProfiles.All,
             _session.SessionPath,
-            Settings.ShellSettings.Path);
+            Settings.ShellSettings.Path,
+            Settings.ShellProfiles.Path);
 
         await dialog.ShowDialog(this);
 
         if (dialog.Result is { } chosen)
         {
-            _message = Settings.ShellSettings.Update(chosen) ?? "settings saved";
+            var problems = new List<string>();
+            if (dialog.Profiles is { } editedProfiles &&
+                Settings.ShellProfiles.Replace(editedProfiles) is { } profileError)
+            {
+                problems.Add(profileError);
+            }
+            if (Settings.ShellSettings.Update(chosen) is { } settingsError) problems.Add(settingsError);
+
+            _message = problems.Count == 0 ? "settings saved" : string.Join("; ", problems);
             UpdateStatus();
         }
 

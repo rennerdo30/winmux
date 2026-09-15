@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using WinMux.Core.Layout;
+using WinMux.Core.Settings;
 using WinMux.Shell.Actions;
 
 namespace WinMux.Shell.Chrome;
@@ -22,7 +23,13 @@ internal static class ShellToolbar
 {
     /// <param name="dispatch">Runs a named action, exactly as a key binding would.</param>
     /// <param name="setTabPlacement">Moves the focused stack's tabs. Not a named action: it needs a target.</param>
-    public static Control Build(Action<string> dispatch, Action<TabStripPlacement> setTabPlacement)
+    /// <param name="openProfile">Opens one profile in a pane. Split when the second argument is true.</param>
+    /// <param name="profiles">The live profile list, read each time a menu opens so it never goes stale.</param>
+    public static Control Build(
+        Action<string> dispatch,
+        Action<TabStripPlacement> setTabPlacement,
+        Action<LaunchProfile, bool> openProfile,
+        Func<IReadOnlyList<LaunchProfile>> profiles)
     {
         var bar = new StackPanel
         {
@@ -32,16 +39,9 @@ internal static class ShellToolbar
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        bar.Children.Add(SplitButton(
-            Icons.Terminal(), "Terminal", "Open a terminal in a new tab",
-            () => dispatch(ShellActionNames.NewTab),
-            [
-                ("Command Prompt", ShellActionNames.NewTerminalCmd),
-                ("PowerShell 7", ShellActionNames.NewTerminalPowerShell),
-                ("Windows PowerShell", ShellActionNames.NewTerminalWindowsPowerShell),
-                ("WSL", ShellActionNames.NewTerminalWsl),
-            ],
-            dispatch));
+        // The New menu IS the profile list. Adding a profile adds it here, in the palette and in
+        // an empty pane's launcher at once, because all three read the same list.
+        bar.Children.Add(ProfileButton(dispatch, openProfile, profiles));
 
         bar.Children.Add(Command(Icons.Folder(), "Files", "Open the file browser in a new tab",
             ShellActionNames.NewFileBrowser, dispatch));
@@ -113,6 +113,78 @@ internal static class ShellToolbar
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = layout,
         };
+    }
+
+    /// <summary>"New", with every profile behind it and a way to add one.</summary>
+    private static Control ProfileButton(
+        Action<string> dispatch,
+        Action<LaunchProfile, bool> openProfile,
+        Func<IReadOnlyList<LaunchProfile>> profiles)
+    {
+        var main = Styled(WithLabel(Icons.Terminal(), "New"), "Open the default terminal in a new tab");
+        main.CornerRadius = new CornerRadius(4, 0, 0, 4);
+        main.Click += (_, _) => dispatch(ShellActionNames.NewTab);
+
+        var chevron = Styled(Icons.Chevron(), "Everything you can open");
+        chevron.Classes.Remove(Theme.ToolbarButton);
+        chevron.Classes.Add(Theme.IconButton);
+        chevron.CornerRadius = new CornerRadius(0, 4, 4, 0);
+        chevron.Padding = new Thickness(3, 6);
+
+        var menu = new ContextMenu();
+        chevron.Click += (_, _) =>
+        {
+            // Rebuilt on every open rather than cached: a profile added in Settings has to appear
+            // without restarting, and this menu is the most likely place someone looks for it.
+            var items = new List<Control>();
+            var live = profiles();
+
+            foreach (var profile in live.Where(p => p.Kind == ProfileKind.Terminal))
+                items.Add(ProfileItem(profile, openProfile));
+
+            var apps = live.Where(p => p.Kind == ProfileKind.Application).ToArray();
+            if (apps.Length > 0)
+            {
+                items.Add(new Separator());
+                foreach (var profile in apps) items.Add(ProfileItem(profile, openProfile));
+            }
+
+            items.Add(new Separator());
+            var manage = new MenuItem { Header = "Add or edit profiles…" };
+            manage.Click += (_, _) => dispatch(ShellActionNames.ShowSettings);
+            items.Add(manage);
+
+            menu.ItemsSource = items;
+            menu.PlacementTarget = chevron;
+            menu.Open(chevron);
+        };
+
+        var group = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 };
+        group.Children.Add(main);
+        group.Children.Add(chevron);
+        return group;
+    }
+
+    private static MenuItem ProfileItem(LaunchProfile profile, Action<LaunchProfile, bool> openProfile)
+    {
+        var item = new MenuItem { Header = profile.Name };
+        item.Click += (_, _) => openProfile(profile, false);
+
+        var split = new MenuItem { Header = "Split right with this" };
+        split.Click += (_, _) => openProfile(profile, true);
+        item.ItemsSource = new[]
+        {
+            Leaf("Open in a new tab", () => openProfile(profile, false)),
+            split,
+        };
+        return item;
+    }
+
+    private static MenuItem Leaf(string header, Action invoke)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += (_, _) => invoke();
+        return item;
     }
 
     private static Control Command(Control icon, string label, string tip, string action, Action<string> dispatch)

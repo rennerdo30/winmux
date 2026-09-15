@@ -43,3 +43,4 @@ dist/
 # The live session file WinMux writes beside itself when run from the repo.
 /session.toml
 /*.toml.corrupt-*
+/big_session.toml

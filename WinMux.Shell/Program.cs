@@ -39,6 +39,7 @@ internal sealed class App : Application
         // brushes painted dark, so every templated control — the active tab, the dialogs — came out
         // light-on-dark. Asking Windows and saying the answer out loud is unambiguous.
         Settings.ShellSettings.Load();
+        Settings.ShellProfiles.Load();
         Chrome.Palette.Preference = Settings.ShellSettings.Current.Theme;
 
         var settings = PlatformSettings;
