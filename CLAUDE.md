@@ -5,6 +5,10 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
+**`HANDOFF.md` is not optional and not a courtesy.** Read it before doing anything, and rewrite it
+before you stop — and again whenever a change makes it wrong. Section 10 says how, and why the last
+session got it wrong.
+
 **State: Phase 5 complete; Phase 6 (the GUI) well under way.** `WinMux.exe` runs persistent ConPTY/VT terminal panes, foreign
 applications selected through a shipped quirks database and isolated in one top-level PaneHost
 per pane, and a built-in file browser — all three as **pane providers** behind the public
@@ -478,9 +482,26 @@ Rules that keep it useful:
 
 - **It is a rolling snapshot, not a changelog.** Git is the changelog. Overwrite freely;
   a handoff that accumulates history stops being read.
+- **Rewrite it, never append to it.** Appending is how it dies: a new paragraph on top, the old
+  one left underneath, and a reader who cannot tell which is true.
+- **One "Where we are".** If there are two, one of them is a lie.
 - **Absolute dates**, never "yesterday" or "last session".
 - **Link, do not restate.** Findings live in ADRs, architecture lives here. The handoff points.
+- **Verify every number before writing it.** Test counts, commit counts and version numbers are
+  exactly the facts a reader will trust without checking, so they are the ones worth checking.
 - **Record what failed**, same as an ADR. A session that wasted two hours on a dead end has
   produced a real result; write it down.
 - **If it is wrong, fix it before continuing.** A stale handoff is worse than an absent one,
   because it is trusted.
+
+**This has already gone wrong once, on 2026-09-15.** Over a single long session the file was
+appended to rather than rewritten, and reached 174 lines with three separate "latest" paragraphs, a
+"next action" that had been done hours earlier, and a test count that was 54 short. Everything in
+it was true when written and the file as a whole was misleading — which is the failure mode this
+section exists to prevent, and it was not prevented by intending to prevent it.
+
+So, concretely: **rewrite `HANDOFF.md` as part of the same change that makes it wrong.** A commit
+that moves the project on and leaves the handoff describing the previous state is an incomplete
+commit, in the same way that shipping a capability with no interface is an incomplete feature
+(section 5a). If the rewrite feels like too much for a small change, that is the signal the file
+has grown past a page and the fix is to cut it, not to append to it.
