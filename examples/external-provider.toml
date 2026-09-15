@@ -1,0 +1,43 @@
+# A session that opens a pane kind WinMux does not ship.
+#
+# `com.example.clock` comes from samples/WinMux.SampleProvider. Build it and copy the output into
+# providers/WinMux.SampleProvider/ beside WinMux.exe, and this layout opens a clock beside a shell.
+# Without the provider installed, the clock pane opens as an unavailable pane that says which kind
+# is missing — the descriptor is never destroyed just because its provider is absent (ADR 0012).
+
+version = 1
+saved_at = 2026-09-15T12:00:00.000Z
+
+[[windows]]
+title   = 'external provider'
+root    = 'n0'
+focused = '11111111-1111-1111-1111-111111111111'
+bounds  = { x = 80, y = 80, width = 1400, height = 860 }
+
+[[windows.nodes]]
+id        = 'n0'
+kind      = 'split'
+direction = 'columns'
+children  = ['n1', 'n2']
+ratios    = [0.6, 0.4]
+
+[[windows.nodes]]
+id   = 'n1'
+kind = 'leaf'
+pane = '11111111-1111-1111-1111-111111111111'
+
+[[windows.nodes]]
+id   = 'n2'
+kind = 'leaf'
+pane = '22222222-2222-2222-2222-222222222222'
+
+[[windows.panes]]
+id      = '11111111-1111-1111-1111-111111111111'
+kind    = 'terminal'
+title   = 'cmd'
+program = 'C:\WINDOWS\system32\cmd.exe'
+
+[[windows.panes]]
+id    = '22222222-2222-2222-2222-222222222222'
+kind  = 'com.example.clock'
+title = 'clock'

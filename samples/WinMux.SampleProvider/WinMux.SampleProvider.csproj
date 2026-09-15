@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- A provider ships as a library beside WinMux, not as part of it. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      A real provider references the published WinMux.Panes assembly. It is a project reference here
+      only because this sample lives in the same repository; Private=false keeps WinMux.Panes and its
+      dependencies out of the provider's own folder, which is what makes the shell's copy the one
+      that loads (see ProviderCatalog).
+    -->
+    <ProjectReference Include="..\..\WinMux.Panes\WinMux.Panes.csproj" Private="false" />
+  </ItemGroup>
+
+</Project>

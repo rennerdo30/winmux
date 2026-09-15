@@ -157,6 +157,7 @@ internal sealed class MainWindow : Window
                 () => Settings.ShellProfiles.All),
             _foreignProvider,
         ]);
+        LoadExternalProviders();
         _cwdCaptureTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
         _cwdCaptureTimer.Tick += (_, _) =>
         {
@@ -965,6 +966,46 @@ internal sealed class MainWindow : Window
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Register any pane providers installed beside the executable.
+    ///
+    /// The point of the public `WinMux.Panes` contract is that a fourth pane kind needs no change
+    /// to Core, the tree, persistence or the CLI (CLAUDE.md section 4). Until this, that was true
+    /// and untestable, because nothing loaded one.
+    ///
+    /// Failures are collected and said out loud. A provider that does not appear and does not
+    /// explain itself is worse than one that was never installed.
+    /// </summary>
+    private void LoadExternalProviders()
+    {
+        var result = ProviderCatalog.Load(kind => _providers.TryGet(kind, out _));
+
+        foreach (var discovered in result.Providers)
+        {
+            try
+            {
+                _providers.Register(discovered.Provider);
+            }
+            catch (Exception ex)
+            {
+                _message = $"{discovered.Source}: {ex.Message}";
+            }
+        }
+
+        if (result.Failures.Count > 0)
+        {
+            var first = result.Failures[0];
+            var more = result.Failures.Count > 1 ? $" (and {result.Failures.Count - 1} more)" : "";
+            _message = $"provider {first.Source} {first.Reason}{more}";
+            _messageKind = StatusMessageKind.Error;
+        }
+        else if (result.Providers.Count > 0)
+        {
+            _message = $"loaded {result.Providers.Count} pane provider(s): " +
+                       string.Join(", ", result.Providers.Select(p => p.Provider.Kind));
+        }
     }
 
     /// <summary>Reorder the focused tab within its strip.</summary>

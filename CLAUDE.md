@@ -33,9 +33,9 @@ ADRs [0005](docs/adr/0005-layout-engine.md), [0006](docs/adr/0006-session-file-f
 [ADR 0010](docs/adr/0010-phase-2-persistence-runtime.md), and Phase 3 by
 [ADR 0011](docs/adr/0011-phase-3-foreign-app-runtime.md).
 
-**Not done yet:** physical mixed-scale multi-monitor verification, provider discovery/packaging,
-tab/pane reordering, dragging a running window into a pane, foreign-window focus reconciliation,
-terminal selection and scrollback navigation.
+**Not done yet:** physical mixed-scale multi-monitor verification, and measuring whether input-queue
+attachment actually starves the shell (section 9). Both need a human with hardware or a harness that
+synthesizes real input.
 
 ---
 
@@ -103,6 +103,7 @@ WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays       
 WinMux.Cli/              `winmux` — the command line surface (section 6)                             [EXISTS]
 WinMux.Tests/                                                                                        [EXISTS]
 assets/                  winmux.svg (the source of the mark) and the .ico built from it        [EXISTS]
+samples/                 WinMux.SampleProvider: a pane kind loaded from outside the app      [EXISTS]
 docs/adr/                one short file per architectural decision
 ```
 
@@ -149,7 +150,10 @@ descriptor must carry the same kind.
 
 Every pane kind is a **provider** implementing `IPaneProvider`/`IPaneRuntime` from the public
 `WinMux.Panes` assembly: create, attach to a rect, resize, focus, capture state, prepare to close,
-dispose. `MainWindow` owns only layout, action routing, chrome and generic runtime coordination.
+dispose. Providers are **loaded from `providers/` beside the executable**, one directory each, in
+their own `AssemblyLoadContext` — see `samples/README.md` for the rules and the worked example. The
+contract assemblies deliberately unify with the shell's copies; shipping your own would make your
+`IPaneProvider` a different type from the one the registry wants. `MainWindow` owns only layout, action routing, chrome and generic runtime coordination.
 Adding a pane kind must not touch Core, the tree, persistence or the CLI.
 
 The file browser is the documented exception to "a pane is a process": it is trusted in-process

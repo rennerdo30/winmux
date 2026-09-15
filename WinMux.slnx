@@ -20,6 +20,8 @@
   <Project Path="WinMux.Shell.Tests/WinMux.Shell.Tests.csproj">
     <Platform Project="x64" />
   </Project>
+  <!-- A sample provider, in the solution so the public WinMux.Panes contract cannot rot unnoticed. -->
+  <Project Path="samples/WinMux.SampleProvider/WinMux.SampleProvider.csproj" />
   <Project Path="WinMux.Terminal/WinMux.Terminal.csproj" />
   <Project Path="WinMux.Terminal/Tests/WinMux.Terminal.Tests.csproj" />
   <Project Path="WinMux.Tests/WinMux.Tests.csproj" />

@@ -20,7 +20,7 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-15: 541 passed, 0 warnings.** Version 0.6.0.
+**Verified 2026-09-15: 557 passed, 0 warnings.** Version 0.6.0.
 Phases 4, 5 and the Phase 6 work are **pushed**; `origin/main` is current as of 2026-09-15.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
@@ -80,21 +80,23 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
 - **Snap layouts are back.** `ISnapLayoutService` claims the maximise button's rectangle so
   Windows 11 offers its flyout again — the affordance taken away by drawing our own caption.
   See the 2026-09-15 addendum to ADR 0016 for what claiming a caption button costs.
+- **Pane providers load from outside the app.** `providers/` beside the executable, one
+  directory each, own `AssemblyLoadContext`, every refusal reported with its reason.
+  `samples/WinMux.SampleProvider` is a working `com.example.clock` pane and the reference for
+  writing one; `examples/external-provider.toml` opens it. ADR 0012 has claimed since Phase 4
+  that a fourth pane kind needs no Core change — that is now demonstrated rather than asserted.
 
 ## The next action
 
-**Use it for an hour.** Everything the 2026-09-15 critique named as wrong has been fixed and seen on
-screen; what is left is feature work, and the next real finding will come from use.
+**Use it for an hour, then write down what annoyed you.** Everything on the feature list is done and
+was seen working on screen; what is left is the class of finding that only comes from use, and this
+project has now had two sessions of code-reading produce less than one screenshot did.
 
-When picking that feature work up, in rough order of what the product is missing:
-provider discovery and packaging. Snap layouts are a separate, known cost of drawing our
-own caption ([ADR 0016](docs/adr/0016-windows-11-chrome.md)) and need a new `IHostWindowService`
-capability to recover.
-
-Two smaller things worth doing early, both from the same critique and both still open:
-the toolbar is uniform icon+label with a divider after every group where Explorer's command bar has
-neither, and `LayoutMetrics` is already parameterised so a Normal/Compact density setting is a
-settings card rather than an architecture change.
+The two things still queued are taste calls rather than gaps, both from the 2026-09-15 critique:
+the toolbar is uniform icon+label with a divider after every group, where Explorer's command bar has
+neither; and `LayoutMetrics` is already parameterised, so a Normal/Compact density setting is a
+settings card rather than an architecture change. Neither should be done without deciding it is
+wanted.
 
 ## Blocked / needs a human
 
