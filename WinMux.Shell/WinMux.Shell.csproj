@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WinMux.Core\WinMux.Core.csproj" />
+    <ProjectReference Include="..\WinMux.Panes\WinMux.Panes.csproj" />
     <ProjectReference Include="..\WinMux.Platform.Win32\WinMux.Platform.Win32.csproj" />
     <ProjectReference Include="..\WinMux.Pty\WinMux.Pty.csproj" />
     <ProjectReference Include="..\WinMux.Terminal\WinMux.Terminal.csproj" />

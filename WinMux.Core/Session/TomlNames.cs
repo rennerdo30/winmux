@@ -4,21 +4,15 @@ using WinMux.Core.Model;
 namespace WinMux.Core.Session;
 
 /// <summary>
-/// The spelling of every enum in the session file.
+/// The spelling of every closed enum in the session file, plus the open pane-provider identifier.
 ///
 /// Written out explicitly rather than derived from the enum names: the file is a published format
 /// that users hand-edit, so renaming a C# member must not silently change it. An unrecognised
-/// value names the offender rather than falling back to a default.
+/// value names the offender rather than falling back to a default. Pane kinds are deliberately
+/// different: any valid stable provider identifier is preserved so third-party panes can restore.
 /// </summary>
 internal static class TomlNames
 {
-    private static readonly (PaneKind Value, string Text)[] PaneKinds =
-    [
-        (PaneKind.Terminal, "terminal"),
-        (PaneKind.FileBrowser, "file-browser"),
-        (PaneKind.ForeignApp, "foreign-app"),
-    ];
-
     private static readonly (SplitDirection Value, string Text)[] Directions =
     [
         (SplitDirection.Columns, "columns"),
@@ -41,12 +35,20 @@ internal static class TomlNames
         (HostStrategy.Attach, "attach"),
     ];
 
-    public static string Text(PaneKind v) => Find(PaneKinds, v);
+    public static string Text(PaneKind v) => v.IsValid
+        ? v.Value
+        : throw new SessionFormatException("An uninitialized pane kind cannot be written to a session file.");
     public static string Text(SplitDirection v) => Find(Directions, v);
     public static string Text(CwdSource v) => Find(CwdSources, v);
     public static string Text(HostStrategy v) => Find(Strategies, v);
 
-    public static PaneKind ParsePaneKind(string s, string where) => Parse(PaneKinds, s, "pane kind", where);
+    public static PaneKind ParsePaneKind(string s, string where)
+    {
+        if (PaneKind.TryCreate(s, out var kind)) return kind;
+        throw new SessionFormatException(
+            $"Invalid pane kind \"{s}\" at {where}. Expected a stable provider identifier such as " +
+            "\"terminal\" or \"com.example.preview\".");
+    }
     public static SplitDirection ParseDirection(string s, string where) => Parse(Directions, s, "split direction", where);
     public static CwdSource ParseCwdSource(string s, string where) => Parse(CwdSources, s, "cwd source", where);
     public static HostStrategy ParseStrategy(string s, string where) => Parse(Strategies, s, "host strategy", where);

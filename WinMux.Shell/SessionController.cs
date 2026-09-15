@@ -89,7 +89,7 @@ internal sealed class SessionController : IDisposable
     private async ValueTask<string?> DispatchRemoteAsync(string actionName, CancellationToken cancellationToken)
     {
         var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Dispatcher.UIThread.Post(() =>
+        Dispatcher.UIThread.Post(async () =>
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -104,7 +104,7 @@ internal sealed class SessionController : IDisposable
                 return;
             }
 
-            var result = target.DispatchNamedAction(actionName);
+            var result = await target.DispatchNamedActionAsync(actionName, cancellationToken);
             if (result.Succeeded) completion.TrySetResult(result.ActionName);
             else completion.TrySetException(result.Exception ?? new InvalidOperationException(result.Error));
         });

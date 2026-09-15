@@ -70,6 +70,10 @@ public static class SessionMapper
             case NodeKinds.Leaf:
             {
                 var p = node.Pane ?? throw new SessionFormatException("A leaf node has no pane.");
+                if (p.Kind != p.Restore.Kind)
+                    throw new SessionFormatException(
+                        $"Pane '{p.Id:D}' has kind '{p.Kind}' but its restore descriptor has kind " +
+                        $"'{p.Restore.Kind}'. Provider selection would be ambiguous.");
                 var pane = new Pane(new PaneId(p.Id), p.Kind, p.Title, p.Restore);
                 return new LeafNode(pane);
             }

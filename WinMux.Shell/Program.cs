@@ -136,8 +136,8 @@ internal static class Program
     }
 
     /// <summary>
-    /// With no session file: a shell and File Explorer side by side on the current directory —
-    /// the smallest layout that exercises both a terminal pane and a hosted foreign application.
+    /// With no session file: a shell and the built-in file browser side by side on the current
+    /// directory — the smallest layout that exercises Phase 4's terminal handoff workflow.
     /// </summary>
     private static SessionSnapshot DefaultSession()
     {
@@ -146,24 +146,10 @@ internal static class Program
 
         var shell = Pane.Terminal("cmd", Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe", cwd);
 
-        var explorer = new Pane(PaneId.New(), PaneKind.ForeignApp, "Explorer", new RestoreDescriptor
-        {
-            Kind = PaneKind.ForeignApp,
-            Title = "Explorer",
-            Program = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
-            Args = [here],
-            Cwd = cwd,
-            Strategy = HostStrategy.Auto,
-            Extras = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                // Measured in spike 2: explorer.exe exits at once and the window belongs to the
-                // already-running shell, so it is found by class, never by the launched pid.
-                ["window_class"] = "CabinetWClass",
-            },
-        });
+        var files = Pane.FileBrowser(here);
 
         var tree = new LayoutTree(shell);
-        tree.Split(shell.Id, SplitDirection.Columns, explorer, ratio: 0.5);
+        tree.Split(shell.Id, SplitDirection.Columns, files, ratio: 0.5);
         tree.Focus(shell.Id);
         return new SessionSnapshot
         {

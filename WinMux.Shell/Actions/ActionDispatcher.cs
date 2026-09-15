@@ -26,7 +26,11 @@ public sealed record ActionDispatchResult(
 /// </summary>
 public sealed class ActionDispatcher
 {
-    private readonly Dictionary<string, Action> _handlers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Func<CancellationToken, ValueTask>> _handlers =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Completion of a genuinely asynchronous key/palette dispatch.</summary>
+    public event Action<ActionDispatchResult>? BackgroundDispatchCompleted;
 
     public IReadOnlyCollection<string> RegisteredActions => _handlers.Keys;
 
@@ -35,6 +39,19 @@ public sealed class ActionDispatcher
         ArgumentException.ThrowIfNullOrWhiteSpace(actionName);
         ArgumentNullException.ThrowIfNull(handler);
 
+        actionName = actionName.Trim();
+        if (!_handlers.TryAdd(actionName, _ =>
+            {
+                handler();
+                return ValueTask.CompletedTask;
+            }))
+            throw new InvalidOperationException($"Action '{actionName}' is already registered.");
+    }
+
+    public void RegisterAsync(string actionName, Func<CancellationToken, ValueTask> handler)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actionName);
+        ArgumentNullException.ThrowIfNull(handler);
         actionName = actionName.Trim();
         if (!_handlers.TryAdd(actionName, handler))
             throw new InvalidOperationException($"Action '{actionName}' is already registered.");
@@ -51,6 +68,19 @@ public sealed class ActionDispatcher
         ArgumentException.ThrowIfNullOrWhiteSpace(actionName);
         actionName = actionName.Trim();
 
+        var pending = DispatchAsync(actionName);
+        if (pending.IsCompletedSuccessfully) return pending.Result;
+        _ = ObserveBackgroundAsync(pending);
+        return new ActionDispatchResult(actionName, ActionDispatchStatus.Executed);
+    }
+
+    public async ValueTask<ActionDispatchResult> DispatchAsync(
+        string actionName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actionName);
+        actionName = actionName.Trim();
+
         if (!_handlers.TryGetValue(actionName, out var handler))
         {
             return new ActionDispatchResult(
@@ -61,7 +91,7 @@ public sealed class ActionDispatcher
 
         try
         {
-            handler();
+            await handler(cancellationToken);
             return new ActionDispatchResult(actionName, ActionDispatchStatus.Executed);
         }
         catch (Exception ex)
@@ -72,5 +102,11 @@ public sealed class ActionDispatcher
                 $"Action '{actionName}' failed: {ex.Message}",
                 ex);
         }
+    }
+
+    private async Task ObserveBackgroundAsync(ValueTask<ActionDispatchResult> pending)
+    {
+        var result = await pending;
+        BackgroundDispatchCompleted?.Invoke(result);
     }
 }

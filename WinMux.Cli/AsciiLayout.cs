@@ -69,13 +69,14 @@ internal static class AsciiLayout
             Write(grid, x0 + 1, y0 + 1 + i, Centre(Shorten(lines[i], inner), inner), cols, rowCount);
     }
 
-    private static string Kind(Pane pane) => pane.Kind switch
+    private static string Kind(Pane pane)
     {
-        PaneKind.Terminal => "[terminal]",
-        PaneKind.FileBrowser => "[files]",
-        PaneKind.ForeignApp => "[app: " + pane.Restore.Strategy.ToString().ToLowerInvariant() + "]",
-        _ => "[?]",
-    };
+        if (pane.Kind == PaneKind.Terminal) return "[terminal]";
+        if (pane.Kind == PaneKind.FileBrowser) return "[files]";
+        if (pane.Kind == PaneKind.ForeignApp)
+            return "[app: " + pane.Restore.Strategy.ToString().ToLowerInvariant() + "]";
+        return "[" + pane.Kind.Value + "]";
+    }
 
     private static string Centre(string s, int width) =>
         s.Length >= width ? s : new string(' ', (width - s.Length) / 2) + s;

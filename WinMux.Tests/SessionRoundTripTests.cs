@@ -186,6 +186,22 @@ public class SessionRoundTripTests
     }
 
     [Fact]
+    public void A_pane_and_restore_descriptor_kind_mismatch_is_rejected()
+    {
+        var bad = Leaf();
+        bad = bad with
+        {
+            Pane = bad.Pane! with
+            {
+                Restore = bad.Pane.Restore with { Kind = PaneKind.FileBrowser },
+            },
+        };
+
+        var error = Assert.Throws<SessionFormatException>(() => SessionMapper.FromSnapshot(bad));
+        Assert.Contains("ambiguous", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void An_unknown_node_kind_is_rejected()
     {
         var bad = new NodeSnapshot { Kind = "carousel" };

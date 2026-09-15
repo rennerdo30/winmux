@@ -523,12 +523,33 @@ public class TomlSessionTests
     }
 
     [Fact]
-    public void An_unknown_enum_value_lists_what_was_expected()
+    public void An_unknown_valid_provider_kind_round_trips_without_being_rejected()
     {
-        var bad = Minimal.Replace("kind = \"terminal\"", "kind = \"hologram\"", StringComparison.Ordinal);
+        var extension = Minimal.Replace(
+            "kind = \"terminal\"",
+            "kind = \"com.example.preview\"",
+            StringComparison.Ordinal);
+
+        var loaded = SessionFile.Deserialize(extension);
+        var pane = loaded.Windows.Single().Root.Pane!;
+
+        Assert.Equal(PaneKind.Create("com.example.preview"), pane.Kind);
+        Assert.Equal(pane.Kind, pane.Restore.Kind);
+
+        var written = SessionFile.Serialize(loaded);
+        Assert.Contains("kind            = 'com.example.preview'", written, StringComparison.Ordinal);
+        Assert.Equal(
+            pane.Kind,
+            SessionFile.Deserialize(written).Windows.Single().Root.Pane!.Kind);
+    }
+
+    [Fact]
+    public void An_invalid_provider_kind_names_the_offending_value()
+    {
+        var bad = Minimal.Replace("kind = \"terminal\"", "kind = \"not a/provider\"", StringComparison.Ordinal);
         var ex = Assert.Throws<SessionFormatException>(() => SessionFile.Deserialize(bad));
-        Assert.Contains("hologram", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("terminal", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("not a/provider", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("stable provider identifier", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

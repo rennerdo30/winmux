@@ -29,6 +29,8 @@ public static class ShellActionNames
     public const string NewTerminalWindowsPowerShell = "new-terminal-windows-powershell";
     public const string NewTerminalPowerShell = "new-terminal-powershell";
     public const string NewTerminalWsl = "new-terminal-wsl";
+    public const string NewFileBrowser = "new-file-browser";
+    public const string OpenTerminalHere = "open-terminal-here";
     public const string ConfigureCwdReporting = "configure-cwd-reporting";
     public const string ToggleForeignHostStrategy = "toggle-foreign-host-strategy";
 
@@ -55,6 +57,8 @@ public static class ShellActionNames
         NewTerminalWindowsPowerShell,
         NewTerminalPowerShell,
         NewTerminalWsl,
+        NewFileBrowser,
+        OpenTerminalHere,
         ConfigureCwdReporting,
         ToggleForeignHostStrategy,
     ];

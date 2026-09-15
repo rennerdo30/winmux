@@ -34,6 +34,8 @@ internal static class Program
                 "resize" => FourWayAction(rest, "resize"),
                 "close" or "close-pane" => InvokeNamedAction("close-pane"),
                 "new-tab" => InvokeNamedAction("new-tab"),
+                "new-file-browser" or "files" => InvokeNamedAction("new-file-browser"),
+                "terminal-here" => InvokeNamedAction("open-terminal-here"),
                 "next-tab" => InvokeNamedAction("next-tab"),
                 "previous-tab" or "prev-tab" => InvokeNamedAction("previous-tab"),
                 "save" or "save-session" => InvokeNamedAction("save-session"),
@@ -237,6 +239,8 @@ internal static class Program
               winmux focus DIRECTION    move focus: left, right, up or down
               winmux resize DIRECTION   resize the focused pane toward a direction
               winmux new-tab            add a tab beside the focused pane
+              winmux files              add a file-browser tab at the focused pane's directory
+              winmux terminal-here      open a terminal at the file browser's selected directory
               winmux next-tab           select the next tab
               winmux previous-tab       select the previous tab
               winmux close-pane         close the focused pane

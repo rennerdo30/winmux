@@ -1,10 +1,123 @@
 namespace WinMux.Core.Model;
 
-public enum PaneKind
+/// <summary>
+/// Stable identifier for the provider that owns a pane.
+///
+/// Identifiers are case-normalized ASCII strings so providers can be registered outside
+/// WinMux.Core without extending a closed enum. They begin with a letter, contain letters or
+/// digits, and may use single <c>.</c>, <c>-</c>, or <c>_</c> separators between segments.
+/// </summary>
+public readonly struct PaneKind : IEquatable<PaneKind>, IComparable<PaneKind>, IComparable
 {
-    Terminal,
-    FileBrowser,
-    ForeignApp,
+    private const int MaximumLength = 128;
+    private readonly string? _value;
+
+    public static PaneKind Terminal { get; } = new("terminal");
+    public static PaneKind FileBrowser { get; } = new("file-browser");
+    public static PaneKind ForeignApp { get; } = new("foreign-app");
+
+    /// <summary>The normalized provider identifier.</summary>
+    /// <exception cref="InvalidOperationException">The value is an uninitialized default.</exception>
+    public string Value => _value
+        ?? throw new InvalidOperationException("The default PaneKind value is not a valid provider identifier.");
+
+    /// <summary>Whether this value was constructed from a valid provider identifier.</summary>
+    public bool IsValid => _value is not null;
+
+    /// <summary>Creates a built-in or third-party provider identifier.</summary>
+    public PaneKind(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (value.Length is 0 or > MaximumLength || !string.Equals(value, value.Trim(), StringComparison.Ordinal))
+            throw InvalidIdentifier(value);
+
+        var normalized = value.ToLowerInvariant();
+        if (!IsStableIdentifier(normalized))
+            throw InvalidIdentifier(value);
+
+        _value = normalized;
+    }
+
+    /// <summary>Creates a built-in or third-party provider identifier.</summary>
+    public static PaneKind Create(string value) => new(value);
+
+    /// <summary>Attempts to create a provider identifier without throwing.</summary>
+    public static bool TryCreate(string? value, out PaneKind kind)
+    {
+        if (value is not null)
+        {
+            try
+            {
+                kind = new PaneKind(value);
+                return true;
+            }
+            catch (ArgumentException)
+            {
+                // The validation contract is represented by the false return below.
+            }
+        }
+
+        kind = default;
+        return false;
+    }
+
+    public bool Equals(PaneKind other) =>
+        string.Equals(_value, other._value, StringComparison.Ordinal);
+
+    public override bool Equals(object? obj) => obj is PaneKind other && Equals(other);
+
+    public override int GetHashCode() => _value is null
+        ? 0
+        : StringComparer.Ordinal.GetHashCode(_value);
+
+    public int CompareTo(PaneKind other) =>
+        StringComparer.Ordinal.Compare(_value, other._value);
+
+    int IComparable.CompareTo(object? obj) => obj switch
+    {
+        null => 1,
+        PaneKind other => CompareTo(other),
+        _ => throw new ArgumentException($"Object must be a {nameof(PaneKind)}.", nameof(obj)),
+    };
+
+    public override string ToString() => _value ?? string.Empty;
+
+    public static bool operator ==(PaneKind left, PaneKind right) => left.Equals(right);
+    public static bool operator !=(PaneKind left, PaneKind right) => !left.Equals(right);
+    public static bool operator <(PaneKind left, PaneKind right) => left.CompareTo(right) < 0;
+    public static bool operator <=(PaneKind left, PaneKind right) => left.CompareTo(right) <= 0;
+    public static bool operator >(PaneKind left, PaneKind right) => left.CompareTo(right) > 0;
+    public static bool operator >=(PaneKind left, PaneKind right) => left.CompareTo(right) >= 0;
+
+    private static bool IsStableIdentifier(string value)
+    {
+        if (!IsAsciiLetter(value[0])) return false;
+
+        var previousWasSeparator = false;
+        for (var i = 1; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (IsAsciiLetter(c) || char.IsAsciiDigit(c))
+            {
+                previousWasSeparator = false;
+                continue;
+            }
+
+            if (c is not ('.' or '-' or '_') || previousWasSeparator || i == value.Length - 1)
+                return false;
+            previousWasSeparator = true;
+        }
+
+        return true;
+    }
+
+    private static bool IsAsciiLetter(char value) => value is >= 'a' and <= 'z';
+
+    private static ArgumentException InvalidIdentifier(string value) => new(
+        $"Pane kind \"{value}\" is not a stable provider identifier. Use 1-{MaximumLength} " +
+        "ASCII characters: start with a letter, then letters or digits with single '.', '-', " +
+        "or '_' separators.",
+        nameof(value));
 }
 
 /// <summary>How a foreign app is hosted. Measured per app in spike 2; see ADR 0003.</summary>
@@ -79,6 +192,12 @@ public sealed class Pane
 
     public Pane(PaneId id, PaneKind kind, string title, RestoreDescriptor restore)
     {
+        ArgumentNullException.ThrowIfNull(restore);
+        if (!kind.IsValid) throw new ArgumentException("A pane kind must be a valid provider identifier.", nameof(kind));
+        if (restore.Kind != kind)
+            throw new ArgumentException(
+                $"Pane kind '{kind}' does not match restore descriptor kind '{restore.Kind}'.",
+                nameof(restore));
         Id = id;
         Kind = kind;
         Title = title ?? string.Empty;
@@ -93,6 +212,21 @@ public sealed class Pane
             Program = program,
             Cwd = cwd ?? WorkingDirectory.None,
         });
+
+    public static Pane FileBrowser(string directory, string title = "files", string? selectedPath = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        return new Pane(PaneId.New(), PaneKind.FileBrowser, title, new RestoreDescriptor
+        {
+            Kind = PaneKind.FileBrowser,
+            Title = title,
+            Extras = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["current_directory"] = directory,
+                ["selected_path"] = selectedPath ?? string.Empty,
+            },
+        });
+    }
 
     public override string ToString() => $"{Kind}:{Id} \"{Title}\"";
 }

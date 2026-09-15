@@ -7,9 +7,12 @@ using Avalonia.Threading;
 using WinMux.Core.Layout;
 using WinMux.Core.Model;
 using WinMux.Core.Session;
+using WinMux.Panes;
 using WinMux.Shell.Actions;
 using WinMux.Shell.Cwd;
+using WinMux.Shell.FileBrowser;
 using WinMux.Shell.Keymap;
+using WinMux.Shell.Panes;
 using CoreRect = WinMux.Core.Layout.Rect;
 
 namespace WinMux.Shell;
@@ -26,11 +29,9 @@ internal sealed class MainWindow : Window
     private readonly Canvas _canvas = new();
     private readonly StackPanel _tabBar = new() { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Margin = new Thickness(6, 4) };
     private readonly TextBlock _status = new() { Margin = new Thickness(8, 3), FontSize = 12 };
-    private readonly ForeignWindowTracker _tracker = new();
-    private readonly Dictionary<PaneId, Control> _views = [];
-    private readonly Dictionary<PaneId, ForeignAppPane> _foreign = [];
-    /// <summary>Windows already adopted by some pane, so two panes cannot claim the same one.</summary>
-    private readonly HashSet<IntPtr> _claimedWindows = [];
+    private readonly Dictionary<PaneId, IPaneRuntime> _runtimes = [];
+    private readonly PaneProviderRegistry _providers;
+    private readonly ForeignAppPaneProvider _foreignProvider;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ActionDispatcher _actions = new();
     private readonly KeymapRouter _keymap;
@@ -55,12 +56,23 @@ internal sealed class MainWindow : Window
         _tree = tree;
         _session = session;
         _session.Register(this);
+        _foreignProvider = new ForeignAppPaneProvider(() => _shellHwnd);
+        _providers = new PaneProviderRegistry([
+            new TerminalPaneProvider(),
+            new FileBrowserPaneProvider(() => Environment.CurrentDirectory),
+            _foreignProvider,
+        ]);
         _cwdCaptureTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
         _cwdCaptureTimer.Tick += (_, _) =>
         {
-            RefreshProcessWorkingDirectories();
+            RefreshPaneRestoreStates();
             _session.RequestSave();
         };
+        _actions.BackgroundDispatchCompleted += result => Dispatcher.UIThread.Post(() =>
+        {
+            if (!result.Succeeded) _message = result.Error ?? "action failed";
+            UpdateStatus();
+        });
         RegisterActions();
         _keymap = new KeymapRouter(new KeyBindingTable(keymapConfiguration), _actions);
 
@@ -116,7 +128,7 @@ internal sealed class MainWindow : Window
         PositionChanged += (_, _) => Relayout();
         // Attach-mode windows sit above the shell but are not owned by it, so activating the shell
         // buries them. Re-assert placement (and z-order) whenever we come forward.
-        Activated += (_, _) => { _session.Activate(this); _tracker.Refresh(); Relayout(); };
+        Activated += (_, _) => { _session.Activate(this); _foreignProvider.Refresh(); Relayout(); };
         Deactivated += (_, _) => Relayout();
     }
 
@@ -124,160 +136,65 @@ internal sealed class MainWindow : Window
 
     private async Task StartPanesAsync()
     {
-        foreach (var pane in _tree.Panes.ToList()) EnsureView(pane);
-        Relayout();
-
-        // Foreign apps are launched one at a time: several installers-worth of windows appearing
-        // at once makes "which window is mine" materially harder, and spike 2 showed that question
-        // is where this goes wrong.
-        foreach (var pane in _tree.Panes.Where(p => p.Kind == PaneKind.ForeignApp).ToList())
-        {
-            if (!_foreign.TryGetValue(pane.Id, out var app)) continue;
-            await app.LaunchAsync(_claimedWindows, _shellHwnd, _shutdown.Token);
-
-            if (app.Notice is { Length: > 0 }) _message = $"{pane.Title}: {app.Notice}";
-
-            Relayout();
-        }
+        // Restore sequentially. Foreign providers may need to distinguish a newly launched window
+        // from already-running candidates; concurrent launches make that materially less reliable.
+        foreach (var pane in _tree.Panes.ToList())
+            await RestoreRuntimeAsync(pane);
         Relayout();
     }
 
-    private Control EnsureView(Pane pane)
-    {
-        if (_views.TryGetValue(pane.Id, out var existing)) return existing;
-
-        NormalizeProgram(pane);
-
-        Control view;
-        switch (pane.Kind)
-        {
-            case PaneKind.Terminal:
-                view = CreateTerminal(pane);
-                break;
-
-            case PaneKind.ForeignApp:
-                _foreign[pane.Id] = new ForeignAppPane(pane);
-                view = CreateForeignPlaceholder(pane);
-                break;
-
-            default:
-                view = new Border
-                {
-                    Background = new SolidColorBrush(Color.FromRgb(0x45, 0x47, 0x5a)),
-                    Child = new TextBlock { Text = pane.Kind + " panes are not implemented yet", Margin = new Thickness(12) },
-                };
-                break;
-        }
-
-        _views[pane.Id] = view;
-        _canvas.Children.Add(view);
-        return view;
-    }
-
-    private Control CreateTerminal(Pane pane)
-    {
-        var r = pane.Restore;
-        var program = string.IsNullOrWhiteSpace(r.Program)
-            ? Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe"
-            : r.Program;
-        var isWsl = IsWsl(program);
-        var arguments = r.Args.ToList();
-        string cwd;
-        if (isWsl)
-        {
-            cwd = Environment.CurrentDirectory;
-            if (r.Cwd.IsKnown && r.Cwd.Path.StartsWith("/", StringComparison.Ordinal))
-            {
-                arguments.Insert(0, r.Cwd.Path);
-                arguments.Insert(0, "--cd");
-            }
-        }
-        else if (r.Cwd.IsKnown && Directory.Exists(r.Cwd.Path))
-        {
-            cwd = r.Cwd.Path;
-        }
-        else
-        {
-            cwd = Environment.CurrentDirectory;
-            if (r.Cwd.IsKnown)
-            {
-                _message = $"saved cwd for \"{pane.Title}\" is unavailable: {r.Cwd.Path}; started in {cwd}";
-            }
-            else
-            {
-                pane.Restore = r with
-                {
-                    Cwd = new WorkingDirectory(cwd, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow),
-                };
-            }
-        }
-
-        var term = new TerminalPaneControl(program, arguments, cwd, r.EnvOverrides);
-
-        term.TitleChanged += title => Dispatcher.UIThread.Post(() =>
-        {
-            if (!string.IsNullOrWhiteSpace(title)) { pane.Title = title; UpdateStatus(); UpdateTabBar(); }
-            _session.RequestSave();
-        });
-        term.WorkingDirectoryChanged += path =>
-        {
-            pane.Restore = pane.Restore with
-            {
-                Cwd = new WorkingDirectory(path, CwdSource.ShellReported, DateTimeOffset.UtcNow),
-            };
-            _message = $"captured cwd for \"{pane.Title}\" from the shell";
-            UpdateStatus();
-            _session.RequestSave();
-        };
-        term.Exited += exitCode => Dispatcher.UIThread.Post(() =>
-        {
-            _message = $"pane \"{pane.Title}\" exited with code {exitCode}";
-            UpdateStatus();
-        });
-        _ = StartTerminalAsync(term, pane, program);
-        return term;
-    }
-
-    private async Task StartTerminalAsync(TerminalPaneControl terminal, Pane pane, string program)
+    private async Task RestoreRuntimeAsync(Pane pane)
     {
         try
         {
-            await terminal.StartAsync(_shutdown.Token);
+            var runtime = await _providers.RestoreAsync(PaneProviderContext.FromPane(pane), _shutdown.Token);
+            AddRuntime(pane, runtime);
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
         {
         }
         catch (Exception ex)
         {
-            _message = $"could not start {program}: {ex.Message}";
-            pane.Title = "failed: " + pane.Title;
-            UpdateStatus();
-            UpdateTabBar();
+            var message = $"could not restore provider '{pane.Kind}': {ex.Message}";
+            _message = message;
+            AddRuntime(pane, new UnavailablePaneRuntime(pane, message));
         }
     }
 
-    /// <summary>
-    /// What sits under a foreign window. The real application floats above it, so this is only ever
-    /// seen while the app is starting or if it never appeared — which is exactly when the user needs
-    /// to be told something, rather than looking at an empty rectangle.
-    /// </summary>
-    private static Control CreateForeignPlaceholder(Pane pane)
+    private void AddRuntime(Pane pane, IPaneRuntime runtime)
     {
-        var text = new TextBlock
+        if (runtime.PaneId != pane.Id || runtime.Kind != pane.Kind)
+            throw new InvalidOperationException(
+                $"Provider '{runtime.Kind}' returned a runtime for the wrong pane ({runtime.PaneId}).");
+
+        _runtimes.Add(pane.Id, runtime);
+        _canvas.Children.Add(runtime.View);
+        runtime.StateChanged += (_, _) => Dispatcher.UIThread.Post(() => SyncRuntimeState(pane, runtime));
+        runtime.View.GotFocus += (_, _) =>
         {
-            Margin = new Thickness(14),
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.FromRgb(0xa6, 0xad, 0xc8)),
-            Text = $"{pane.Title}\n\nstarting…",
+            if (_tree.Focused == pane.Id) return;
+            _tree.Focus(pane.Id);
+            Relayout();
         };
-        text.Tag = pane.Id;
-        return new Border
+        if (runtime is ITerminalHandoffRuntime handoff)
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x24, 0x27, 0x3a)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x45, 0x47, 0x5a)),
-            BorderThickness = new Thickness(1),
-            Child = text,
-        };
+            handoff.TerminalHandoffRequested += (_, _) =>
+                Dispatcher.UIThread.Post(() => _ = OpenTerminalHereAsync(runtime));
+        }
+        SyncRuntimeState(pane, runtime);
+    }
+
+    private void SyncRuntimeState(Pane pane, IPaneRuntime runtime)
+    {
+        pane.Restore = runtime.CaptureRestoreDescriptor();
+        if (!string.IsNullOrWhiteSpace(pane.Restore.Title)) pane.Title = pane.Restore.Title;
+        if (!string.IsNullOrWhiteSpace(runtime.StatusMessage))
+        {
+            _message = $"{pane.Title}: {runtime.StatusMessage}";
+        }
+        UpdateStatus();
+        UpdateTabBar();
+        _session.RequestSave();
     }
 
     // ---------------- layout ----------------
@@ -290,7 +207,8 @@ internal sealed class MainWindow : Window
 
         foreach (var pane in _tree.Panes)
         {
-            var view = EnsureView(pane);
+            if (!_runtimes.TryGetValue(pane.Id, out var runtime)) continue;
+            var view = runtime.View;
             var visible = arrangement.IsVisible(pane.Id);
             var rect = arrangement[pane.Id];
 
@@ -303,27 +221,7 @@ internal sealed class MainWindow : Window
                 view.Height = rect.Height;
             }
 
-            if (_foreign.TryGetValue(pane.Id, out var app))
-            {
-                if (app.Located)
-                {
-                    var origin = _canvas.PointToScreen(new Avalonia.Point(rect.X, rect.Y));
-                    var scale = TopLevel.GetTopLevel(_canvas)?.RenderScaling ?? 1.0;
-                    _tracker.Place(
-                        pane.Id,
-                        app.Hwnd,
-                        origin.X,
-                        origin.Y,
-                        Math.Max(1, (int)Math.Round(rect.Width * scale)),
-                        Math.Max(1, (int)Math.Round(rect.Height * scale)),
-                        visible,
-                        child: false);
-                }
-                else if (view is Border { Child: TextBlock tb })
-                {
-                    tb.Text = $"{pane.Title}\n\n{app.Status}";
-                }
-            }
+            runtime.Arrange(new PaneArrangement(rect, visible));
         }
 
         UpdateStatus();
@@ -354,7 +252,7 @@ internal sealed class MainWindow : Window
             button.Click += (_, _) =>
             {
                 _tree.Focus(target);
-                _views.GetValueOrDefault(target)?.Focus();
+                _runtimes.GetValueOrDefault(target)?.Focus();
                 Relayout();
             };
             _tabBar.Children.Add(button);
@@ -450,14 +348,16 @@ internal sealed class MainWindow : Window
 
     private void RegisterActions()
     {
-        _actions.Register(ShellActionNames.SplitColumns, () => SplitFocused(SplitDirection.Columns));
-        _actions.Register(ShellActionNames.SplitRows, () => SplitFocused(SplitDirection.Rows));
+        _actions.RegisterAsync(ShellActionNames.SplitColumns,
+            _ => new ValueTask(SplitFocusedAsync(SplitDirection.Columns)));
+        _actions.RegisterAsync(ShellActionNames.SplitRows,
+            _ => new ValueTask(SplitFocusedAsync(SplitDirection.Rows)));
         _actions.Register(ShellActionNames.FocusLeft, () => MoveFocus(FocusDirection.Left));
         _actions.Register(ShellActionNames.FocusRight, () => MoveFocus(FocusDirection.Right));
         _actions.Register(ShellActionNames.FocusUp, () => MoveFocus(FocusDirection.Up));
         _actions.Register(ShellActionNames.FocusDown, () => MoveFocus(FocusDirection.Down));
-        _actions.Register(ShellActionNames.ClosePane, () => _ = CloseFocusedAsync());
-        _actions.Register(ShellActionNames.NewTab, AddTab);
+        _actions.RegisterAsync(ShellActionNames.ClosePane, _ => new ValueTask(CloseFocusedAsync()));
+        _actions.RegisterAsync(ShellActionNames.NewTab, _ => new ValueTask(AddTabAsync()));
         _actions.Register(ShellActionNames.NextTab, () => CycleTab(1));
         _actions.Register(ShellActionNames.PreviousTab, () => CycleTab(-1));
         _actions.Register(ShellActionNames.SaveSession, SaveSession);
@@ -467,17 +367,33 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.ResizeDown, () => ResizeFocused(FocusDirection.Down));
         _actions.Register(ShellActionNames.ShowPalette, ShowPalette);
         _actions.Register(ShellActionNames.SendPrefix, SendPrefix);
-        _actions.Register(ShellActionNames.NewTerminalCmd, () => AddTab(TerminalProfiles.Cmd));
-        _actions.Register(ShellActionNames.NewTerminalWindowsPowerShell, () => AddTab(TerminalProfiles.WindowsPowerShell));
-        _actions.Register(ShellActionNames.NewTerminalPowerShell, () => AddTab(TerminalProfiles.PowerShell));
-        _actions.Register(ShellActionNames.NewTerminalWsl, () => AddTab(TerminalProfiles.Wsl));
-        _actions.Register(ShellActionNames.ConfigureCwdReporting, () => _ = ShowCwdIntegrationAsync(onlyIfUnseen: false));
-        _actions.Register(ShellActionNames.ToggleForeignHostStrategy, () => _ = ToggleForeignHostStrategyAsync());
+        _actions.RegisterAsync(ShellActionNames.NewTerminalCmd, _ => new ValueTask(AddTabAsync(TerminalProfiles.Cmd)));
+        _actions.RegisterAsync(ShellActionNames.NewTerminalWindowsPowerShell,
+            _ => new ValueTask(AddTabAsync(TerminalProfiles.WindowsPowerShell)));
+        _actions.RegisterAsync(ShellActionNames.NewTerminalPowerShell,
+            _ => new ValueTask(AddTabAsync(TerminalProfiles.PowerShell)));
+        _actions.RegisterAsync(ShellActionNames.NewTerminalWsl, _ => new ValueTask(AddTabAsync(TerminalProfiles.Wsl)));
+        _actions.RegisterAsync(ShellActionNames.NewFileBrowser, _ => new ValueTask(AddFileBrowserTabAsync()));
+        _actions.RegisterAsync(ShellActionNames.OpenTerminalHere, _ => new ValueTask(OpenTerminalHereAsync()));
+        _actions.RegisterAsync(ShellActionNames.ConfigureCwdReporting,
+            _ => new ValueTask(ShowCwdIntegrationAsync(onlyIfUnseen: false)));
+        _actions.RegisterAsync(ShellActionNames.ToggleForeignHostStrategy,
+            _ => new ValueTask(ToggleForeignHostStrategyAsync()));
     }
 
     internal ActionDispatchResult DispatchNamedAction(string actionName)
     {
         var result = _actions.Dispatch(actionName);
+        if (!result.Succeeded) _message = result.Error ?? "action failed";
+        UpdateStatus();
+        return result;
+    }
+
+    internal async ValueTask<ActionDispatchResult> DispatchNamedActionAsync(
+        string actionName,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _actions.DispatchAsync(actionName, cancellationToken);
         if (!result.Succeeded) _message = result.Error ?? "action failed";
         UpdateStatus();
         return result;
@@ -491,15 +407,16 @@ internal sealed class MainWindow : Window
 
     private void SendPrefix()
     {
-        if (_views.GetValueOrDefault(_tree.Focused) is TerminalPaneControl terminal)
-            _ = terminal.SendText("\u0002");
+        if (_runtimes.GetValueOrDefault(_tree.Focused) is ITerminalInputRuntime terminal)
+            _ = terminal.SendPrefixAsync(_shutdown.Token);
         else
             _message = "the focused pane does not accept terminal input";
     }
 
     private async Task ToggleForeignHostStrategyAsync()
     {
-        if (!_foreign.TryGetValue(_tree.Focused, out var app) || app.EffectiveStrategy is not { } current)
+        if (_runtimes.GetValueOrDefault(_tree.Focused) is not IForeignHostStrategyRuntime app ||
+            app.EffectiveStrategy is not { } current)
         {
             _message = "the focused pane is not a ready foreign application";
             UpdateStatus();
@@ -507,7 +424,7 @@ internal sealed class MainWindow : Window
         }
 
         var target = current == HostStrategy.Embed ? HostStrategy.Attach : HostStrategy.Embed;
-        _message = $"switching {app.Pane.Title} to {target.ToString().ToLowerInvariant()}…";
+        _message = $"switching foreign pane to {target.ToString().ToLowerInvariant()}…";
         UpdateStatus();
         try
         {
@@ -521,10 +438,12 @@ internal sealed class MainWindow : Window
         }
     }
 
-    private Pane NewTerminalPane(TerminalProfile? profile = null)
+    private Pane NewTerminalPane(TerminalProfile? profile = null, string? directory = null)
     {
         var focused = _tree.GetPane(_tree.Focused);
-        var cwd = focused?.Restore.Cwd;
+        var cwd = directory is { Length: > 0 }
+            ? new WorkingDirectory(directory, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow)
+            : focused?.Restore.Cwd;
         profile ??= focused?.Kind == PaneKind.Terminal && !string.IsNullOrWhiteSpace(focused.Restore.Program)
             ? new TerminalProfile(focused.Title, focused.Restore.Program!, focused.Restore.Args)
             : TerminalProfiles.Cmd;
@@ -545,28 +464,100 @@ internal sealed class MainWindow : Window
         return pane;
     }
 
-    private void SplitFocused(SplitDirection direction)
+    private Pane NewFileBrowserPane(string? directory = null)
     {
-        var id = _tree.Split(_tree.Focused, direction, NewTerminalPane());
+        directory ??= _runtimes.GetValueOrDefault(_tree.Focused) is ITerminalHandoffRuntime browser
+            ? browser.TerminalHandoffDirectory
+            : _tree.GetPane(_tree.Focused)?.Restore.Cwd is { IsKnown: true } cwd
+                ? cwd.Path
+                : Environment.CurrentDirectory;
+        directory ??= Environment.CurrentDirectory;
+        return new Pane(PaneId.New(), PaneKind.FileBrowser, "files", new RestoreDescriptor
+        {
+            Kind = PaneKind.FileBrowser,
+            Title = "files",
+            Extras = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [FileBrowserModel.CurrentDirectoryExtra] = directory,
+                [FileBrowserModel.SelectedPathExtra] = string.Empty,
+            },
+        });
+    }
+
+    private async Task<IPaneRuntime> CreateNewRuntimeAsync(Pane pane)
+    {
+        try
+        {
+            return await _providers.CreateAsync(PaneProviderContext.FromPane(pane), _shutdown.Token);
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _message = $"could not create {pane.Kind} pane: {ex.Message}";
+            UpdateStatus();
+            throw new InvalidOperationException(_message, ex);
+        }
+    }
+
+    private async Task SplitFocusedAsync(SplitDirection direction)
+    {
+        var pane = NewTerminalPane();
+        var runtime = await CreateNewRuntimeAsync(pane);
+        var id = _tree.Split(_tree.Focused, direction, pane);
+        AddRuntime(pane, runtime);
         _message = direction == SplitDirection.Columns ? "split into columns" : "split into rows";
         Relayout();
-        _views.GetValueOrDefault(id)?.Focus();
+        _runtimes.GetValueOrDefault(id)?.Focus();
     }
 
-    private void AddTab()
+    private Task AddTabAsync() => AddTabAsync(NewTerminalPane(), "new tab");
+
+    private Task AddTabAsync(TerminalProfile profile) =>
+        AddTabAsync(NewTerminalPane(profile), "new " + profile.Name + " tab");
+
+    private Task AddFileBrowserTabAsync() =>
+        AddTabAsync(NewFileBrowserPane(), "new file-browser tab");
+
+    private async Task AddTabAsync(Pane pane, string message, PaneId? beside = null)
     {
-        var id = _tree.AddTab(_tree.Focused, NewTerminalPane());
-        _message = "new tab";
+        var runtime = await CreateNewRuntimeAsync(pane);
+        var id = _tree.AddTab(beside ?? _tree.Focused, pane);
+        AddRuntime(pane, runtime);
+        _message = message;
         Relayout();
-        _views.GetValueOrDefault(id)?.Focus();
+        _runtimes.GetValueOrDefault(id)?.Focus();
     }
 
-    private void AddTab(TerminalProfile profile)
+    private Task OpenTerminalHereAsync()
     {
-        var id = _tree.AddTab(_tree.Focused, NewTerminalPane(profile));
-        _message = "new " + profile.Name + " tab";
-        Relayout();
-        _views.GetValueOrDefault(id)?.Focus();
+        if (_runtimes.TryGetValue(_tree.Focused, out var runtime)) return OpenTerminalHereAsync(runtime);
+        _message = "the focused pane is unavailable";
+        UpdateStatus();
+        throw new InvalidOperationException(_message);
+    }
+
+    private async Task OpenTerminalHereAsync(IPaneRuntime source)
+    {
+        if (source is not ITerminalHandoffRuntime { TerminalHandoffDirectory: { Length: > 0 } directory })
+        {
+            _message = "the focused pane is not a file browser";
+            UpdateStatus();
+            throw new InvalidOperationException(_message);
+        }
+        if (!Directory.Exists(directory))
+        {
+            _message = $"cannot open a terminal because the directory is unavailable: {directory}";
+            UpdateStatus();
+            throw new InvalidOperationException(_message);
+        }
+
+        await AddTabAsync(
+            NewTerminalPane(TerminalProfiles.Cmd, directory),
+            "opened terminal at " + directory,
+            source.PaneId);
     }
 
     private void CycleTab(int delta)
@@ -581,7 +572,7 @@ internal sealed class MainWindow : Window
         else
         {
             _message = "";
-            if (_views.GetValueOrDefault(_tree.Focused) is { } v) v.Focus();
+            _runtimes.GetValueOrDefault(_tree.Focused)?.Focus();
         }
         Relayout();
     }
@@ -614,26 +605,21 @@ internal sealed class MainWindow : Window
         _paneCloseInProgress = true;
         try
         {
-            if (_foreign.TryGetValue(id, out var foreign))
+            if (_runtimes.TryGetValue(id, out var runtime))
             {
-                var claimedWindow = foreign.ChildHwnd;
-                _message = $"closing {foreign.Pane.Title} safely…";
+                _message = "closing pane safely…";
                 UpdateStatus();
-                var result = await foreign.CloseAsync();
+                var result = await runtime.CloseAsync(PaneCloseReason.PaneRemoved);
                 if (!result.Succeeded)
                 {
                     _message = "pane stayed open: " + result.Message;
                     UpdateStatus();
                     return;
                 }
-                lock (_claimedWindows) _claimedWindows.Remove(claimedWindow);
             }
 
             if (!_tree.Close(id)) { _message = "cannot close the last pane"; UpdateStatus(); return; }
-
-            if (_views.Remove(id, out var view)) _canvas.Children.Remove(view);
-            if (_foreign.Remove(id, out _)) _tracker.Forget(id);
-            if (view is TerminalPaneControl term) { try { term.Dispose(); } catch (ObjectDisposedException) { } }
+            await RemoveRuntimeAsync(id);
 
             _message = "closed";
             Relayout();
@@ -646,7 +632,7 @@ internal sealed class MainWindow : Window
 
     private void SaveSession()
     {
-        RefreshProcessWorkingDirectories();
+        RefreshPaneRestoreStates();
         var result = _session.SaveNow();
         if (result.Succeeded)
         {
@@ -661,6 +647,7 @@ internal sealed class MainWindow : Window
 
     internal WindowSnapshot CaptureSnapshot()
     {
+        RefreshPaneRestoreStates();
         var snapshot = SessionMapper.ToSnapshot(_tree, Title ?? "WinMux");
         var width = Math.Max(1, (int)Math.Round(Bounds.Width > 0 ? Bounds.Width : Width));
         var height = Math.Max(1, (int)Math.Round(Bounds.Height > 0 ? Bounds.Height : Height));
@@ -699,7 +686,7 @@ internal sealed class MainWindow : Window
         e.Cancel = true;
         if (_shutdownStarted) return;
         _cwdCaptureTimer.Stop();
-        RefreshProcessWorkingDirectories();
+        RefreshPaneRestoreStates();
         var saved = _session.PrepareWindowClosing(this);
         if (!saved.Succeeded)
         {
@@ -719,31 +706,28 @@ internal sealed class MainWindow : Window
     {
         try
         {
-            var attempts = _foreign.Values
-                .Select(app => (App: app, Child: app.ChildHwnd, Task: DetachSafelyAsync(app)))
+            var attempts = _runtimes.Values
+                .Select(runtime => (Runtime: runtime, Task: CloseRuntimeSafelyAsync(runtime, PaneCloseReason.ShellShutdown)))
                 .ToArray();
-            var detachResults = await Task.WhenAll(attempts.Select(attempt => attempt.Task));
-            var failed = detachResults.FirstOrDefault(result => !result.Succeeded);
+            var closeResults = await Task.WhenAll(attempts.Select(attempt => attempt.Task));
+            var failed = closeResults.FirstOrDefault(result => !result.Succeeded);
             if (failed is not null)
             {
                 var removed = 0;
                 for (var index = 0; index < attempts.Length; index++)
                 {
-                    if (!detachResults[index].Succeeded) continue;
-                    var (app, child, _) = attempts[index];
-                    _foreign.Remove(app.Id);
-                    _tracker.Forget(app.Id);
-                    if (_views.Remove(app.Id, out var view)) _canvas.Children.Remove(view);
-                    lock (_claimedWindows) _claimedWindows.Remove(child);
-                    _tree.Close(app.Id);
+                    if (!closeResults[index].Succeeded || closeResults[index].CanContinueIfWindowStaysOpen) continue;
+                    var runtime = attempts[index].Runtime;
+                    _tree.Close(runtime.PaneId);
+                    await RemoveRuntimeAsync(runtime.PaneId);
                     removed++;
                 }
 
                 _shutdownStarted = false;
                 _cwdCaptureTimer.Start();
-                _message = "WinMux stayed open because an application could not detach: " + failed.Message +
+                _message = "WinMux stayed open because a pane could not close safely: " + failed.Message +
                            (removed > 0
-                               ? $"; {removed} app(s) already detached safely and were removed from this window"
+                               ? $"; {removed} detached pane(s) were removed from this window"
                                : string.Empty);
                 Relayout();
                 return;
@@ -752,10 +736,10 @@ internal sealed class MainWindow : Window
             _session.CompleteWindowClosing(this);
             _shutdown.Cancel();
 
-            foreach (var app in _foreign.Values) _tracker.Forget(app.Id);
-            foreach (var view in _views.Values)
-                if (view is TerminalPaneControl t) { try { t.Dispose(); } catch (ObjectDisposedException) { } }
-            _tracker.Dispose();
+            foreach (var runtime in _runtimes.Values.ToArray())
+                await runtime.DisposeAsync();
+            _runtimes.Clear();
+            _foreignProvider.Dispose();
             _shutdownComplete = true;
             // Always leave the original Closing event before asking Avalonia to close again.
             Dispatcher.UIThread.Post(Close);
@@ -769,52 +753,35 @@ internal sealed class MainWindow : Window
         }
     }
 
-    private static async Task<ForeignAppShutdownResult> DetachSafelyAsync(ForeignAppPane app)
+    private static async Task<PaneCloseResult> CloseRuntimeSafelyAsync(
+        IPaneRuntime runtime,
+        PaneCloseReason reason)
     {
         try
         {
-            return await app.DetachAsync();
+            return await runtime.CloseAsync(reason);
         }
         catch (Exception ex)
         {
-            return new ForeignAppShutdownResult(false, ex.Message);
+            return PaneCloseResult.Failure(ex.Message);
         }
     }
 
-    private void RefreshProcessWorkingDirectories()
+    private async Task RemoveRuntimeAsync(PaneId paneId)
     {
-        foreach (var pane in _tree.Panes.Where(candidate => candidate.Kind == PaneKind.Terminal))
-        {
-            if (_views.GetValueOrDefault(pane.Id) is not TerminalPaneControl terminal ||
-                terminal.ProcessId is not int processId)
-            {
-                continue;
-            }
-
-            var isWsl = IsWsl(pane.Restore.Program);
-            var result = ProcessWorkingDirectoryResolver.Resolve(processId, disablePebForWsl: isWsl);
-            if (!result.Succeeded) continue;
-
-            var capture = new WorkingDirectory(result.Path!, result.Provenance, DateTimeOffset.UtcNow);
-            pane.Restore = pane.Restore with { Cwd = WorkingDirectory.Better(pane.Restore.Cwd, capture) };
-        }
+        if (!_runtimes.Remove(paneId, out var runtime)) return;
+        _canvas.Children.Remove(runtime.View);
+        await runtime.DisposeAsync();
     }
 
-    private static bool IsWsl(string? program) =>
-        string.Equals(Path.GetFileNameWithoutExtension(program), "wsl", StringComparison.OrdinalIgnoreCase);
-
-    private void NormalizeProgram(Pane pane)
+    private void RefreshPaneRestoreStates()
     {
-        if (string.IsNullOrWhiteSpace(pane.Restore.Program)) return;
-
-        var resolution = ExecutablePathResolver.Resolve(pane.Restore.Program);
-        if (resolution.Succeeded)
+        foreach (var pane in _tree.Panes)
         {
-            pane.Restore = pane.Restore with { Program = resolution.AbsolutePath };
-        }
-        else
-        {
-            _message = resolution.Error ?? $"could not resolve {pane.Restore.Program}";
+            if (!_runtimes.TryGetValue(pane.Id, out var runtime)) continue;
+            runtime.RefreshRestoreState();
+            pane.Restore = runtime.CaptureRestoreDescriptor();
+            if (!string.IsNullOrWhiteSpace(pane.Restore.Title)) pane.Title = pane.Restore.Title;
         }
     }
 

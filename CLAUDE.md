@@ -5,9 +5,12 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 3 complete.** `WinMux.exe` runs persistent ConPTY/VT terminal panes plus foreign
+**State: Phase 4 complete.** `WinMux.exe` runs persistent ConPTY/VT terminal panes, foreign
 applications selected through a shipped quirks database and isolated in one top-level PaneHost
-per pane. Both embed and attach modes, automatic refusal fallback, and live switching ship. Phase 0:
+per pane, and a built-in file browser — all three as **pane providers** behind the public
+`WinMux.Panes` contract, so a fourth kind needs no Core or layout change
+([ADR 0012](docs/adr/0012-phase-4-pane-providers-and-file-browser.md)). Both embed and attach
+modes, automatic refusal fallback, and live switching ship. Phase 0:
 ADRs [0001](docs/adr/0001-out-of-process-pane-hosts.md),
 [0002](docs/adr/0002-terminal-stack.md), [0003](docs/adr/0003-foreign-app-compatibility.md),
 [0004](docs/adr/0004-cwd-capture.md). Product code: `WinMux.Core` (layout, session model, TOML —
@@ -18,8 +21,9 @@ ADRs [0005](docs/adr/0005-layout-engine.md), [0006](docs/adr/0006-session-file-f
 [ADR 0010](docs/adr/0010-phase-2-persistence-runtime.md), and Phase 3 by
 [ADR 0011](docs/adr/0011-phase-3-foreign-app-runtime.md).
 
-**Not done yet:** physical mixed-scale multi-monitor verification, file panes, tab/pane reordering,
-foreign-window focus reconciliation, terminal selection and scrollback navigation.
+**Not done yet:** physical mixed-scale multi-monitor verification, `WinMux.Platform` extraction
+(Phase 5), provider discovery/packaging, tab/pane reordering, foreign-window focus reconciliation,
+terminal selection and scrollback navigation.
 
 ---
 
@@ -79,6 +83,7 @@ Names are indicative; the *separation* is the requirement.
 WinMux.Core/             layout tree, session model, config, keymap, persistence — NO platform APIs   [EXISTS]
 WinMux.Pty/              ConPTY / pty abstraction, terminal process lifecycle                  [EXISTS]
 WinMux.Terminal/         owned VT-engine contract and adapter                                   [EXISTS]
+WinMux.Panes/            public IPaneProvider / IPaneRuntime contract — Core + Avalonia only     [EXISTS]
 WinMux.Platform/         IWindowHost + friends: the platform interface
 WinMux.Platform.Win32/   Win32 quirks database and selection                              [EXISTS]
 WinMux.PaneHost/         the out-of-process pane host executable (see section 5)                 [EXISTS]
@@ -108,12 +113,23 @@ Session
            └── Leaf    { Pane }
 
 Pane = { id, kind, title, PaneState }
-  kind: Terminal | FileBrowser | ForeignApp
+  kind: validated, case-normalized string — "terminal" | "file-browser" | "foreign-app" | "com.example.…"
 ```
 
-Every pane kind implements one interface: create, attach to a rect, resize, focus, close,
-**serialize to a restore descriptor**, and restore from one. The layout engine knows only that
-interface. Adding a pane kind must not touch the tree code.
+**`PaneKind` is a string, not an enum** ([ADR 0012](docs/adr/0012-phase-4-pane-providers-and-file-browser.md)).
+A closed enum made providers extensible in name only: a provider in another assembly could not
+define a kind. Built-in identifiers are stable; unknown ones round-trip through TOML untouched, so
+a descriptor is never destroyed merely because its provider is absent. A pane and its restore
+descriptor must carry the same kind.
+
+Every pane kind is a **provider** implementing `IPaneProvider`/`IPaneRuntime` from the public
+`WinMux.Panes` assembly: create, attach to a rect, resize, focus, capture state, prepare to close,
+dispose. `MainWindow` owns only layout, action routing, chrome and generic runtime coordination.
+Adding a pane kind must not touch Core, the tree, persistence or the CLI.
+
+The file browser is the documented exception to "a pane is a process": it is trusted in-process
+WinMux UI, because a subprocess boundary buys nothing there. Terminal and foreign-app panes keep
+theirs.
 
 **Restore descriptor** — the persisted per-pane payload:
 - `kind`, `title`
