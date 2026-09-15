@@ -37,7 +37,7 @@ jobs:
         run: dotnet test WinMux.slnx -c Release --no-build
 
       - name: Package
-        run: pwsh -File scripts/publish.ps1 -NoBuild
+        run: pwsh -File scripts/publish.ps1
 
       # checksums.txt is not decoration: the in-app updater refuses to install an archive whose
       # SHA-256 does not appear here, so publishing it is what makes the update path trustworthy

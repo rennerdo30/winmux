@@ -47,7 +47,7 @@ jobs:
       # PaneHost for days because a copy target guessed an output path that only existed on the
       # developer's machine. Packaging here is what would have caught it.
       - name: Package
-        run: pwsh -File scripts/publish.ps1 -NoBuild
+        run: pwsh -File scripts/publish.ps1
 
       - uses: actions/upload-artifact@v5
         with:
