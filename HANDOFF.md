@@ -28,75 +28,27 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
 
 ## What just happened
 
-**2026-09-15**, one long session (see `git log` from `68103d5` for the commits):
+**2026-09-15**, one long session. `git log 68103d5..` is the changelog; this is what a newcomer
+needs to know happened, and where the reasoning lives.
 
-- **Phase 5** — `WinMux.Platform` extracted; `Win32Interop.cs` deleted rather than ported, because
-  18 of its 24 imports had no callers. ADR 0013.
-- **Phase 6, chrome** — per-stack tab strips as reserved layout geometry, a toolbar, Mica, system
-  accent and light/dark, vector icons, visible divider handles. ADR 0014 and its addenda.
-- **Phase 6, profiles** — `LaunchProfile`, `IAppCatalog` (147 apps in 199 ms from the Start Menu),
-  empty panes, window adoption via `PaneHost --adopt`, settings, open/save-as, an app icon.
-  ADR 0015.
-- **Performance** — a window drag ran at **0.9 fps**; now **1,014/sec**. The cause was
-  `SnapshotProcesses` (123 ms, ~330 processes) on the interactive path, once per terminal pane,
-  on every title change. See the addenda to ADR 0014.
-- **Build** — the shell had been shipping a stale `WinMux.PaneHost.exe` because the copy target
-  guessed the wrong output directory; on a clean clone it would have copied nothing, silently.
-- **Renaming** — `RestoreDescriptor.TitleIsCustom` makes a user-chosen name outrank the automatic
-  one, which matters because cmd sets its console title on almost every command and would otherwise
-  undo the rename within seconds.
-- **Scrollback and selection** — `TerminalViewport` holds the arithmetic (where the view sits,
-  what a drag covers) in absolute row coordinates, so a selection survives new output and a parked
-  view does not slide. The engine had kept 5,000 rows since Phase 1 with no way to look at them.
-- **Windows 11 chrome** — Fluent 2's type ramp (body 14, caption 12, controls 32 tall) replaced a
-  ramp one step small throughout, the settings page became rounded cards instead of a label-and-
-  combo grid, and the toolbar moved into the title bar. ADR 0016. Most of that session went on a
-  bug that was not in the app: see *Do not re-do → Build and tooling*.
-- **The command palette became one** — it was created fresh on every dispatch (five presses, five
-  stacked windows), kept its system title bar, opened wherever Windows put it, did not close on
-  blur, and listed raw action identifiers with no shortcuts. Now a single instance, borderless and
-  positioned over its window, with sentence labels and the binding on each row.
-  `KeyStroke.Display()` is the new inverse of `Parse`.
-- **The pane layer got its first design pass** — panes are inset, rounded tiles on a margined
-  canvas; the focused one wears a 2px accent ring drawn in the gutter, so it is visible even while
-  a dialog or a foreign pane holds focus. Terminal output is rendered in colour for the first time:
-  `TerminalRunSplitter` cuts each row into runs of like style and `TerminalPalette` resolves them
-  through Campbell, replacing one hardcoded Nord brush per row that silently discarded every SGR
-  attribute the engine had already parsed. The restore modal became a status line, and the status
-  bar became three segments carrying the captured cwd with its provenance and the session's save
-  state — the two facts that show the product works, previously nowhere in the interface.
-- **Scrollback search**, and **symbol bindings on non-US keyboards**. Bindings written as "%" or
-  ":" were matched by physical key, and `KeyStroke`'s table encodes a US ANSI keyboard. Measured on
-  the development machine, whose layouts are en-US and ja-JP on **Japanese 106/109 hardware**:
-  there `:` is an *unshifted* OemSemicolon and `"` is Shift+D2, where the table expects
-  Shift+OemSemicolon and Shift+OemQuotes. So the command palette and split-rows had no working key
-  at all. They now match the character Avalonia reports as `KeySymbol`; verified on screen, the
-  palette opens on `Ctrl+B :`. Search is `TerminalSearchModel` plus a find bar built like the
-  palette, bound to the prefix and "/".
-- **Tab reordering** by key, menu and pointer drag, and **focus reconciliation**: a new
-  `IForegroundWindowMonitor` (Win32 `SetWinEventHook`) tells the shell when the user focuses a
-  window one of its panes stands in for, so clicking into an Explorer pane no longer leaves the
-  focused pane pointing at a terminal elsewhere (CLAUDE.md section 6).
-- **A running window can be dragged into a pane** — `Ctrl+B O` opens a modeless tray of the
-  windows already open, and a row dragged onto a pane is adopted there. Dragging the
-  application's *own* window onto WinMux is not possible: Windows delivers a window-move to the
-  window being moved, not to whatever it passes over, so there is no drop to receive.
-- **Snap layouts are back.** `ISnapLayoutService` claims the maximise button's rectangle so
-  Windows 11 offers its flyout again — the affordance taken away by drawing our own caption.
-  See the 2026-09-15 addendum to ADR 0016 for what claiming a caption button costs.
-- **Pane providers load from outside the app.** `providers/` beside the executable, one
-  directory each, own `AssemblyLoadContext`, every refusal reported with its reason.
-  `samples/WinMux.SampleProvider` is a working `com.example.clock` pane and the reference for
-  writing one; `examples/external-provider.toml` opens it. ADR 0012 has claimed since Phase 4
-  that a fourth pane kind needs no Core change — that is now demonstrated rather than asserted.
-- **Spike 5 measured input-queue attachment**, open since Phase 0. Input is *not* starved: 10/10
-  keystrokes at ~1 ms with the queues attached and the other process wedged. **Taking focus blocks
-  for the whole wedge**: 201 ms detached, 4,386 ms attached, identical across six runs. The
-  constraint stands; CLAUDE.md section 5 described the wrong symptom for three phases.
-  [ADR 0017](docs/adr/0017-input-queue-attachment.md).
-- **Dependencies are now hash-locked.** `packages.lock.json` for all 17 projects, so a restore that
-  does not match fails instead of quietly resolving something else
-  ([ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md)).
+- **Phases 4 and 5 closed.** Pane providers and the file browser (ADR 0012); the platform layer
+  extracted so the shell declares zero `DllImport` (ADR 0013).
+- **Phase 6, the GUI.** Nested tab groups and shell chrome (ADR 0014), profiles and the app
+  catalogue (ADR 0015), then a Windows 11 pass over the chrome, the dialogs and the pane layer
+  (ADR 0016): Fluent 2 metrics, a caption the app draws itself with snap layouts claimed back,
+  inset rounded panes, an accent focus ring in the gutter, and terminal output rendered in colour
+  for the first time.
+- **Everything on the feature list landed**: scrollback search, tab reordering by key, menu and
+  drag, focus reconciliation against the OS, dragging a running window into a pane, and pane
+  providers loaded from `providers/` beside the executable with a working sample.
+- **Two long-standing claims were finally measured, and one was wrong.** Input-queue attachment
+  does *not* starve the shell of input — it blocks *focus* for the duration of a wedge, 201 ms
+  against 4,386 ms (ADR 0017). Symbol key bindings never worked on this machine at all, because
+  `KeyStroke`'s table assumes a US ANSI keyboard and the hardware here is Japanese 106/109.
+- **Three separate times, a measurement harness produced the alarming result rather than the
+  product.** That is the most transferable thing this session produced; see *Do not re-do* and
+  CLAUDE.md section 7.
+- **Dependencies are hash-locked** and `Terminal.Emulation` reassessed (ADR 0018).
 
 ## The next action
 
@@ -110,23 +62,33 @@ neither; and `LayoutMetrics` is already parameterised, so a Normal/Compact densi
 settings card rather than an architecture change. Neither should be done without deciding it is
 wanted.
 
-## Blocked / needs a human
+## Waiting on you
 
-- **Mixed-scale multi-monitor is unmeasured.** The development machine has two monitors at the
-  same scale, so nothing has exercised mixed DPI. Someone must set different display scales and run
-  `scripts/phase4-demo.ps1` across them before fidelity is claimed.
-- **Higher-integrity attach is constrained by UIPI.** Failures are visible; WinMux will not elevate.
-- **`Terminal.Emulation` needs a v1 decision.** Assessed 2026-09-15 in
-  [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md): MIT, single author, five weeks of
-  history, and a declared repository that 404s. Content hashes are now pinned in
-  `packages.lock.json`, which closes the silent-substitution risk. Four options are costed there;
-  the recommendation is **ask the author to publish the source, then keep pinning** — nobody has
-  asked, and that is a message rather than a commit. A second lead found the same day: the author
-  forked the public, MIT, maintained `tomlm/Iciclecreek.Avalonia.Terminal` five weeks before
-  publishing, so a replacement would not start from scratch. Benchmark that against ADR 0002's
-  numbers before assuming replacement is expensive.
-- **An X11 port needs its own host executable, not a shim.** PaneHost keeps its 35 imports
-  deliberately (ADR 0013, decision 5). Do not read that as unfinished Phase 5 work.
+Three things, and only three. Each needs a person, a machine setting or a judgement — none is
+unfinished engineering, and nothing in the codebase is waiting on them.
+
+- **Run the mixed-DPI check.** Set one display to a different scale, then
+  `scripts/verify-mixed-dpi.ps1`. It refuses to report anything while the scales match, launches
+  WinMux across the seam, and lists what to look at. This is the last measurement in the project
+  that has never been taken, and it needs two monitors at different scales — which this machine has
+  never had.
+- **Decide `Terminal.Emulation`.** [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md)
+  has the facts, four costed options and a recommendation: ask the author to publish the source,
+  keep the hashes pinned, and benchmark `tomlm/Iciclecreek.Avalonia.Terminal` before assuming a
+  replacement is expensive. Nobody has asked the author; that is a message, not a commit.
+- **Use it for an hour.** See *The next action*.
+
+## Standing constraints
+
+**These are not open work.** They are decided, implemented and permanent, and they live here so
+that a future session recognises them as answers rather than rediscovering them as questions.
+
+- **Higher-integrity attach is constrained by UIPI**, and always will be. A non-elevated process
+  cannot manipulate an elevated application's windows. Failures are detected and explained in plain
+  words, and **WinMux will not ship elevated to work around it** (CLAUDE.md section 5).
+- **An X11 port needs its own host executable, not a shim.** `WinMux.PaneHost` keeps its 35 imports
+  deliberately; reparenting *is* a platform implementation (ADR 0013, decision 5). This is the
+  design, not a gap in it.
 
 ## Do not re-do
 
