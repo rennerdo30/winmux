@@ -3,7 +3,7 @@
     Package WinMux into a versioned release folder and zip under dist\.
 
 .DESCRIPTION
-    Produces dist\WinMux-<version>-win-x64\ and the matching .zip: WinMux.exe, the winmux CLI,
+    Produces dist\WinMux-<version>-win-x64\ and the matching .zip: WinMux.exe, the wmux CLI,
     WinMux.PaneHost.exe, the shipped foreign-app quirks database, the example sessions, LICENSE and
     a short README. The folder is deliberately flat — PaneHost has to sit beside WinMux.exe,
     because that is where the shell looks for it.
@@ -69,6 +69,10 @@ if ($LASTEXITCODE -ne 0) { throw "Publishing WinMux.Cli failed with exit code $L
 
 # Things a person unzipping this will want and cannot rebuild.
 Copy-Item -LiteralPath (Join-Path $repo 'LICENSE') -Destination $Destination
+
+# The licences of everything we ship beside our own code. MIT, BSD and Apache all require the
+# notice to travel with the binaries, and about forty third-party DLLs are in this folder.
+& (Join-Path $PSScriptRoot 'third-party-notices.ps1') -Destination $Destination
 $examples = Join-Path $Destination 'examples'
 New-Item -ItemType Directory -Path $examples -Force | Out-Null
 Copy-Item -Path (Join-Path $repo 'examples\*.toml') -Destination $examples
@@ -97,22 +101,58 @@ foreign-app-quirks.json beside this file is yours to edit; it maps applications 
 embedding strategy and a window-selection rule.
 
 Source and issues: https://github.com/rennerdo30/winmux
-MIT licensed; see LICENSE.
+MIT licensed; see LICENSE. The components shipped alongside it are listed in
+THIRD-PARTY-NOTICES.txt.
+
+The command line is wmux.exe in this folder: wmux help lists what it can do.
 "@ | Set-Content -LiteralPath (Join-Path $Destination 'README.txt') -Encoding utf8
 
 # Verify rather than trust. Each of these is invisible until it is needed at runtime.
 $required = @(
     @{ Path = 'WinMux.exe';              Why = 'the shell itself' },
     @{ Path = 'WinMux.PaneHost.exe';     Why = 'foreign-app panes cannot start without it' },
-    @{ Path = 'winmux.exe';              Why = 'the command line surface' },
+    @{ Path = 'wmux.exe';                Why = 'the command line surface' },
     @{ Path = 'foreign-app-quirks.json'; Why = 'foreign-app selection rules' },
     @{ Path = 'LICENSE';                 Why = 'the licence this ships under' },
+    @{ Path = 'THIRD-PARTY-NOTICES.txt'; Why = 'the licences of everything shipped beside us' },
     @{ Path = 'README.txt';              Why = 'how to run it' }
 )
 $missing = $required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $Destination $_.Path)) }
 if ($missing) {
     $detail = ($missing | ForEach-Object { "$($_.Path) ($($_.Why))" }) -join '; '
     throw "Packaging produced an incomplete release: missing $detail"
+}
+
+# Existence is not enough, and this is not hypothetical. The CLI used to be called winmux.exe,
+# which on a case-insensitive filesystem IS WinMux.exe: it published second, overwrote the shell,
+# and every package shipped the console CLI under the name the README tells people to run. The
+# check above passed the whole time, because both entries resolved to the one surviving file.
+#
+# So check what the file *is*. A Windows PE header records its subsystem: 2 = GUI, 3 = console.
+function Get-PESubsystem {
+    param([string] $Path)
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $peHeader = [BitConverter]::ToInt32($bytes, 0x3C)
+    return [BitConverter]::ToUInt16($bytes, $peHeader + 0x5C)
+}
+
+$shellExe = Join-Path $Destination 'WinMux.exe'
+$cliExe = Join-Path $Destination 'wmux.exe'
+
+$shellSubsystem = Get-PESubsystem $shellExe
+if ($shellSubsystem -ne 2) {
+    throw "WinMux.exe is not a GUI application (subsystem $shellSubsystem, expected 2). Something overwrote the shell."
+}
+
+$cliSubsystem = Get-PESubsystem $cliExe
+if ($cliSubsystem -ne 3) {
+    throw "wmux.exe is not a console application (subsystem $cliSubsystem, expected 3)."
+}
+
+# And that they really are two files, not one name seen twice.
+if ((Get-Item $shellExe).Length -eq (Get-Item $cliExe).Length -and
+    (Get-FileHash $shellExe).Hash -eq (Get-FileHash $cliExe).Hash) {
+    throw "WinMux.exe and wmux.exe are the same file. The shell and the CLI have collided again."
 }
 
 $size = (Get-ChildItem -LiteralPath $Destination -Recurse -File | Measure-Object -Property Length -Sum).Sum

@@ -11,7 +11,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 $sessionDirectory = Join-Path $repo 'artifacts\phase2-demo'
 $sessionPath = Join-Path $sessionDirectory 'session.toml'
 $executable = Join-Path $repo "WinMux.Shell\bin\x64\$Configuration\net10.0-windows\WinMux.exe"
-$cli = Join-Path $repo "WinMux.Cli\bin\$Configuration\net10.0\winmux.exe"
+$cli = Join-Path $repo "WinMux.Cli\bin\$Configuration\net10.0\wmux.exe"
 
 function ConvertTo-TomlString([string]$Value) {
     return '"' + $Value.Replace('\', '\\').Replace('"', '\"') + '"'
@@ -26,7 +26,7 @@ if (-not (Test-Path -LiteralPath $executable)) {
     throw "WinMux.exe was not found at $executable. Run without -NoBuild first."
 }
 if (-not (Test-Path -LiteralPath $cli)) {
-    throw "winmux.exe was not found at $cli. Run without -NoBuild first."
+    throw "wmux.exe was not found at $cli. Run without -NoBuild first."
 }
 
 New-Item -ItemType Directory -Path $sessionDirectory -Force | Out-Null

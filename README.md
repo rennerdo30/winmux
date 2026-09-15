@@ -168,7 +168,7 @@ keymap is tmux-style: `Ctrl+B`, then `%`/`"` to split, arrows to move focus,
 toggle a foreign pane between embed and attach, and `:` for
 the command palette. `1`–`4` open cmd, Windows PowerShell, PowerShell 7, or WSL profiles; `i` opens
 cwd-reporting setup. Pass
-`--no-prefix`, or `--keymap path.json`, to replace the default map. `winmux help` lists the CLI
+`--no-prefix`, or `--keymap path.json`, to replace the default map. `wmux help` lists the CLI
 action surface.
 
 ## Prior art worth reading

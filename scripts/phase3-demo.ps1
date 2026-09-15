@@ -12,7 +12,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 $sessionDirectory = Join-Path $repo 'artifacts\phase3-demo'
 $sessionPath = Join-Path $sessionDirectory 'session.toml'
 $shell = Join-Path $repo "WinMux.Shell\bin\x64\$Configuration\net10.0-windows\WinMux.exe"
-$cli = Join-Path $repo "WinMux.Cli\bin\$Configuration\net10.0\winmux.exe"
+$cli = Join-Path $repo "WinMux.Cli\bin\$Configuration\net10.0\wmux.exe"
 $paneHost = Join-Path $repo "WinMux.PaneHost\bin\x64\$Configuration\net10.0-windows\WinMux.PaneHost.exe"
 $verifier = Join-Path $repo 'WinMux.PaneHost.Tests\verify-attach.ps1'
 

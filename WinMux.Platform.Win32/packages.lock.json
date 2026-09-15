@@ -16,9 +16,10 @@
       "winmux.platform": {
         "type": "Project",
         "dependencies": {
-          "WinMux.Core": "[0.6.0, )"
+          "WinMux.Core": "[0.7.0, )"
         }
       }
-    }
+    },
+    "net10.0-windows7.0/win-x64": {}
   }
 }

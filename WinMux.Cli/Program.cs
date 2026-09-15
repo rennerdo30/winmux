@@ -6,7 +6,7 @@ using WinMux.Core.Session;
 namespace WinMux.Cli;
 
 /// <summary>
-/// `winmux` — the command line surface.
+/// `wmux` — the command line surface.
 ///
 /// CLAUDE.md section 6 wants every action addressable from a CLI, because that is what makes the
 /// product scriptable and testable. Session commands work on files; action commands are sent to
@@ -175,7 +175,7 @@ internal static class Program
     {
         if (args.Length != 1)
         {
-            Error("Usage: winmux action ACTION-NAME");
+            Error("Usage: wmux action ACTION-NAME");
             return 64;
         }
         return InvokeNamedAction(args[0]);
@@ -185,7 +185,7 @@ internal static class Program
     {
         if (args.Length != 1)
         {
-            Error($"Usage: winmux {command} -h|-v");
+            Error($"Usage: wmux {command} -h|-v");
             return 64;
         }
 
@@ -201,7 +201,7 @@ internal static class Program
     {
         if (args.Length != 1)
         {
-            Error($"Usage: winmux {prefix} left|right|up|down");
+            Error($"Usage: wmux {prefix} left|right|up|down");
             return 64;
         }
 
@@ -229,25 +229,25 @@ internal static class Program
     {
         Console.WriteLine("""
 
-            winmux — window multiplexer for Windows
+            wmux — the WinMux command line
 
             USAGE
-              winmux show [FILE]        draw the layout in a session file and list its panes
-              winmux validate [FILE]    parse a session file; exit 0 if it loads, 1 with the reason
-              winmux new [FILE]         write a starter session file
-              winmux split -h|-v        split the focused pane in the running shell
-              winmux focus DIRECTION    move focus: left, right, up or down
-              winmux resize DIRECTION   resize the focused pane toward a direction
-              winmux new-tab            add a tab beside the focused pane
-              winmux files              add a file-browser tab at the focused pane's directory
-              winmux terminal-here      open a terminal at the file browser's selected directory
-              winmux next-tab           select the next tab
-              winmux previous-tab       select the previous tab
-              winmux close-pane         close the focused pane
-              winmux save-session       write the running session
-              winmux palette            open the command palette
-              winmux action NAME        invoke any registered action by its stable name
-              winmux help
+              wmux show [FILE]        draw the layout in a session file and list its panes
+              wmux validate [FILE]    parse a session file; exit 0 if it loads, 1 with the reason
+              wmux new [FILE]         write a starter session file
+              wmux split -h|-v        split the focused pane in the running shell
+              wmux focus DIRECTION    move focus: left, right, up or down
+              wmux resize DIRECTION   resize the focused pane toward a direction
+              wmux new-tab            add a tab beside the focused pane
+              wmux files              add a file-browser tab at the focused pane's directory
+              wmux terminal-here      open a terminal at the file browser's selected directory
+              wmux next-tab           select the next tab
+              wmux previous-tab       select the previous tab
+              wmux close-pane         close the focused pane
+              wmux save-session       write the running session
+              wmux palette            open the command palette
+              wmux action NAME        invoke any registered action by its stable name
+              wmux help
 
             FILE defaults to session.toml in the current directory.
 

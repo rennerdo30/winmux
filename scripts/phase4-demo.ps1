@@ -17,7 +17,7 @@ $selectedFile = Join-Path $rightDirectory 'mémo 日本語.txt'
 $missingDirectory = Join-Path $demoDirectory 'deleted before restore'
 $sessionPath = Join-Path $demoDirectory 'session.toml'
 $shell = Join-Path $repo "WinMux.Shell\bin\x64\$Configuration\net10.0-windows\WinMux.exe"
-$cli = Join-Path $repo "WinMux.Cli\bin\$Configuration\net10.0\winmux.exe"
+$cli = Join-Path $repo "WinMux.Cli\bin\$Configuration\net10.0\wmux.exe"
 
 function ConvertTo-TomlString([string]$Value) {
     return '"' + $Value.Replace('\', '\\').Replace('"', '\"') + '"'

@@ -21,12 +21,12 @@ ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
 **Verified 2026-09-16: 727 passed, 0 warnings.** Four more are *skipped* by design — the live
-SFTP/FTP tests, which need a server and say so rather than passing quietly (ADR 0020). Version 0.6.0.
-Everything through local file operations is **pushed** (`4bc56ba`); the SFTP/FTP work described
-below is the only thing newer than `origin/main`.
+SFTP/FTP tests, which need a server and say so rather than passing quietly (ADR 0020). Version 0.7.0.
+Everything through `dd9bc38` is **pushed**; the release preparation described below is newer than
+`origin/main`.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
-Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
+Package it: `publish.cmd` → `dist/WinMux-0.7.0-win-x64/` and a zip.
 
 ## What just happened
 
@@ -84,6 +84,15 @@ needs to know happened, and where the reasoning lives.
   like any other, the password goes to Credential Manager and never to the session file, and SFTP
   can use a key instead. **Verified against a real server** (SFTPGo portable, both protocols) and
   then through the UI: session file, credential dialog, listing, folder created on the server.
+- **The release package could not start WinMux, and never could.** `winmux.exe` (the CLI) and
+  `WinMux.exe` (the shell) are one filename on Windows; the CLI published second and overwrote the
+  shell, so every package shipped a console application under the name the README says to
+  double-click. The CLI is now `wmux.exe`. Nothing had been released, so it reached nobody. Two
+  separate checks — `publish.ps1`'s file list and `UpdateInstaller`'s archive check — both asked
+  only whether `WinMux.exe` existed, and the CLI satisfied both.
+- **`THIRD-PARTY-NOTICES.txt` ships**, generated from the package contents. Around forty
+  third-party DLLs were being distributed with none of their licences, which MIT, BSD and Apache
+  all require.
 - **Network shares are Windows' job, and that is now decided and written down.** WinMux adds no SMB
   or NFS client: Windows mounts a share, WinMux browses the path. An SMBLibrary dependency was
   costed (LGPL-3.0 is compatible with MIT — weak copyleft, linking does not relicense us) and then
@@ -92,7 +101,17 @@ needs to know happened, and where the reasoning lives.
 
 ## The next action
 
-**Use it for an hour, then write down what annoyed you.** Everything on the feature list is done and
+**Cut 0.7.0.** The package is ready and was rebuilt from clean and started from the zip; what is
+left is one command, which is yours because it publishes:
+
+```
+git tag v0.7.0 && git push origin v0.7.0
+```
+
+`release.yml` builds it, attaches the archive and `checksums.txt`, and the in-app updater refuses
+anything whose hash is not in that file. `CHANGELOG.md` has the notes.
+
+**Then use it for an hour, and write down what annoyed you.** Everything on the feature list is done and
 was seen working on screen; what is left is the class of finding that only comes from use, and this
 project has now had two sessions of code-reading produce less than one screenshot did.
 

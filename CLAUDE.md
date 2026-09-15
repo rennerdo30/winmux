@@ -103,12 +103,20 @@ WinMux.Platform/         IHostWindowService + friends: the platform contract, ne
 WinMux.Platform.Win32/   Windows/: the implementations. ForeignApps/: quirks database            [EXISTS]
 WinMux.PaneHost/         the out-of-process pane host executable (see section 5)                 [EXISTS]
 WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays                          [EXISTS]
-WinMux.Cli/              `winmux` — the command line surface (section 6)                             [EXISTS]
+WinMux.Cli/              `wmux` — the command line surface (section 6)                               [EXISTS]
 WinMux.Tests/                                                                                        [EXISTS]
 assets/                  winmux.svg (the source of the mark) and the .ico built from it        [EXISTS]
 samples/                 WinMux.SampleProvider: a pane kind loaded from outside the app      [EXISTS]
 docs/adr/                one short file per architectural decision
 ```
+
+**The CLI is `wmux.exe`, not `winmux.exe`, and must never be renamed back.** Windows filenames are
+case-insensitive, so a CLI called `winmux.exe` and the shell's `WinMux.exe` are *one file* in the
+flat package directory. `publish.ps1` published the shell and then the CLI over the top of it, and
+every package it ever produced shipped the console CLI under the name users are told to
+double-click. It went unnoticed because both the publish script's own file check and
+`UpdateInstaller`'s archive check ask `Test-Path`/`File.Exists` for `WinMux.exe`, and the CLI
+satisfies both. Two verifications, one blind spot, because neither looked at *what* the file was.
 
 All projects now exist. See
 [ADR 0005](docs/adr/0005-layout-engine.md) for the layout engine's decisions and invariants.
@@ -413,7 +421,7 @@ target is Win32, so it lives behind `IAppCatalog` in `WinMux.Platform` and is im
   friends, not the UI framework's notion. Maintain WinMux's own focused-pane state and reconcile
   it with the OS; never assume they agree.
 - **Keymap: one binding table, tmux-style prefix by default** (configurable, no-prefix allowed).
-  Every action addressable by name from the command palette and from a CLI (`winmux split -h`),
+  Every action addressable by name from the command palette and from a CLI (`wmux split -h`),
   because a CLI makes the whole thing scriptable and testable.
 - **The prefix is the fast path, never the only path.** Every layout operation is also a toolbar
   button and, for tabs, a control on the strip itself. All four surfaces — key, button, palette,

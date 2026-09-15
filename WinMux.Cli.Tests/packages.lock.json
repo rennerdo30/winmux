@@ -98,16 +98,16 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
-      "winmux": {
-        "type": "Project",
-        "dependencies": {
-          "WinMux.Core": "[0.6.0, )"
-        }
-      },
       "winmux.core": {
         "type": "Project",
         "dependencies": {
           "Tomlyn": "[2.10.1, )"
+        }
+      },
+      "wmux": {
+        "type": "Project",
+        "dependencies": {
+          "WinMux.Core": "[0.6.0, )"
         }
       }
     }
