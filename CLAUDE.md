@@ -499,7 +499,11 @@ starvation while also silently delivering no input at all in its healthy control
 - ~~Session file format: JSON or TOML?~~ **Answered — TOML.** [ADR 0006](docs/adr/0006-session-file-format.md).
 - Detached/daemon sessions — does the shell survive its own restart with panes intact? Deferred
   past v1, but the process model should not make it impossible later.
-- Adopting already-running apps (drag a running window into a pane) — v1 or later?
+- ~~Adopting already-running apps (drag a running window into a pane) — v1 or later?~~
+  **Answered — built, 2026-09-15.** `Ctrl+B o` opens a tray of the open windows and one can be
+  dragged onto a pane. Dragging an application's *own* window from the desktop is not possible and
+  never will be: Windows delivers a window-move to the window being moved, not to whatever it
+  passes over, so there is no drop for WinMux to receive.
 - Multi-monitor: one WinMux window per monitor, or one spanning window with per-monitor tabs?
 - ~~**Does input-queue attachment actually starve the shell of input?**~~ **Answered — no, but
   focus blocks instead, which is worse.** Spike 5, [ADR 0017](docs/adr/0017-input-queue-attachment.md).
