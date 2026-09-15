@@ -1,0 +1,53 @@
+---
+title: WinMux
+description: A window multiplexer for Windows — tmux-style panes, tabs and session restore, for terminals and ordinary applications alike.
+template: splash
+hero:
+  tagline: tmux, outside the terminal. Split your screen into panes, put anything in them, and get the whole arrangement back tomorrow.
+  actions:
+    - text: Get started
+      link: /getting-started/
+      icon: right-arrow
+    - text: Source on GitHub
+      link: https://github.com/rennerdo30/winmux
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What it is
+
+A terminal multiplexer splits a terminal into panes. WinMux splits a **window** into panes, and a
+pane can hold a terminal, an ordinary Windows application, or a file browser. The arrangement — the
+splits, the tabs, what each pane was running and which directory it was in — is written to a file
+and restored next time.
+
+<CardGrid>
+  <Card title="Panes that hold anything" icon="puzzle">
+    Terminals run on ConPTY with a real VT engine. Ordinary applications are hosted in their own
+    process so a frozen one cannot freeze WinMux. A file browser is built in.
+  </Card>
+  <Card title="Sessions that come back" icon="seti:db">
+    Layout, tabs, programs, arguments and working directories are saved continuously and restored
+    on launch. Restoring recreates processes; it does not restore what was inside them.
+  </Card>
+  <Card title="Keyboard first, not keyboard only" icon="laptop">
+    A tmux-style prefix by default, and every action is also a button, a command-palette entry and
+    a CLI command — the same named action behind all four.
+  </Card>
+  <Card title="It looks like Windows" icon="star">
+    Mica, the system accent, light and dark following the OS, and the toolbar in the title bar
+    with real snap layouts.
+  </Card>
+</CardGrid>
+
+## What it is not
+
+WinMux restores **processes**, not process state. A restored shell is a new shell in the right
+directory, not the one you left with its scrollback and running jobs. Nothing can restore those, and
+saying otherwise would be the fastest way to make the feature look broken.
+
+Application compatibility is real but not universal. Some applications refuse to be embedded and are
+hosted alongside instead; elevated ones cannot be hosted at all. See
+[Troubleshooting](/troubleshooting/).

@@ -119,6 +119,15 @@ internal static class Icons
         12,
         new Polyline { Points = { new Point(3.5, 8), new Point(6.5, 11), new Point(12.5, 4.5) } });
 
+    /// <summary>A question mark in a circle, for help.</summary>
+    public static Control Help() => Draw(
+        Outline2(),
+        new ShapePath
+        {
+            Data = Geometry.Parse("M 6.2,6.3 A 1.9,1.9 0 1 1 8,9.3 L 8,10.4"),
+        },
+        Dot(12.3));
+
     /// <summary>Three dots, for a menu.</summary>
     public static Control More() => Draw(
         Dot(4.5), Dot(8), Dot(11.5));
@@ -160,6 +169,16 @@ internal static class Icons
         RadiusX = 0.5,
         RadiusY = 0.5,
         Margin = new Thickness(rect.X, rect.Y, 0, 0),
+        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+    };
+
+    /// <summary>A circle on the same 16x16 grid as <see cref="Outline"/>'s square.</summary>
+    private static Shape Outline2() => new Ellipse
+    {
+        Width = 12,
+        Height = 12,
+        Margin = new Thickness(2, 2, 0, 0),
         HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
         VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
     };

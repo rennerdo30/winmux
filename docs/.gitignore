@@ -1,0 +1,8 @@
+.astro/
+dist/
+node_modules/
+
+# Mirrored from ../adr at build time by scripts/sync-adrs.mjs. The ADRs live in docs/adr/, which is
+# where every link in CLAUDE.md, HANDOFF.md and the ADRs themselves points; copying them in is how
+# the site shows them without making a second copy anybody could edit by mistake.
+src/content/docs/adr/

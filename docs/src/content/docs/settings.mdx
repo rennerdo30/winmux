@@ -1,0 +1,46 @@
+---
+title: Settings
+description: Everything WinMux can be told, and where it is written.
+---
+
+Nothing in Settings is inert. Every control changes something visible, and what cannot be changed
+yet is shown as information rather than as a switch that does nothing.
+
+## Appearance
+
+**Theme** — Follow Windows, Dark or Light. Following Windows switches with the system setting while
+WinMux is running.
+
+## Profiles
+
+The list of everything you can open in a pane. See [Profiles](/profiles/).
+
+## New panes
+
+**Default terminal** — which profile a new terminal pane opens, and what the prefix key's split
+commands use. The list *is* the profile list, so "which terminals do I have" and "which one opens by
+default" stop being two unrelated ideas.
+
+**Tabs in a new group** — which edge a stack's strip takes when you first tab a pane.
+
+## Sessions
+
+**Confirm before closing running panes** — asks first when an action would close a pane with a
+program still in it.
+
+Below it, the paths: session file, settings file, profiles file. They are selectable, because the
+reason to look at a path is almost always to go there.
+
+## Working directories
+
+**Set up…** installs the shell snippets that make directory capture work. Read
+[Sessions](/sessions/) before deciding you do not need them.
+
+## Updates
+
+**Check for updates on start**, and **Releases to offer**. See [Updates](/updates/).
+
+## Files
+
+Settings and profiles are TOML in your user profile; the session is TOML wherever you opened it.
+All three are meant to be readable, and the panes section of a session file is meant to be edited.

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Windows, not ubuntu: WinMux.Shell, WinMux.PaneHost and WinMux.Platform.Win32 all target
+    # net10.0-windows, and the tests that matter most exercise Win32 behaviour directly.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # --locked-mode makes the run fail if packages.lock.json does not match the project files,
+      # rather than quietly resolving something else. That is the point of the lock files
+      # (ADR 0018) and it only has teeth if CI enforces it.
+      - name: Restore
+        run: dotnet restore WinMux.slnx --locked-mode
+
+      # Warnings are part of the gate. The repository has been at zero for its whole life and the
+      # cheapest way to keep it there is to make a warning fail a pull request.
+      - name: Build
+        run: dotnet build WinMux.slnx -c Release --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test WinMux.slnx -c Release --no-build --verbosity normal
+
+      # A clean clone is the case that has actually broken before: the shell shipped a stale
+      # PaneHost for days because a copy target guessed an output path that only existed on the
+      # developer's machine. Packaging here is what would have caught it.
+      - name: Package
+        run: pwsh -File scripts/publish.ps1 -NoBuild
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: winmux-win-x64
+          path: dist/*.zip
+          if-no-files-found: error

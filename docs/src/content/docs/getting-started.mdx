@@ -1,0 +1,76 @@
+---
+title: Getting started
+description: Install WinMux, open your first panes, and save the arrangement.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+## Requirements
+
+Windows 10 or 11, x64. Nothing else — the release is self-contained.
+
+<Aside type="tip" title="Cascadia Mono">
+Terminals use Cascadia Mono when it is present and fall back to Consolas otherwise. It ships with
+Windows Terminal and Visual Studio; installing it gives you the intended look.
+</Aside>
+
+## Install
+
+<Steps>
+
+1. Download the latest `WinMux-<version>-win-x64.zip` from the
+   [releases page](https://github.com/rennerdo30/winmux/releases).
+
+2. Check it against `checksums.txt`, published with every release:
+
+   ```powershell
+   (Get-FileHash -Algorithm SHA256 .\WinMux-0.6.0-win-x64.zip).Hash.ToLower()
+   ```
+
+3. Unzip it wherever you keep applications, and run `WinMux.exe`.
+
+</Steps>
+
+There is no installer and nothing is written outside the folder you unzip and your user profile.
+After the first launch, WinMux keeps itself current — see [Updates](/updates/).
+
+## Building it yourself
+
+```powershell
+git clone https://github.com/rennerdo30/winmux
+cd winmux
+.\scripts\run.ps1
+```
+
+`run.ps1` builds the solution and launches it. `.\scripts\publish.ps1` produces the same versioned
+zip the releases carry.
+
+## Your first layout
+
+<Steps>
+
+1. **Split the window.** `Split right` and `Split down` on the toolbar, or `Ctrl+B` then `%` and `"`.
+
+2. **Put something in a pane.** `New` opens a terminal. Its dropdown lists every profile you have,
+   including installed applications found through the Start Menu.
+
+3. **Make a tab group.** `Tab group` turns the focused pane into a stack of tabs. Tab groups nest,
+   so a tab can contain a split that contains more tabs, and each group's strip can sit on any edge.
+
+4. **Save it.** The session saves itself continuously; the disk icon forces it now, and its dropdown
+   has `Save as…` if you want several named layouts.
+
+</Steps>
+
+Open it again tomorrow and the panes come back, in the same shape, in the same directories.
+
+## Where things live
+
+| | |
+|---|---|
+| Session | `session.toml` beside the executable, or whatever you opened |
+| Settings | `settings.toml` in your user profile |
+| Profiles | `profiles.toml`, beside the settings |
+| Application quirks | `foreign-app-quirks.json` beside the executable — editable |
+
+Every one of them is text, and the Settings page shows you the exact paths.

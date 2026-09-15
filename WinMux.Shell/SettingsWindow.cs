@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using WinMux.Core.Layout;
 using WinMux.Core.Settings;
+using WinMux.Core.Update;
 using WinMux.Shell.Chrome;
 
 namespace WinMux.Shell;
@@ -25,6 +26,8 @@ internal sealed class SettingsWindow : Window
     private string _pendingDefaultTerminal = string.Empty;
     private readonly ComboBox _tabPlacement;
     private readonly CheckBox _confirmClosing;
+    private readonly CheckBox _checkUpdates;
+    private readonly ComboBox _updateChannel;
 
     /// <summary>Null unless the user saved; otherwise the settings they chose.</summary>
     public WinMuxSettings? Result { get; private set; }
@@ -84,6 +87,17 @@ internal sealed class SettingsWindow : Window
             ],
             current.DefaultTabPlacement);
 
+        _checkUpdates = new CheckBox
+        {
+            IsChecked = current.CheckForUpdates,
+            Foreground = Palette.TextBrush,
+            MinWidth = 0,
+        };
+
+        _updateChannel = Choice(
+            [("Stable only", UpdateChannel.Stable), ("Stable and prereleases", UpdateChannel.Prerelease)],
+            current.UpdateChannel);
+
         // The card supplies the label, so the box itself is only the switch.
         _confirmClosing = new CheckBox
         {
@@ -136,6 +150,16 @@ internal sealed class SettingsWindow : Window
             "Restoring a pane's directory needs the shell to report it. Without the profile " +
             "snippets, a PowerShell pane restores to the wrong directory as soon as you cd."));
 
+        body.Children.Add(SettingsCard.Heading("Updates"));
+        body.Children.Add(SettingsCard.Row(
+            "Check for updates on start",
+            _checkUpdates,
+            "Looks for a newer release on GitHub. Nothing is ever downloaded or installed without asking."));
+        body.Children.Add(SettingsCard.Row(
+            "Releases to offer",
+            _updateChannel,
+            "Prereleases are tagged builds that have not been declared stable."));
+
         body.Children.Add(SettingsCard.Heading("About"));
         body.Children.Add(SettingsCard.Info(
             "Version",
@@ -151,6 +175,8 @@ internal sealed class SettingsWindow : Window
                 DefaultTerminal = SelectedTerminalId(),
                 DefaultTabPlacement = Selected<TabStripPlacement>(_tabPlacement),
                 ConfirmBeforeClosingPanes = _confirmClosing.IsChecked == true,
+                CheckForUpdates = _checkUpdates.IsChecked == true,
+                UpdateChannel = Selected<UpdateChannel>(_updateChannel),
             };
             Close();
         };

@@ -1,0 +1,69 @@
+---
+title: Sessions
+description: What is saved, what is not, and why the working directory is the hard part.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Session persistence is the reason WinMux exists. Everything else loses to it when they conflict.
+
+## What is saved
+
+The layout tree, every window's position, which tabs exist and which is active, and for each pane:
+its kind, title, the program and arguments it was started with, any environment overrides, and its
+**working directory**.
+
+Saving happens continuously — on a debounce after any layout change, and on a timer — so a crash
+costs you nothing. The status bar shows the session file and how long ago it saved.
+
+## What is not
+
+**Process state.** A restored shell is a new shell started in the right directory. Scrollback,
+running jobs, and whatever a full-screen program had on screen are gone, because nothing can bring
+them back. WinMux says so when it restores rather than letting you find out.
+
+## The working directory
+
+This is the genuinely hard part, and Windows Terminal has an
+[open issue](https://github.com/microsoft/terminal/issues/14270) on it too. WinMux tries three
+things and keeps the best answer, recording *which* method produced it so a stale one is not trusted
+over a fresh one.
+
+| Method | Works when | Measured |
+|---|---|---|
+| The shell reports it (`OSC 9;9` / `OSC 7`) | you install the profile snippet | the only method that works for PowerShell and WSL |
+| Reading the deepest child process | a nested program is running | covers the case a stale shell report misses |
+| Reading the pane's own process | for `cmd` | **permanently stale for PowerShell**, meaningless for WSL |
+
+<Aside type="caution" title="Install the snippets">
+They are not a power-user extra. PowerShell's process working directory never changes when you
+`cd` — `Set-Location` updates the provider location, not the process — so without the snippet a
+PowerShell pane restores to the wrong directory the moment you move, and that is the headline
+feature failing silently.
+
+**Settings → Working directories → Set up…** installs them, for PowerShell, pwsh, cmd and bash.
+</Aside>
+
+The status bar's left segment shows the focused pane's captured directory and how it was captured,
+so you can see the difference between "shell-reported" and "where it was launched" at a glance.
+
+## Session files
+
+TOML, versioned from the first write, and meant to be edited. The layout tree is flattened into
+`[[windows.nodes]]` with generated ids; the panes are flat `[[windows.panes]]` tables and are the
+part worth hand-editing.
+
+```toml
+[[windows.panes]]
+id      = '11111111-1111-1111-1111-111111111111'
+kind    = 'terminal'
+title   = 'build'
+program = 'C:\WINDOWS\system32\cmd.exe'
+```
+
+Paths are written as TOML literal strings, so backslashes survive unescaped. A file that will not
+load is quarantined with a copy kept and WinMux refuses to start rather than silently opening empty
+— sessions are your data.
+
+Open one with the disk icon's dropdown, or `winmux` on the command line, or by passing it as the
+first argument.

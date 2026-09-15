@@ -102,6 +102,7 @@ internal static class ShellToolbar
         bar.Children.Add(IconOnly(Icons.Settings(), "Settings", ShellActionNames.ShowSettings, dispatch));
         bar.Children.Add(IconOnly(Icons.Commands(), "All commands by name (Ctrl+B then :)",
             ShellActionNames.ShowPalette, dispatch));
+        bar.Children.Add(HelpButton(dispatch));
 
         var layout = new ScrollViewer
         {
@@ -117,6 +118,41 @@ internal static class ShellToolbar
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = layout,
         };
+    }
+
+    /// <summary>
+    /// Help: the documentation, the release notes, and a way to ask for an update.
+    ///
+    /// A question mark rather than a hamburger, and a menu rather than a button, because these are
+    /// the things a person looks for by category rather than by name — and because anything longer
+    /// than a tooltip belongs on the documentation site, not in the application.
+    /// </summary>
+    private static Control HelpButton(Action<string> dispatch)
+    {
+        var button = Styled(Icons.Help(), "Help");
+        button.Classes.Remove(Theme.ToolbarButton);
+        button.Classes.Add(Theme.IconButton);
+
+        var menu = new ContextMenu
+        {
+            ItemsSource = new Control[]
+            {
+                Leaf("Documentation", () => dispatch(ShellActionNames.OpenDocumentation)),
+                Leaf("Release notes", () => Update.Links.Open(Update.Links.Releases)),
+                Leaf("Report an issue", () => Update.Links.Open(Update.Links.Issues)),
+                new Separator(),
+                Leaf("Check for updates", () => dispatch(ShellActionNames.CheckForUpdates)),
+                Leaf("Install update…", () => dispatch(ShellActionNames.InstallUpdate)),
+            },
+        };
+
+        button.Click += (_, _) =>
+        {
+            menu.PlacementTarget = button;
+            menu.Open(button);
+        };
+
+        return button;
     }
 
     /// <summary>"New", with every profile behind it and a way to add one.</summary>

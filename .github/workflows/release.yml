@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.7.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore WinMux.slnx --locked-mode
+
+      - name: Build
+        run: dotnet build WinMux.slnx -c Release --no-restore -warnaserror
+
+      # A release that has not passed its own tests is not a release.
+      - name: Test
+        run: dotnet test WinMux.slnx -c Release --no-build
+
+      - name: Package
+        run: pwsh -File scripts/publish.ps1 -NoBuild
+
+      # checksums.txt is not decoration: the in-app updater refuses to install an archive whose
+      # SHA-256 does not appear here, so publishing it is what makes the update path trustworthy
+      # rather than "download whatever the API pointed at".
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $zips = Get-ChildItem dist/*.zip
+          if (-not $zips) { throw 'publish produced no archive' }
+          $lines = foreach ($zip in $zips) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip.FullName).Hash.ToLower()
+            "$hash  $($zip.Name)"
+          }
+          $lines | Set-Content dist/checksums.txt -Encoding ascii
+          Get-Content dist/checksums.txt
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          draft: false
+          # The updater reads the version from the tag and only offers stable releases by default,
+          # so a prerelease tag stays invisible to anyone who has not opted into that channel.
+          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            dist/*.zip
+            dist/checksums.txt

@@ -1,0 +1,85 @@
+---
+title: Writing a pane provider
+description: Adding a kind of pane that WinMux does not ship.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+A pane kind is a **provider**. Terminals, the file browser, hosted applications and empty panes are
+all providers behind the same public contract, and so is anything you write. Adding one touches no
+part of WinMux: not the layout engine, not the session format, not the CLI.
+
+## The contract
+
+`WinMux.Panes` is the whole surface. A provider says what kind of pane it makes and how to make one:
+
+```csharp
+public sealed class ClockPaneProvider : IPaneProvider
+{
+    public PaneKind Kind { get; } = PaneKind.Create("com.example.clock");
+
+    public ValueTask<IPaneRuntime> CreateAsync(PaneProviderContext context, CancellationToken token = default)
+        => ValueTask.FromResult<IPaneRuntime>(new ClockPaneRuntime(context, Kind));
+
+    public ValueTask<IPaneRuntime> RestoreAsync(PaneProviderContext context, CancellationToken token = default)
+        => CreateAsync(context, token);
+}
+```
+
+The runtime owns its view, its lifetime, and what it writes into the session file so it can be
+restored. `samples/WinMux.SampleProvider` in the repository is a complete working example.
+
+## Installing one
+
+<Steps>
+
+1. Build it as a library.
+
+2. Put it in `providers/<AssemblyName>/` beside `WinMux.exe` — **the directory is named after the
+   assembly**:
+
+   ```
+   WinMux.exe
+   providers/
+     Acme.Provider/
+       Acme.Provider.dll
+       SomeDependency.dll
+   ```
+
+3. Start WinMux. The status bar says what loaded, or why something did not.
+
+</Steps>
+
+One directory per provider, not a flat folder, because two providers wanting different versions of
+the same library is the normal case and a flat folder makes it unresolvable. Each gets its own
+`AssemblyLoadContext`.
+
+<Aside type="caution" title="Do not ship the contract assemblies">
+`WinMux.Panes`, `WinMux.Core` and Avalonia must be **WinMux's copies**, not yours. If your provider
+brings its own, your `IPaneProvider` is a different type from the one the registry wants and nothing
+will load — the classic plugin failure, and a confusing one because the type names match.
+
+In a project reference, that is `Private="false"`.
+</Aside>
+
+## When it does not load
+
+Every refusal is reported with its reason, because a plugin that does not appear and does not say
+why is the worst outcome available:
+
+- no public parameterless constructor;
+- threw while being constructed, or when asked its kind;
+- claims a pane kind something else already provides — two providers for one kind would make
+  restoring a session ambiguous;
+- the directory does not contain the assembly its name promises.
+
+One bad provider never costs the good ones.
+
+## Choosing a kind
+
+Use reverse-DNS — `com.example.clock` — and collisions become impossible by accident. The built-in
+kinds are `terminal`, `file-browser`, `foreign-app` and `empty`.
+
+A session referring to a kind no installed provider handles is **not** destroyed: the descriptor
+round-trips through the file untouched and the pane opens as unavailable, saying which kind is
+missing. Install the provider and it comes back.

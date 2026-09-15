@@ -1,0 +1,60 @@
+---
+title: Panes and layout
+description: Splits, tab groups, resizing and focus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## The shape of a window
+
+A WinMux window holds a tree. Every node is one of three things:
+
+- a **leaf**, holding one pane;
+- a **split**, dividing space into columns or rows between any number of children;
+- a **stack**, showing one child at a time behind a strip of tabs.
+
+Because these nest freely, a tab can contain a split, and a split can contain more tabs. That is
+what a single tab bar across the top of a window cannot express, and it is why each stack draws its
+own strip where the stack actually is.
+
+<Aside title="Columns and rows, not horizontal and vertical">
+WinMux says `columns` and `rows` because every multiplexer disagrees about what a "horizontal
+split" means. Columns divide the width; rows divide the height.
+</Aside>
+
+## Splitting and closing
+
+| Action | Toolbar | Key |
+|---|---|---|
+| Split into columns | `Split right` | `Ctrl+B` `%` |
+| Split into rows | `Split down` | `Ctrl+B` `"` |
+| Close the focused pane | `Close pane` | `Ctrl+B` `x` |
+| New empty pane | New ▾ | `Ctrl+B` `e` |
+
+An **empty pane** is a first-class state, not a gap. It shows a launcher offering your profiles, the
+installed-application catalogue, and the windows already open that it could adopt — so "make a pane,
+then decide" is a supported way to work.
+
+## Tab groups
+
+`Tab group` turns the focused pane into a stack. The strip can sit on any edge; a vertical strip
+lists titles down the side and is wider for that reason.
+
+- **Reorder** a tab by dragging it, from the strip's `⋮` menu, or `Ctrl+B` `<` / `>`.
+- **Rename** a tab by double-clicking it, right-clicking it, or `Ctrl+B` `,`. A name you choose
+  outranks whatever the program calls itself — which matters because `cmd` rewrites its console
+  title on nearly every command.
+- **Move the strip** from the same `⋮` menu.
+
+## Resizing and focus
+
+Drag the gutter between panes; the handle appears when you hover it. `Ctrl+B` with `Shift` and an
+arrow resizes without the mouse, and `Ctrl+B` with a bare arrow moves focus.
+
+The focused pane wears an accent ring drawn **in the gutter** rather than inside the pane. That is
+not a style choice: an application hosted in a pane paints over anything WinMux draws inside that
+pane's rectangle, so a ring drawn inside would be invisible for exactly the panes that are hardest
+to tell apart.
+
+If you click into a hosted application, WinMux notices and moves its own focus to match — so the
+next `Close pane` acts on the pane you are looking at.

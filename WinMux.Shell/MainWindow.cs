@@ -7,6 +7,8 @@ using Avalonia.Threading;
 using WinMux.Core.Layout;
 using WinMux.Core.Model;
 using WinMux.Core.Session;
+using WinMux.Shell.Update;
+using WinMux.Core.Update;
 using WinMux.Panes;
 using WinMux.Shell.Actions;
 using WinMux.Shell.Chrome;
@@ -117,6 +119,7 @@ internal sealed class MainWindow : Window
     /// </summary>
     private CommandPaletteWindow? _palette;
     private IDisposable? _foregroundWatch;
+    private UpdateDecision? _pendingUpdate;
 
     /// <summary>The open-windows tray, when it is up. One, like the palette and the find bar.</summary>
     private WindowPickerWindow? _windowTray;
@@ -242,6 +245,19 @@ internal sealed class MainWindow : Window
         // "close pane", acted on that terminal.
         PlatformServices.Foreground.Changed += OnForegroundWindowChanged;
         Opened += (_, _) => _foregroundWatch ??= PlatformServices.Foreground.Start();
+
+        // A quiet check a few seconds after the window is up: late enough not to compete with
+        // starting panes, and silent unless it actually finds something.
+        Opened += (_, _) =>
+        {
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                Run(CheckForUpdatesAsync(announceWhenCurrent: false));
+            };
+            timer.Start();
+        };
 
         // Say so when Windows could not give us the backdrop we asked for, rather than leaving
         // someone to wonder why their machine looks different from the screenshots.
@@ -816,6 +832,9 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.ShowPalette, ShowPalette);
         _actions.Register(ShellActionNames.FindInPane, ShowSearch);
         _actions.Register(ShellActionNames.ShowOpenWindows, ShowWindowTray);
+        _actions.Register(ShellActionNames.CheckForUpdates, () => Run(CheckForUpdatesAsync(announceWhenCurrent: true)));
+        _actions.Register(ShellActionNames.InstallUpdate, () => Run(InstallUpdateAsync()));
+        _actions.Register(ShellActionNames.OpenDocumentation, OpenDocumentation);
         _actions.Register(ShellActionNames.MoveTabEarlier, () => MoveTab(-1));
         _actions.Register(ShellActionNames.MoveTabLater, () => MoveTab(1));
         _actions.Register(ShellActionNames.SendPrefix, SendPrefix);
@@ -1005,6 +1024,99 @@ internal sealed class MainWindow : Window
         {
             _message = $"loaded {result.Providers.Count} pane provider(s): " +
                        string.Join(", ", result.Providers.Select(p => p.Provider.Kind));
+        }
+    }
+
+    /// <summary>
+    /// Download the offered update, verify it, and restart into it — after asking.
+    ///
+    /// Restarting closes every pane, so this asks first and says so plainly. The session is written
+    /// before anything else happens, because the whole point of WinMux is that the layout survives;
+    /// an update that lost it would be the worst possible advertisement for the feature.
+    /// </summary>
+    private async Task InstallUpdateAsync()
+    {
+        if (_pendingUpdate is not { Release: { } release } decision)
+        {
+            await CheckForUpdatesAsync(announceWhenCurrent: true);
+            if (_pendingUpdate is null) return;
+            decision = _pendingUpdate;
+            release = decision.Release!;
+        }
+
+        var confirmed = await NoticeWindow.ConfirmAsync(
+            this,
+            $"Install WinMux {release.Version}?",
+            "WinMux will download the release, check it against its published checksum, and restart. " +
+            "Your session is saved first and restored afterwards, but programs running in panes are " +
+            "closed and started again — the same as any restart.",
+            "Download and restart",
+            "Not now");
+
+        if (!confirmed) return;
+
+        ShowMessage($"downloading WinMux {release.Version}…");
+        var staged = await UpdateService.StageAsync(decision, cancellationToken: _shutdown.Token);
+        if (!staged.Succeeded || staged.StagedDirectory is null)
+        {
+            ShowMessage(staged.Message, StatusMessageKind.Error);
+            return;
+        }
+
+        // Persistence is priority 1; do it before handing control to a script that will kill us.
+        _session.SaveNow();
+
+        if (!UpdateInstaller.LaunchSwapAndExit(staged.StagedDirectory))
+        {
+            ShowMessage("the update is downloaded but could not be started", StatusMessageKind.Error);
+            return;
+        }
+
+        Close();
+    }
+
+    /// <summary>The documentation site, which is where anything longer than a tooltip lives.</summary>
+    private void OpenDocumentation()
+    {
+        if (!Links.Open(Links.Documentation))
+            ShowMessage("could not open " + Links.Documentation, StatusMessageKind.Error);
+    }
+
+    /// <summary>
+    /// Look for a newer release, and offer it.
+    ///
+    /// Checking is automatic; installing never is. The check is quiet when it finds nothing unless
+    /// the user asked for it by name — an application that announces "you are up to date" on every
+    /// launch is an application people learn to ignore.
+    /// </summary>
+    private async Task CheckForUpdatesAsync(bool announceWhenCurrent)
+    {
+        try
+        {
+            var decision = await UpdateService.CheckAsync(Settings.ShellSettings.Current, _shutdown.Token);
+            _pendingUpdate = decision.Outcome == UpdateOutcome.UpdateAvailable ? decision : null;
+
+            switch (decision.Outcome)
+            {
+                case UpdateOutcome.UpdateAvailable when decision.Release is { } release:
+                    ShowMessage($"WinMux {release.Version} is available — Ctrl+B then : and \"Install update\"");
+                    break;
+
+                case UpdateOutcome.UpdateNotInstallable when decision.Release is { } unavailable:
+                    ShowMessage(
+                        $"WinMux {unavailable.Version} is published but has no build for this machine",
+                        StatusMessageKind.Error);
+                    break;
+
+                default:
+                    if (announceWhenCurrent) ShowMessage("WinMux is up to date");
+                    break;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+        {
+            // A failed check is a fact, not a failure: the product works offline.
+            if (announceWhenCurrent) ShowMessage("could not check for updates: " + ex.Message, StatusMessageKind.Error);
         }
     }
 

@@ -20,7 +20,7 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-15: 557 passed, 0 warnings.** Version 0.6.0.
+**Verified 2026-09-16: 593 passed, 0 warnings.** Version 0.6.0.
 Phases 4, 5 and the Phase 6 work are **pushed**; `origin/main` is current as of 2026-09-15.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
@@ -49,6 +49,22 @@ needs to know happened, and where the reasoning lives.
   product.** That is the most transferable thing this session produced; see *Do not re-do* and
   CLAUDE.md section 7.
 - **Dependencies are hash-locked** and `Terminal.Emulation` reassessed (ADR 0018).
+
+**2026-09-16.** CI, a documentation site and an in-app updater, all following the shape used in
+`bifrost-proxy`:
+
+- **Three workflows.** `ci.yml` builds, tests and packages on Windows with `--locked-mode` and
+  `-warnaserror`; `docs.yml` deploys the site to Pages; `release.yml` publishes a tagged build with
+  `checksums.txt`. The repository had no CI at all before this.
+- **Docs site** at `docs/` — Astro + Starlight, published to
+  <https://rennerdo30.github.io/winmux/>. The ADRs stay in `docs/adr/` and are mirrored into the
+  site at build time by `docs/scripts/sync-adrs.mjs`, so there is one editable copy of each
+  decision and the GitHub links keep working.
+- **In-app updater.** Checks GitHub a few seconds after launch, offers what it finds, and installs
+  nothing without being asked. It refuses any archive whose SHA-256 is not in the release's
+  `checksums.txt`. Windows locks a running image, so it stages beside the install, saves the
+  session, and hands the swap to a script. `Help` in the toolbar links the docs, the releases and
+  the updater.
 
 ## The next action
 

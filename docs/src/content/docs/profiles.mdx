@@ -1,0 +1,62 @@
+---
+title: Profiles and applications
+description: Putting any installed application into a pane.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A **profile** is a named thing you can put in a pane. Shells and applications are the same idea —
+to the layout they are both a program, some arguments and a working directory — so they are the same
+list.
+
+The shipped terminals are seeded on first run and are editable and deletable like anything else.
+
+## Adding one
+
+**Settings → Profiles**, or `Add or edit profiles…` in the New menu:
+
+- **Add application…** browses the installed-application catalogue, read from the Start Menu and
+  resolved through the shortcuts. You should not have to know where an executable lives.
+- **Add manually…** takes a path you type or browse to.
+
+Whatever you add appears everywhere at once: the New menu, an empty pane's launcher, the command
+palette and the CLI, because all of them read the same list.
+
+## Hosting an application
+
+Ordinary applications are **embedded**: the window becomes a child of a host process that WinMux
+positions over the pane. The host is a separate process on purpose — a frozen application freezes
+its own host, and WinMux stays alive and can detach or close the pane.
+
+Some applications refuse. WinMux detects the refusal and switches to **attach**, leaving the window
+top-level and driving its position to follow the pane, like a tiling window manager. Less seamless,
+far more compatible. `Ctrl+B` `a` switches a pane between the two at any time, and the choice is
+remembered per application.
+
+<Aside title="Detaching is always safe">
+Every embed is undoable. Closing a pane restores the window's parent, styles and rectangle exactly
+as they were, and the application keeps running. An orphaned invisible window would be a lost
+application, so the restore happens before anything else.
+</Aside>
+
+## Adopting a window that is already open
+
+`Ctrl+B` `o` opens a tray of the windows currently open. **Drag one onto a pane** and it is adopted
+there.
+
+Dragging the application's *own* window from the desktop onto WinMux is not possible — Windows
+delivers a window-move to the window being moved, not to whatever it passes over, so there is no
+drop for WinMux to receive. Dragging its entry out of the tray is the same gesture over something
+WinMux owns.
+
+An adopted pane records the program's path, so the next session starts the same program rather than
+chasing a window handle that will not exist.
+
+## The quirks database
+
+`foreign-app-quirks.json` beside the executable maps applications to a hosting strategy, a
+window-selection rule, a launch delay and any known limitations. It is deliberately user-editable —
+if an application needs different treatment, that is where to say so.
+
+Matching is on executable image, window class and an optional title substring. Never on the launched
+process id: on Windows 11 `notepad.exe` is a shim that runs a *different* process.

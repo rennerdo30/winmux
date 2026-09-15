@@ -117,6 +117,9 @@ public class KeymapTests
         ShellActionNames.MoveTabsBottom,
         ShellActionNames.MoveTabsLeft,
         ShellActionNames.MoveTabsRight,
+        ShellActionNames.CheckForUpdates,
+        ShellActionNames.InstallUpdate,
+        ShellActionNames.OpenDocumentation,
     ];
 
     [Fact]

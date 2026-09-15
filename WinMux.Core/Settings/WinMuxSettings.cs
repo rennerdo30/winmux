@@ -1,5 +1,7 @@
 using WinMux.Core.Layout;
 
+using WinMux.Core.Update;
+
 namespace WinMux.Core.Settings;
 
 /// <summary>Which colour scheme the shell should use.</summary>
@@ -45,6 +47,18 @@ public sealed record WinMuxSettings
     /// without a prompt; it never means a pane closes without being detached safely.
     /// </summary>
     public bool ConfirmBeforeClosingPanes { get; init; } = true;
+
+    /// <summary>
+    /// Whether to look for a newer release on startup.
+    ///
+    /// On by default, and *checking* only — nothing is ever downloaded or installed without being
+    /// asked. An application that replaces itself unprompted is one people stop trusting with a
+    /// session file.
+    /// </summary>
+    public bool CheckForUpdates { get; init; } = true;
+
+    /// <summary>Which releases to be offered. Stable unless someone opts into prereleases.</summary>
+    public UpdateChannel UpdateChannel { get; init; } = UpdateChannel.Stable;
 
     /// <summary>The defaults, for a first run or a settings file that could not be read.</summary>
     public static WinMuxSettings Defaults { get; } = new();

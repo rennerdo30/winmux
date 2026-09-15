@@ -1,0 +1,63 @@
+---
+title: Troubleshooting
+description: The things that go wrong, why, and what to do about them.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## A pane restored to the wrong directory
+
+Almost always a PowerShell pane without the shell snippet. PowerShell's process working directory
+**never changes when you change directory** — `Set-Location` updates the provider location, not the
+process — so there is nothing for WinMux to read.
+
+**Settings → Working directories → Set up…**, then restart the pane. The status bar's left segment
+will start saying `shell-reported` instead of `where it was launched`.
+
+WSL panes are the same story and cannot be fixed any other way: reading the process gives a *Windows*
+path for a Linux shell, so WinMux refuses to use it rather than confidently restoring somewhere
+wrong.
+
+## An application will not go into a pane
+
+**It is elevated.** A non-elevated process cannot manipulate an elevated application's windows.
+WinMux says so in plain words, and will not ship elevated to work around it — that would be a worse
+trade than the inconvenience.
+
+**It is a packaged or UWP application.** Those refuse differently and fall back to attach mode
+automatically.
+
+**It refuses for its own reasons.** WinMux falls back to attach mode and says why. `Ctrl+B` `a`
+switches back and forth at any time.
+
+## The chrome looks wrong
+
+If Mica is unavailable, WinMux says so in the status bar on startup and uses an opaque window. That
+is a system capability, not a setting.
+
+## A provider did not load
+
+The status bar says why. See [Writing a pane provider](/providers/) for the full list — the most
+common cause is an assembly in a directory that is not named after it.
+
+## The update did not install
+
+WinMux refuses to install an archive whose SHA-256 is not in the release's `checksums.txt`, or when
+the release published no manifest at all. That is deliberate. Download it by hand from the
+[releases page](https://github.com/rennerdo30/winmux/releases) if you want to proceed anyway.
+
+## Known limits
+
+<Aside type="caution" title="Not yet verified">
+**Mixed-scale multi-monitor.** WinMux declares per-monitor-v2 awareness, but a window spanning two
+displays at *different* scales has never been tested on real hardware — every machine it has been
+built on had matching scales. If you run that setup and something is misplaced, please say so;
+`scripts/verify-mixed-dpi.ps1` in the repository collects what is useful.
+</Aside>
+
+**Snap layouts** work because WinMux claims its own maximise button. Aero Snap by dragging and the
+Win+arrow keys are the system's and always work regardless.
+
+**Restoring does not restore process state.** Scrollback, running jobs and full-screen program state
+are gone on restart. Nothing can bring them back, and WinMux says so rather than letting you find
+out.

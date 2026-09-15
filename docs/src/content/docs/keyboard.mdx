@@ -1,0 +1,70 @@
+---
+title: Keyboard
+description: The prefix, the default bindings, and how bindings behave on keyboards that are not American.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## The prefix
+
+`Ctrl+B`, then a key — tmux's model, and configurable. The status bar's right-hand chip shows the
+prefix, and turns accent-coloured with a list of what is available while it is armed, because a mode
+you cannot see is how a stray keystroke closes a pane.
+
+Every binding can be changed, and a no-prefix keymap where everything is a direct chord is supported.
+
+## Defaults
+
+| Key | Does |
+|---|---|
+| `%` | Split into columns |
+| `"` | Split into rows |
+| `←` `↑` `↓` `→` | Move focus |
+| `Shift` + arrow | Resize toward that edge |
+| `x` | Close the focused pane |
+| `c` | New tab here |
+| `v` | New tab, tabs down the side |
+| `e` | New empty pane |
+| `n` / `p` | Next / previous tab |
+| `<` / `>` | Move this tab earlier / later |
+| `,` | Rename the pane |
+| `/` | Find in this pane |
+| `:` | Command palette |
+| `w` | Save the session |
+| `o` | Open windows tray |
+| `t` | Terminal here (from the file browser's selection) |
+| `i` | Set up shell directory reporting |
+| `a` | Switch a hosted application between embedded and alongside |
+| `1`–`5` | Open cmd, Windows PowerShell, pwsh, WSL, the file browser |
+| `b` | Send a literal `Ctrl+B` to the pane |
+
+Inside a terminal, `Shift+PageUp` / `PageDown` scroll the history and `Ctrl+Shift+Home` / `End` jump
+to either end. Unshifted `PageUp` is never intercepted — it belongs to whatever is running in the
+pane. Anything you type returns the view to the live screen.
+
+`Ctrl+Shift+C` copies the selection, `Ctrl+Shift+V` and `Shift+Insert` paste.
+
+<Aside title="Keyboards that are not American">
+A binding written as a character — `%`, `:`, `"` — is matched against **the character your keyboard
+produces**, not the key that produces it on a US keyboard.
+
+This is not theoretical. On a Japanese 106/109 keyboard `:` is an unshifted key and `"` is `Shift+2`,
+where a US layout puts them on `Shift+;` and `Shift+'`. Matching by physical key meant the command
+palette and split-rows had no working shortcut at all on that hardware. Bindings written as a *key*
+(`Ctrl+B`, `Left`, `F5`) still match by key, and always win over a character match.
+</Aside>
+
+## Everything has four ways in
+
+The prefix is the fast path, never the only one. Every action is also a toolbar button, an entry in
+the command palette, and a CLI command — all four dispatch the *same named action*, so there is one
+implementation and four ways to ask for it.
+
+```powershell
+winmux split -h
+winmux focus left
+winmux palette
+winmux action move-tab-later
+```
+
+The palette lists every action by name with its shortcut, which is how you stop needing the palette.

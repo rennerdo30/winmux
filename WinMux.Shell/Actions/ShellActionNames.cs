@@ -36,6 +36,9 @@ public static class ShellActionNames
     public const string MoveTabEarlier = "move-tab-earlier";
     public const string MoveTabLater = "move-tab-later";
     public const string ShowOpenWindows = "show-open-windows";
+    public const string CheckForUpdates = "check-for-updates";
+    public const string InstallUpdate = "install-update";
+    public const string OpenDocumentation = "open-documentation";
     public const string SendPrefix = "send-prefix";
     public const string NewTerminalCmd = "new-terminal-cmd";
     public const string NewTerminalWindowsPowerShell = "new-terminal-windows-powershell";
@@ -79,6 +82,9 @@ public static class ShellActionNames
         MoveTabEarlier,
         MoveTabLater,
         ShowOpenWindows,
+        CheckForUpdates,
+        InstallUpdate,
+        OpenDocumentation,
         SendPrefix,
         NewTerminalCmd,
         NewTerminalWindowsPowerShell,

@@ -11,6 +11,11 @@ be a shell, a file browser, or *any* Windows application.
 > already open. Broad app compatibility is still a measured surface, not a claim.
 > See `HANDOFF.md` for the current state.
 
+**[Documentation](https://rennerdo30.github.io/winmux/)** ·
+[Getting started](https://rennerdo30.github.io/winmux/getting-started/) ·
+[Releases](https://github.com/rennerdo30/winmux/releases) ·
+[Architecture decisions](https://rennerdo30.github.io/winmux/architecture/)
+
 ---
 
 ## Why
