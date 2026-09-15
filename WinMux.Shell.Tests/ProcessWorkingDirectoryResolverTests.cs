@@ -108,7 +108,39 @@ public sealed class ProcessWorkingDirectoryResolverTests
                 commandPrompt.Dispose();
             }
 
-            Directory.Delete(temporaryDirectory, recursive: true);
+            DeleteWhenWindowsLetsGo(temporaryDirectory);
+        }
+    }
+
+    /// <summary>
+    /// Delete the temporary directory, retrying while Windows still has it open.
+    ///
+    /// This test makes a real `cmd.exe` sit in the directory and start a real `ping.exe` inside it,
+    /// which is the whole point — the resolver walks to the deepest child. Killing the tree does not
+    /// make that synchronous: <c>WaitForExit</c> waits for `cmd` alone, the child is killed
+    /// separately, and Windows releases a working-directory handle when the kernel gets round to it
+    /// rather than when the process object goes away.
+    ///
+    /// So the delete raced the teardown and failed with "used by another process" — on CI, where a
+    /// loaded runner widens the gap, and only sometimes. Retrying is the fix; waiting longer up
+    /// front would be slower and still a guess.
+    /// </summary>
+    private static void DeleteWhenWindowsLetsGo(string directory)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+
+        while (true)
+        {
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (DateTime.UtcNow >= deadline) throw;
+                Thread.Sleep(100);
+            }
         }
     }
 
