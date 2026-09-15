@@ -20,7 +20,7 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-15: 530 passed, 0 warnings.** Version 0.6.0.
+**Verified 2026-09-15: 534 passed, 0 warnings.** Version 0.6.0.
 **Nothing has been pushed since `68103d5`** (Phase 3), which is where `origin/main` still sits.
 Everything after it — Phases 4, 5 and all of the Phase 6 work — exists only on this machine.
 (A count of commits is deliberately not written here: it would be wrong the moment this file is
@@ -79,7 +79,6 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
 screen; what is left is feature work, and the next real finding will come from use.
 
 When picking that feature work up, in rough order of what the product is missing:
-**dragging a tab with the pointer** (it reorders by key and menu now, but not by drag),
 **dragging a running window into a pane**, **foreign-window focus reconciliation**, and provider
 discovery and packaging. Snap layouts are a separate, known cost of drawing our
 own caption ([ADR 0016](docs/adr/0016-windows-11-chrome.md)) and need a new `IHostWindowService`

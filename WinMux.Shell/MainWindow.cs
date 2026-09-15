@@ -420,7 +420,11 @@ internal sealed class MainWindow : Window
             CloseTab: pane => Run(CloseTabAsync(pane)),
             AddTab: stack => Run(AddTabToStackAsync(stack)),
             MoveStrip: SetTabPlacement,
-            MoveTab: MoveTab);
+            MoveTab: MoveTab,
+            MoveTabTo: (pane, index) =>
+            {
+                if (_tree.MoveTabTo(pane, index)) Relayout();
+            });
 
         foreach (var strip in arrangement.TabStrips)
         {

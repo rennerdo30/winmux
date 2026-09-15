@@ -407,5 +407,23 @@ public sealed class LayoutTree
         return stack.MoveChild(from, from + delta);
     }
 
+    /// <summary>
+    /// Put the tab holding <paramref name="pane"/> at <paramref name="index"/> in its stack.
+    ///
+    /// Absolute rather than relative because a drop knows where it landed, not how far it came,
+    /// and converting one into the other at the call site is how off-by-ones get written twice.
+    /// </summary>
+    public bool MoveTabTo(PaneId pane, int index)
+    {
+        var leaf = Find(pane);
+        LayoutNode? child = leaf;
+        var parent = leaf?.Parent;
+        while (parent is not null && parent is not StackNode) { child = parent; parent = parent.Parent; }
+        if (parent is not StackNode stack || child is null) return false;
+
+        var from = stack.IndexOf(child);
+        return from >= 0 && stack.MoveChild(from, index);
+    }
+
     public LayoutTree Clone() => new(_root.Clone(), _focused) { Bounds = Bounds };
 }

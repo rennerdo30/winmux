@@ -112,6 +112,44 @@ public sealed class TabReorderTests
     }
 
     [Fact]
+    public void A_tab_can_be_moved_to_an_absolute_position()
+    {
+        // What a drop knows: where it landed, not how far it came.
+        var tree = Tabbed(out var ids);
+
+        Assert.True(tree.MoveTabTo(ids[0], 2));
+
+        Assert.Equal(["two", "three", "one"], Order(tree));
+    }
+
+    [Fact]
+    public void An_out_of_range_drop_lands_at_the_nearest_end()
+    {
+        // A pointer past the last tab means "put it last", not "do nothing".
+        var tree = Tabbed(out var ids);
+
+        Assert.True(tree.MoveTabTo(ids[0], 99));
+
+        Assert.Equal(["two", "three", "one"], Order(tree));
+    }
+
+    [Fact]
+    public void Dropping_a_tab_where_it_already_is_changes_nothing()
+    {
+        var tree = Tabbed(out var ids);
+
+        Assert.False(tree.MoveTabTo(ids[1], 1));
+    }
+
+    [Fact]
+    public void Moving_an_unknown_pane_does_nothing()
+    {
+        var tree = Tabbed(out _);
+
+        Assert.False(tree.MoveTabTo(PaneId.New(), 0));
+    }
+
+    [Fact]
     public void Reordering_survives_a_round_trip_through_the_layout()
     {
         // The order has to be real geometry, not a display detail: the arrangement must agree.

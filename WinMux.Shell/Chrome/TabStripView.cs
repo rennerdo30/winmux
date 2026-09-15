@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -24,7 +26,8 @@ internal sealed record TabStripCommands(
     Action<PaneId> CloseTab,
     Action<StackNode> AddTab,
     Action<StackNode, TabStripPlacement> MoveStrip,
-    Action<int> MoveTab);
+    Action<int> MoveTab,
+    Action<PaneId, int> MoveTabTo);
 
 /// <summary>
 /// One stack's tabs, drawn in the band the layout engine reserved for them.
@@ -52,17 +55,23 @@ internal static class TabStripView
         // my keys act on" stops being obvious, so the focused one is marked.
         var stackHasFocus = strip.Stack.Leaves().Any(leaf => leaf.Pane.Id == focused);
 
+        var tabs = new List<Control>();
         for (var index = 0; index < strip.Stack.Children.Count; index++)
         {
             var child = strip.Stack.Children[index];
-            items.Children.Add(BuildTab(
+            var tab = BuildTab(
                 child,
                 isActive: index == strip.Stack.ActiveIndex,
                 hasFocus: stackHasFocus && child.Leaves().Any(leaf => leaf.Pane.Id == focused),
                 vertical,
                 strip.Placement,
-                commands));
+                commands);
+
+            tabs.Add(tab);
+            items.Children.Add(tab);
         }
+
+        EnableDragToReorder(items, tabs, strip, vertical, commands);
 
         items.Children.Add(Icon(Icons.Add(), "Add a tab to this group", () => commands.AddTab(strip.Stack), vertical));
         items.Children.Add(PlacementButton(strip, commands, vertical));
@@ -82,6 +91,81 @@ internal static class TabStripView
             BorderThickness = ContentEdge(strip.Placement, stackHasFocus),
             Child = scroller,
         };
+    }
+
+    /// <summary>
+    /// Let a tab be dragged along the strip to reorder it.
+    ///
+    /// A tab strip in 2026 that cannot be dragged reads as broken, whatever keys exist for it. The
+    /// drop index is worked out from the tab rectangles rather than from how far the pointer moved,
+    /// because tabs are not all the same width — a title of "build" and one of "npm run watch"
+    /// differ by a factor of three, and a distance-based guess lands on the wrong one constantly.
+    ///
+    /// The threshold matters: without it, every click on a tab is a one-pixel drag, and selecting a
+    /// tab would sometimes silently reorder the strip.
+    /// </summary>
+    private static void EnableDragToReorder(
+        Panel items,
+        IReadOnlyList<Control> tabs,
+        LayoutTabStrip strip,
+        bool vertical,
+        TabStripCommands commands)
+    {
+        const double Threshold = 6;
+
+        if (tabs.Count < 2) return;
+
+        var dragging = -1;
+        var origin = default(Point);
+        var armed = false;
+
+        items.AddHandler(InputElement.PointerPressedEvent, (object? _, PointerPressedEventArgs e) =>
+        {
+            origin = e.GetPosition(items);
+            dragging = IndexAt(tabs, origin, vertical);
+            armed = false;
+        }, RoutingStrategies.Tunnel);
+
+        items.AddHandler(InputElement.PointerMovedEvent, (object? _, PointerEventArgs e) =>
+        {
+            if (dragging < 0) return;
+
+            var position = e.GetPosition(items);
+            var travelled = vertical ? Math.Abs(position.Y - origin.Y) : Math.Abs(position.X - origin.X);
+            if (!armed && travelled < Threshold) return;
+            armed = true;
+
+            var target = IndexAt(tabs, position, vertical);
+            if (target < 0 || target == dragging) return;
+
+            var pane = strip.Stack.Children[dragging].Leaves().First().Pane.Id;
+            commands.MoveTabTo(pane, target);
+
+            // The strip is rebuilt by the relayout that follows, so this gesture ends here and the
+            // next move starts against fresh controls.
+            dragging = -1;
+        }, RoutingStrategies.Tunnel);
+
+        items.AddHandler(InputElement.PointerReleasedEvent, (object? _, PointerReleasedEventArgs e) =>
+        {
+            dragging = -1;
+            armed = false;
+        }, RoutingStrategies.Tunnel);
+    }
+
+    /// <summary>Which tab a point is over, or -1 past the last one.</summary>
+    private static int IndexAt(IReadOnlyList<Control> tabs, Point point, bool vertical)
+    {
+        for (var i = 0; i < tabs.Count; i++)
+        {
+            var bounds = tabs[i].Bounds;
+            var within = vertical
+                ? point.Y >= bounds.Y && point.Y < bounds.Bottom
+                : point.X >= bounds.X && point.X < bounds.Right;
+            if (within) return i;
+        }
+
+        return -1;
     }
 
     /// <summary>
