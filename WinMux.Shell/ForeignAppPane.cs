@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using WinMux.Core.Model;
+using WinMux.Platform;
 using WinMux.Platform.Win32.ForeignApps;
 
 namespace WinMux.Shell;
@@ -12,23 +13,25 @@ internal sealed class ForeignAppPane
 {
     private Process? _hostProcess;
     private readonly SemaphoreSlim _protocolLock = new(1, 1);
+    private readonly IHostWindowService _windows;
 
     public PaneId Id { get; }
     public Pane Pane { get; }
-    public IntPtr Hwnd { get; private set; }
-    public IntPtr ChildHwnd { get; private set; }
+    public WindowHandle Hwnd { get; private set; }
+    public WindowHandle ChildHwnd { get; private set; }
     public HostStrategy? EffectiveStrategy { get; private set; }
     public string Status { get; private set; } = "starting…";
     public string? Notice { get; private set; }
-    public bool Located => Hwnd != IntPtr.Zero && Win32Interop.IsWindow(Hwnd);
+    public bool Located => _windows.IsAlive(Hwnd);
 
-    public ForeignAppPane(Pane pane)
+    public ForeignAppPane(Pane pane, IHostWindowService windows)
     {
         Pane = pane;
         Id = pane.Id;
+        _windows = windows ?? throw new ArgumentNullException(nameof(windows));
     }
 
-    public async Task LaunchAsync(ISet<IntPtr> claimed, IntPtr ownerWindow, CancellationToken token)
+    public async Task LaunchAsync(ISet<WindowHandle> claimed, WindowHandle ownerWindow, CancellationToken token)
     {
         var restore = Pane.Restore;
         if (string.IsNullOrWhiteSpace(restore.Program))
@@ -73,10 +76,10 @@ internal sealed class ForeignAppPane
         start.ArgumentList.Add(plan.SettleMilliseconds.ToString());
         start.ArgumentList.Add("--match-mode");
         start.ArgumentList.Add(plan.MatchModeArgument);
-        if (ownerWindow != IntPtr.Zero)
+        if (!ownerWindow.IsNone)
         {
             start.ArgumentList.Add("--owner");
-            start.ArgumentList.Add(ownerWindow.ToInt64().ToString());
+            start.ArgumentList.Add(ownerWindow.Value.ToString());
         }
         if (plan.WindowClass is { Length: > 0 } windowClass)
         {
@@ -98,7 +101,7 @@ internal sealed class ForeignAppPane
             foreach (var hwnd in claimed)
             {
                 start.ArgumentList.Add("--exclude");
-                start.ArgumentList.Add(hwnd.ToInt64().ToString());
+                start.ArgumentList.Add(hwnd.Value.ToString());
             }
         }
         start.ArgumentList.Add("--");
@@ -175,7 +178,7 @@ internal sealed class ForeignAppPane
                     {
                         Status = line[6..];
                         SendCommand("DETACH");
-                        Hwnd = IntPtr.Zero;
+                        Hwnd = WindowHandle.None;
                         return;
                     }
                 }
@@ -202,23 +205,23 @@ internal sealed class ForeignAppPane
         }
     }
 
-    private static bool TryReadHandle(string line, string prefix, out IntPtr hwnd)
+    private static bool TryReadHandle(string line, string prefix, out WindowHandle hwnd)
     {
-        hwnd = IntPtr.Zero;
+        hwnd = WindowHandle.None;
         return line.StartsWith(prefix, StringComparison.Ordinal) &&
                long.TryParse(line.AsSpan(prefix.Length), out var value) &&
-               (hwnd = new IntPtr(value)) != IntPtr.Zero;
+               !(hwnd = WindowHandle.FromPlatformValue((nint)value)).IsNone;
     }
 
-    internal static bool TryReadReady(string line, out IntPtr hwnd, out HostStrategy strategy)
+    internal static bool TryReadReady(string line, out WindowHandle hwnd, out HostStrategy strategy)
     {
-        hwnd = IntPtr.Zero;
+        hwnd = WindowHandle.None;
         strategy = HostStrategy.Embed;
         if (!line.StartsWith("READY=", StringComparison.Ordinal)) return false;
 
         var fields = line.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (!long.TryParse(fields[0].AsSpan("READY=".Length), out var value) || value == 0) return false;
-        hwnd = new IntPtr(value);
+        hwnd = WindowHandle.FromPlatformValue((nint)value);
 
         foreach (var field in fields.Skip(1))
         {
@@ -239,7 +242,7 @@ internal sealed class ForeignAppPane
     {
         if (target == HostStrategy.Auto)
             return new ForeignAppSwitchResult(false, EffectiveStrategy, "auto must resolve before switching");
-        if (_hostProcess is null || _hostProcess.HasExited || ChildHwnd == IntPtr.Zero)
+        if (_hostProcess is null || _hostProcess.HasExited || ChildHwnd.IsNone)
             return new ForeignAppSwitchResult(false, EffectiveStrategy, "the foreign application is not ready");
 
         await _protocolLock.WaitAsync(token);
@@ -372,8 +375,8 @@ internal sealed class ForeignAppPane
 
     private void ClearHandles()
     {
-        Hwnd = IntPtr.Zero;
-        ChildHwnd = IntPtr.Zero;
+        Hwnd = WindowHandle.None;
+        ChildHwnd = WindowHandle.None;
         EffectiveStrategy = null;
     }
 

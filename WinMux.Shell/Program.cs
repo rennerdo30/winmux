@@ -129,10 +129,9 @@ internal static class Program
 
     private static void ShowStartupError(string title, string message)
     {
-        if (OperatingSystem.IsWindows() && Environment.UserInteractive)
-        {
-            _ = Win32Interop.MessageBoxW(IntPtr.Zero, message, title, Win32Interop.MB_OK | Win32Interop.MB_ICONERROR);
-        }
+        // Startup failed before Avalonia exists, so this cannot be a normal dialog. It still has to
+        // say something: a WinExe that dies silently has written its error to a console nobody sees.
+        if (Environment.UserInteractive) PlatformServices.Notifier.ShowError(title, message);
     }
 
     /// <summary>

@@ -3,6 +3,11 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using WinMux.Core.Model;
 using WinMux.Panes;
+using WinMux.Platform;
+
+// Avalonia has a Rect of its own, in device-independent doubles. The platform layer speaks in
+// whole physical pixels, so the two must never be confused silently.
+using LayoutRect = WinMux.Core.Layout.Rect;
 
 namespace WinMux.Shell.Panes;
 
@@ -12,11 +17,13 @@ internal interface IForeignHostStrategyRuntime
     ValueTask<ForeignAppSwitchResult> SwitchStrategyAsync(HostStrategy target, CancellationToken token = default);
 }
 
-internal sealed class ForeignAppPaneProvider(Func<IntPtr> ownerWindow) : IPaneProvider, IDisposable
+internal sealed class ForeignAppPaneProvider(Func<WindowHandle> ownerWindow, IHostWindowService windows)
+    : IPaneProvider, IDisposable
 {
-    private readonly ForeignWindowTracker _tracker = new();
-    private readonly HashSet<IntPtr> _claimedWindows = [];
-    private readonly Func<IntPtr> _ownerWindow = ownerWindow ?? throw new ArgumentNullException(nameof(ownerWindow));
+    private readonly IHostWindowService _windows = windows ?? throw new ArgumentNullException(nameof(windows));
+    private readonly ForeignWindowTracker _tracker = new(windows);
+    private readonly HashSet<WindowHandle> _claimedWindows = [];
+    private readonly Func<WindowHandle> _ownerWindow = ownerWindow ?? throw new ArgumentNullException(nameof(ownerWindow));
 
     public PaneKind Kind => PaneKind.ForeignApp;
 
@@ -33,7 +40,7 @@ internal sealed class ForeignAppPaneProvider(Func<IntPtr> ownerWindow) : IPanePr
     {
         var pane = new Pane(context.PaneId, PaneKind.ForeignApp, context.Title, context.Descriptor);
         NormalizeProgram(pane);
-        var runtime = new ForeignAppPaneRuntime(pane, _tracker, _claimedWindows, _ownerWindow());
+        var runtime = new ForeignAppPaneRuntime(pane, _tracker, _claimedWindows, _ownerWindow(), _windows);
         await runtime.StartAsync(token);
         return runtime;
     }
@@ -51,22 +58,23 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
     private readonly Pane _pane;
     private readonly ForeignAppPane _app;
     private readonly ForeignWindowTracker _tracker;
-    private readonly HashSet<IntPtr> _claimedWindows;
-    private readonly IntPtr _ownerWindow;
+    private readonly HashSet<WindowHandle> _claimedWindows;
+    private readonly WindowHandle _ownerWindow;
     private readonly TextBlock _message;
     private int _disposed;
 
     public ForeignAppPaneRuntime(
         Pane pane,
         ForeignWindowTracker tracker,
-        HashSet<IntPtr> claimedWindows,
-        IntPtr ownerWindow)
+        HashSet<WindowHandle> claimedWindows,
+        WindowHandle ownerWindow,
+        IHostWindowService windows)
     {
         _pane = pane;
         _tracker = tracker;
         _claimedWindows = claimedWindows;
         _ownerWindow = ownerWindow;
-        _app = new ForeignAppPane(pane);
+        _app = new ForeignAppPane(pane, windows);
         _message = new TextBlock
         {
             Margin = new Thickness(14),
@@ -108,10 +116,11 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
             _tracker.Place(
                 PaneId,
                 _app.Hwnd,
-                origin.X,
-                origin.Y,
-                Math.Max(1, (int)Math.Round(arrangement.Bounds.Width * scale)),
-                Math.Max(1, (int)Math.Round(arrangement.Bounds.Height * scale)),
+                new LayoutRect(
+                    origin.X,
+                    origin.Y,
+                    Math.Max(1, (int)Math.Round(arrangement.Bounds.Width * scale)),
+                    Math.Max(1, (int)Math.Round(arrangement.Bounds.Height * scale))),
                 arrangement.IsVisible,
                 child: false);
         }

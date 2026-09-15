@@ -123,10 +123,16 @@ internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime
     public bool Focus() => _terminal.Focus();
     public void Arrange(PaneArrangement arrangement) { }
 
+    /// <summary>
+    /// Strategy 2 of the layered cwd capture (CLAUDE.md section 4). Stateless, so one is enough.
+    /// </summary>
+    private static readonly Cwd.ProcessWorkingDirectoryResolver WorkingDirectories =
+        new(PlatformServices.Processes);
+
     public void RefreshRestoreState()
     {
         if (_terminal.ProcessId is not int processId) return;
-        var result = Cwd.ProcessWorkingDirectoryResolver.Resolve(processId, disablePebForWsl: _isWsl);
+        var result = WorkingDirectories.Resolve(processId, disablePebForWsl: _isWsl);
         if (!result.Succeeded) return;
         var capture = new WorkingDirectory(result.Path!, result.Provenance, DateTimeOffset.UtcNow);
         _pane.Restore = _pane.Restore with { Cwd = WorkingDirectory.Better(_pane.Restore.Cwd, capture) };

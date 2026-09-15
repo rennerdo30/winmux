@@ -2,19 +2,41 @@
 
 ## Where we are
 
-**Phase 4 is complete:** pane types are real providers behind the public `WinMux.Panes` contract,
-and the built-in file browser ships alongside terminal and foreign-app panes. A fourth kind needs
-no change to Core, the layout tree, persistence or the CLI. See
-[ADR 0012](docs/adr/0012-phase-4-pane-providers-and-file-browser.md).
+**Phase 5 is complete:** the platform layer is extracted. `WinMux.Platform` (net10.0, Core-only,
+no P/Invoke) states what an operating system must provide — `IHostWindowService`,
+`IProcessInspector`, `IUserNotifier`, `WindowHandle` — and `WinMux.Platform.Win32/Windows/`
+provides it. **`WinMux.Shell` now declares zero `DllImport`**, and the placement and cwd policies
+it kept are unit-tested against fakes for the first time. See
+[ADR 0013](docs/adr/0013-phase-5-platform-layer.md). Phases 1–4 are unchanged; the provider and
+layout contracts did not move.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-Re-verified 2026-09-15: **zero build warnings; 280/280 tests passing**. Visible acceptance is
+Verified 2026-09-15: **zero build warnings; 315/315 tests passing**. Visible acceptance is still
 `scripts/phase4-demo.ps1` (needs **pwsh 7**, not Windows PowerShell 5.1); `-VerifyOnly` runs the
 measured checks without the long-running walkthrough.
 
 ## What just happened
 
-**2026-09-13** — Codex implemented Phase 4. **2026-09-15** — re-verified and committed.
+**2026-09-15** — Phase 5, the platform extraction ([ADR 0013](docs/adr/0013-phase-5-platform-layer.md)).
+
+- `WinMux.Platform` is new: three interfaces and the values they speak in. It targets `net10.0`
+  with no OS suffix on purpose, which turns out to be self-enforcing — the guard project also
+  targets `net10.0`, so an OS-specific contract fails at NuGet restore, before any test runs.
+- `WinMux.Platform.Win32/Windows/` holds `Win32HostWindowService`, `Win32ProcessInspector` and
+  `Win32UserNotifier`, carrying every call the shell used to make, including all four measured
+  repaint workarounds and ADR 0004's exact refusal wording.
+- `WinMux.Shell/Win32Interop.cs` was **deleted, not ported**: 18 of its 24 imports had no callers
+  at all, left over from the Phase 1 hand-rolled `SetParent` attempt. `ForeignWindowTracker` keeps
+  its thread and its policy; `ProcessWorkingDirectoryResolver` takes an `IProcessInspector`;
+  `PlatformServices.cs` is the single composition root.
+- **Two real bugs fell out of writing the tests**, both invisible before: a placement made while
+  the pane was hidden spent the one-time first-placement licence, so an inactive tab never got its
+  adoption nudge when shown; and a placement that threw mid-call consumed it too.
+- `PlatformBoundaryTests` enforces the seam. Every guard was mutation-tested before being trusted,
+  because `Platform_references_no_platform_assembly` alone would have passed an unused platform
+  package — the same blind spot `CoreIsPlatformFreeTests` once had.
+
+**Earlier: 2026-09-13** — Codex implemented Phase 4; re-verified and committed 2026-09-15.
 
 - `PaneKind` became a validated, case-normalized string instead of a closed enum. The enum made
   providers extensible in name only: a provider in another assembly could not define a kind.
@@ -37,10 +59,14 @@ finished and passing.
 
 ## The next action
 
-**Start Phase 5: extract `WinMux.Platform`.** Define `IWindowHost` and friends, move the Win32
-operations in `WinMux.Platform.Win32`, `WinMux.PaneHost` and the shell behind it, and keep the
-provider and layout contracts unchanged (ADR 0012 was written to make this possible). The point is
-the discipline, not an X11 port: if the seam is right, the portable half stays portable.
+**Run the Phase 4/5 visual walkthrough and confirm nothing regressed on screen.**
+`pwsh -File scripts/phase4-demo.ps1`. The extraction changed how every placement reaches Windows,
+and the four repaint workarounds are precisely the things no test can verify — a foreign pane that
+paints the desktop behind it instead of its own content is the failure mode to look for.
+
+After that, the roadmap's open items are unchanged and none is started: provider discovery and
+packaging, tab/pane reordering, foreign-window focus reconciliation, terminal selection and
+scrollback navigation. Pick one; there is no dependency between them.
 
 ## Blocked / needs a human
 
@@ -54,6 +80,9 @@ the discipline, not an X11 port: if the seam is right, the portable half stays p
   failures are visible, but positioning may still be refused; WinMux will not elevate.
 - **Input-queue starvation remains unmeasured.** Keep PaneHost top-level; never reparent it into
   the shell.
+- **An X11 port needs its own host executable, not a shim.** `WinMux.PaneHost` keeps its 35
+  imports deliberately (ADR 0013, decision 5): reparenting *is* a platform implementation, and
+  ADR 0001 is why it needs its own process. Do not read that omission as unfinished Phase 5 work.
 - **Supply-chain call before v1:** `Terminal.Emulation` 0.3.3 has no public source. The owned seam
   bounds replacement cost but does not answer whether to ship it.
 
@@ -74,4 +103,7 @@ the discipline, not an X11 port: if the seam is right, the portable half stays p
 - Do not assert exact requested rectangles for arbitrary apps; DPI rounding and minimum sizes are
   measured counterexamples.
 - Do not put palette/modal chrome over the pane canvas; native windows paint above it.
+- Do not add a method to `WinMux.Platform` before something calls it, and do not write `Rect`
+  unqualified in a file that imports Avalonia — it has one of its own, in device-independent
+  doubles (ADR 0013).
 - `E:\Development\winmux` and `D:\Development\winmux` are the same project via subst/junction.

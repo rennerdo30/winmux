@@ -13,6 +13,7 @@ using WinMux.Shell.Cwd;
 using WinMux.Shell.FileBrowser;
 using WinMux.Shell.Keymap;
 using WinMux.Shell.Panes;
+using WinMux.Platform;
 using CoreRect = WinMux.Core.Layout.Rect;
 
 namespace WinMux.Shell;
@@ -39,7 +40,7 @@ internal sealed class MainWindow : Window
     private readonly DispatcherTimer _cwdCaptureTimer;
 
     private LayoutTree _tree;
-    private IntPtr _shellHwnd;
+    private WindowHandle _shellHwnd;
     private string _message = "";
     private Divider? _dragDivider;
     private Avalonia.Point _lastDragPoint;
@@ -56,7 +57,7 @@ internal sealed class MainWindow : Window
         _tree = tree;
         _session = session;
         _session.Register(this);
-        _foreignProvider = new ForeignAppPaneProvider(() => _shellHwnd);
+        _foreignProvider = new ForeignAppPaneProvider(() => _shellHwnd, PlatformServices.HostWindows);
         _providers = new PaneProviderRegistry([
             new TerminalPaneProvider(),
             new FileBrowserPaneProvider(() => Environment.CurrentDirectory),
@@ -120,7 +121,7 @@ internal sealed class MainWindow : Window
         Opened += async (_, _) =>
         {
             ClampRestoredGeometry();
-            _shellHwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            _shellHwnd = WindowHandle.FromPlatformValue(TryGetPlatformHandle()?.Handle ?? IntPtr.Zero);
             await StartPanesAsync();
             _cwdCaptureTimer.Start();
         };

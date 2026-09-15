@@ -1,4 +1,5 @@
 using WinMux.Core.Model;
+using WinMux.Platform;
 
 namespace WinMux.Shell.Tests;
 
@@ -11,7 +12,7 @@ public sealed class ForeignAppProtocolTests
     public void Ready_parser_accepts_legacy_and_strategy_aware_messages(string line, HostStrategy expected)
     {
         Assert.True(ForeignAppPane.TryReadReady(line, out var hwnd, out var strategy));
-        Assert.Equal(new IntPtr(123), hwnd);
+        Assert.Equal(WindowHandle.FromPlatformValue(123), hwnd);
         Assert.Equal(expected, strategy);
     }
 

@@ -5,12 +5,14 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 4 complete.** `WinMux.exe` runs persistent ConPTY/VT terminal panes, foreign
+**State: Phase 5 complete.** `WinMux.exe` runs persistent ConPTY/VT terminal panes, foreign
 applications selected through a shipped quirks database and isolated in one top-level PaneHost
 per pane, and a built-in file browser — all three as **pane providers** behind the public
 `WinMux.Panes` contract, so a fourth kind needs no Core or layout change
 ([ADR 0012](docs/adr/0012-phase-4-pane-providers-and-file-browser.md)). Both embed and attach
-modes, automatic refusal fallback, and live switching ship. Phase 0:
+modes, automatic refusal fallback, and live switching ship. The platform layer is extracted:
+`WinMux.Platform` states what an OS must provide and `WinMux.Platform.Win32` provides it, so the
+shell declares **zero P/Invoke** ([ADR 0013](docs/adr/0013-phase-5-platform-layer.md)). Phase 0:
 ADRs [0001](docs/adr/0001-out-of-process-pane-hosts.md),
 [0002](docs/adr/0002-terminal-stack.md), [0003](docs/adr/0003-foreign-app-compatibility.md),
 [0004](docs/adr/0004-cwd-capture.md). Product code: `WinMux.Core` (layout, session model, TOML —
@@ -21,9 +23,9 @@ ADRs [0005](docs/adr/0005-layout-engine.md), [0006](docs/adr/0006-session-file-f
 [ADR 0010](docs/adr/0010-phase-2-persistence-runtime.md), and Phase 3 by
 [ADR 0011](docs/adr/0011-phase-3-foreign-app-runtime.md).
 
-**Not done yet:** physical mixed-scale multi-monitor verification, `WinMux.Platform` extraction
-(Phase 5), provider discovery/packaging, tab/pane reordering, foreign-window focus reconciliation,
-terminal selection and scrollback navigation.
+**Not done yet:** physical mixed-scale multi-monitor verification, provider discovery/packaging,
+tab/pane reordering, foreign-window focus reconciliation, terminal selection and scrollback
+navigation.
 
 ---
 
@@ -84,8 +86,8 @@ WinMux.Core/             layout tree, session model, config, keymap, persistence
 WinMux.Pty/              ConPTY / pty abstraction, terminal process lifecycle                  [EXISTS]
 WinMux.Terminal/         owned VT-engine contract and adapter                                   [EXISTS]
 WinMux.Panes/            public IPaneProvider / IPaneRuntime contract — Core + Avalonia only     [EXISTS]
-WinMux.Platform/         IWindowHost + friends: the platform interface
-WinMux.Platform.Win32/   Win32 quirks database and selection                              [EXISTS]
+WinMux.Platform/         IHostWindowService + friends: the platform contract, net10.0, no P/Invoke  [EXISTS]
+WinMux.Platform.Win32/   Windows/: the implementations. ForeignApps/: quirks database            [EXISTS]
 WinMux.PaneHost/         the out-of-process pane host executable (see section 5)                 [EXISTS]
 WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays                          [EXISTS]
 WinMux.Cli/              `winmux` — the command line surface (section 6)                             [EXISTS]
@@ -93,7 +95,7 @@ WinMux.Tests/                                                                   
 docs/adr/                one short file per architectural decision
 ```
 
-All projects required through Phase 3 now exist. See
+All projects now exist. See
 [ADR 0005](docs/adr/0005-layout-engine.md) for the layout engine's decisions and invariants.
 The `Columns`/`Rows` vocabulary in `SplitDirection` is deliberate — never `Horizontal`/`Vertical`,
 which every multiplexer defines differently.
@@ -101,6 +103,17 @@ which every multiplexer defines differently.
 **`WinMux.Core` must not reference any platform assembly.** Enforce it with a test that asserts
 the dependency set. Everything portable lives there; if the layout engine ever needs an `HWND`,
 the design has gone wrong.
+
+**`WinMux.Platform` is the shape of an operating system, never an implementation of one**
+([ADR 0013](docs/adr/0013-phase-5-platform-layer.md)). It targets `net10.0` with no OS suffix,
+references Core alone, and contains no P/Invoke. A platform call reaches it through
+`IHostWindowService`, `IProcessInspector` or `IUserNotifier`, stated as intent — the destination,
+never the steps, because the steps are what differ between systems. `WinMux.Shell` declares zero
+`DllImport`, and `WinMux.Shell/PlatformServices.cs` is the one file in it that names a concrete OS.
+`WinMux.PaneHost` is the deliberate exception: reparenting *is* a platform implementation, and it
+needs its own process for the reason in ADR 0001, so an X11 port gets its own host binary rather
+than a shim. `PlatformBoundaryTests` enforces all of this, and every one of its guards has been
+mutation-tested — the obvious `GetReferencedAssemblies()` check alone cannot fail.
 
 ## 4. Model
 

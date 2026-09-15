@@ -107,8 +107,12 @@ the target; portability is a design discipline, not a promise.
   validation, layered OSC/PEB cwd capture, profile onboarding, and visible crash/restore demo.
 - **Phase 3 — foreign apps.** **Complete.** Embed/attach/live switching, isolated pane hosts,
   measured quirks selection, clean fallback, and a visible desktop acceptance script.
-- **Phase 4 — file browser pane** and the public pane-provider interface.
-- **Phase 5 — portability.** Extract the platform layer, prove it on X11.
+- **Phase 4 — file browser pane.** **Complete.** Pane types are providers behind a public
+  contract, and the built-in file browser ships alongside terminal and foreign-app panes.
+- **Phase 5 — portability.** **Layer extracted.** `WinMux.Platform` states what an operating
+  system must provide and the shell no longer calls Windows itself. **Not proven on X11**, and it
+  will not be until someone writes the X11 host — WinMux is a Windows product today, and keeping
+  the seam honest is a discipline rather than a promise.
 
 ## Run it
 

@@ -1,15 +1,21 @@
 using System.Diagnostics;
 using WinMux.Core.Model;
+using WinMux.Platform.Win32.Windows;
 using WinMux.Shell.Cwd;
 
 namespace WinMux.Shell.Tests;
 
 public sealed class ProcessWorkingDirectoryResolverTests
 {
+    // The real Windows inspector on purpose: this file is the end-to-end check that the extracted
+    // implementation still reads a live PEB. The policy itself is exercised against a fake tree in
+    // ProcessWorkingDirectoryPolicyTests.
+    private static readonly ProcessWorkingDirectoryResolver Resolver = new(new Win32ProcessInspector());
+
     [Fact]
     public void Resolve_WhenPebIsDisabledForWsl_DoesNotInspectTheProcess()
     {
-        var result = ProcessWorkingDirectoryResolver.Resolve(Environment.ProcessId, disablePebForWsl: true);
+        var result = Resolver.Resolve(Environment.ProcessId, disablePebForWsl: true);
 
         Assert.False(result.Succeeded);
         Assert.Null(result.Path);
@@ -20,16 +26,13 @@ public sealed class ProcessWorkingDirectoryResolverTests
     [Fact]
     public void Resolve_WhenProcessDoesNotExist_ReturnsAnExplicitFailure()
     {
-        var result = ProcessWorkingDirectoryResolver.Resolve(int.MaxValue, disablePebForWsl: false);
+        var result = Resolver.Resolve(int.MaxValue, disablePebForWsl: false);
 
         Assert.False(result.Succeeded);
         Assert.Null(result.Path);
         Assert.Equal(CwdSource.Unknown, result.Provenance);
         Assert.NotNull(result.Error);
-        Assert.Contains(
-            OperatingSystem.IsWindows() ? "does not exist" : "only on Windows",
-            result.Error,
-            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("does not exist", result.Error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -71,7 +74,7 @@ public sealed class ProcessWorkingDirectoryResolverTests
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
             while (DateTime.UtcNow < deadline)
             {
-                captured = ProcessWorkingDirectoryResolver.Resolve(
+                captured = Resolver.Resolve(
                     commandPrompt.Id,
                     disablePebForWsl: false);
                 if (captured.Succeeded
