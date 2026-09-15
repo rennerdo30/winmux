@@ -60,6 +60,18 @@ public sealed record WinMuxSettings
     /// <summary>Which releases to be offered. Stable unless someone opts into prereleases.</summary>
     public UpdateChannel UpdateChannel { get; init; } = UpdateChannel.Stable;
 
+    /// <summary>
+    /// The font terminals draw with. A fallback list, so a machine without the first still gets a
+    /// monospaced face rather than a proportional one.
+    ///
+    /// Cascadia Mono is not on a stock Windows install — it arrives with Windows Terminal and
+    /// Visual Studio — so the second entry is the common case.
+    /// </summary>
+    public string TerminalFontFamily { get; init; } = "Cascadia Mono, Consolas, monospace";
+
+    /// <summary>Terminal font size, in device-independent pixels.</summary>
+    public double TerminalFontSize { get; init; } = 14;
+
     /// <summary>The defaults, for a first run or a settings file that could not be read.</summary>
     public static WinMuxSettings Defaults { get; } = new();
 }

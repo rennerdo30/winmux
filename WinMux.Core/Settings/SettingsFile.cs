@@ -3,6 +3,8 @@ using Tomlyn;
 using Tomlyn.Model;
 using WinMux.Core.Layout;
 
+using WinMux.Core.Update;
+
 namespace WinMux.Core.Settings;
 
 /// <summary>
@@ -68,6 +70,11 @@ public static class SettingsFile
             DefaultTabPlacement = Enum(root, "default_tab_placement", WinMuxSettings.Defaults.DefaultTabPlacement, problems),
             ConfirmBeforeClosingPanes =
                 Bool(root, "confirm_before_closing_panes", WinMuxSettings.Defaults.ConfirmBeforeClosingPanes, problems),
+            CheckForUpdates = Bool(root, "check_for_updates", WinMuxSettings.Defaults.CheckForUpdates, problems),
+            UpdateChannel = Enum(root, "update_channel", WinMuxSettings.Defaults.UpdateChannel, problems),
+            TerminalFontFamily = String(root, "terminal_font_family", WinMuxSettings.Defaults.TerminalFontFamily),
+            TerminalFontSize =
+                Number(root, "terminal_font_size", WinMuxSettings.Defaults.TerminalFontSize, 6, 72, problems),
         };
 
         return new LoadResult(
@@ -109,6 +116,17 @@ public static class SettingsFile
             # Ask before an action closes panes that are still running.
             confirm_before_closing_panes = {(settings.ConfirmBeforeClosingPanes ? "true" : "false")}
 
+            # Look for a newer release on startup. Nothing is downloaded or installed without asking.
+            check_for_updates            = {(settings.CheckForUpdates ? "true" : "false")}
+
+            # Which releases to be offered: stable, prerelease.
+            update_channel               = '{Text(settings.UpdateChannel)}'
+
+            # The font terminals draw with. A fallback list; the first one present is used, and the
+            # cell size is measured from whichever that turns out to be.
+            terminal_font_family         = '{settings.TerminalFontFamily}'
+            terminal_font_size           = {settings.TerminalFontSize.ToString(CultureInfo.InvariantCulture)}
+
             """;
     }
 
@@ -117,6 +135,12 @@ public static class SettingsFile
         ThemePreference.Dark => "dark",
         ThemePreference.Light => "light",
         _ => "system",
+    };
+
+    private static string Text(UpdateChannel value) => value switch
+    {
+        UpdateChannel.Prerelease => "prerelease",
+        _ => "stable",
     };
 
     private static string Text(TabStripPlacement value) => value switch
@@ -154,6 +178,41 @@ public static class SettingsFile
         table.TryGetValue(key, out var raw) && raw is string text && !string.IsNullOrWhiteSpace(text)
             ? text
             : fallback;
+
+    /// <summary>
+    /// A number, within bounds.
+    ///
+    /// TOML distinguishes integers from floats, and a hand-edited file will contain both — 14 and
+    /// 14.0 mean the same thing to a person. Out-of-range values are refused rather than clamped:
+    /// a two-pixel font is not what anyone meant, and silently using 6 would hide the typo.
+    /// </summary>
+    private static double Number(
+        TomlTable table, string key, double fallback, double minimum, double maximum, List<string> problems)
+    {
+        if (!table.TryGetValue(key, out var raw)) return fallback;
+
+        var value = raw switch
+        {
+            double number => number,
+            long integer => integer,
+            int integer => integer,
+            _ => double.NaN,
+        };
+
+        if (double.IsNaN(value))
+        {
+            problems.Add($"`{key}` should be a number");
+            return fallback;
+        }
+
+        if (value < minimum || value > maximum)
+        {
+            problems.Add($"`{key}` should be between {minimum} and {maximum}");
+            return fallback;
+        }
+
+        return value;
+    }
 
     private static bool Bool(TomlTable table, string key, bool fallback, List<string> problems)
     {

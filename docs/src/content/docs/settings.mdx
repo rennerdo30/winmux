@@ -15,6 +15,18 @@ WinMux is running.
 
 The list of everything you can open in a pane. See [Profiles](/profiles/).
 
+## Terminal
+
+**Font** — a fallback list, so a machine without the first still gets a monospaced face. The default
+is `Cascadia Mono, Consolas, monospace`; Cascadia Mono is not on a stock Windows install, so the
+second entry is the common case.
+
+**Font size** — in pixels, 6 to 72.
+
+WinMux **measures** the font you choose and builds its character grid from that measurement, so the
+cursor, selection, search highlights and coloured cell backgrounds line up with the glyphs whichever
+font is actually in use.
+
 ## New panes
 
 **Default terminal** — which profile a new terminal pane opens, and what the prefix key's split

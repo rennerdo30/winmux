@@ -14,15 +14,21 @@ namespace WinMux.Shell;
 /// <summary>A small Avalonia terminal surface backed by WinMux's owned PTY and VT seams.</summary>
 internal sealed class TerminalPaneControl : Control, IDisposable
 {
-    private const double FontSize = 14;
-    private const double CellWidth = 8.45;
-    private const double CellHeight = 18;
+    /// <summary>
+    /// Cell geometry, measured from the font in use rather than assumed.
+    ///
+    /// Per instance and re-measured when the font setting changes; see
+    /// <see cref="TerminalFontMetrics"/> for what the assumed numbers cost.
+    /// </summary>
+    private TerminalFontMetrics _metrics;
+    private Typeface _regular;
+    private Typeface _bold;
+    private Typeface _italic;
+    private Typeface _boldItalic;
 
-    private static readonly FontFamily TerminalFont = new("Cascadia Mono, Consolas, monospace");
-    private static readonly Typeface TerminalTypeface = new(TerminalFont);
-    private static readonly Typeface BoldTypeface = new(TerminalFont, FontStyle.Normal, FontWeight.Bold);
-    private static readonly Typeface ItalicTypeface = new(TerminalFont, FontStyle.Italic);
-    private static readonly Typeface BoldItalicTypeface = new(TerminalFont, FontStyle.Italic, FontWeight.Bold);
+    private double FontSize => _metrics.FontSize;
+    private double CellWidth => _metrics.CellWidth;
+    private double CellHeight => _metrics.CellHeight;
 
     private static readonly IBrush BackgroundBrush = new SolidColorBrush(TerminalPalette.DefaultBackground);
     private static readonly IBrush CursorBrush = new SolidColorBrush(Color.FromArgb(0x90, 0xCC, 0xCC, 0xCC));
@@ -97,6 +103,10 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
         Focusable = true;
         ClipToBounds = true;
+
+        ApplyFont(Settings.ShellSettings.Current.TerminalFontFamily,
+                  Settings.ShellSettings.Current.TerminalFontSize);
+        Settings.ShellSettings.Changed += OnSettingsChanged;
     }
 
     public event Action<string>? TitleChanged;
@@ -150,7 +160,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         }
 
         var columns = _engine.Columns;
-        var visibleRows = Math.Min(_engine.Rows, Math.Max(0, (int)((Bounds.Height - 2 * Inset) / CellHeight)));
+        var visibleRows = Math.Min(_engine.Rows, _metrics.RowsIn(Bounds.Height, Inset));
         var firstRow = _viewport.TopRow(_engine.TotalRows, _engine.Rows);
 
         var cells = new TerminalCell[columns];
@@ -222,7 +232,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     }
 
     /// <summary>Underlines, strikethrough and overline, which are lines rather than font choices.</summary>
-    private static void DrawDecorations(
+    private void DrawDecorations(
         DrawingContext context,
         TerminalRun run,
         Color color,
@@ -303,17 +313,39 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         return brush;
     }
 
-    private static Typeface TypefaceFor(TerminalCellAttributes attributes)
+    private Typeface TypefaceFor(TerminalCellAttributes attributes)
     {
         var bold = (attributes & TerminalCellAttributes.Bold) != 0;
         var italic = (attributes & TerminalCellAttributes.Italic) != 0;
         return (bold, italic) switch
         {
-            (true, true) => BoldItalicTypeface,
-            (true, false) => BoldTypeface,
-            (false, true) => ItalicTypeface,
-            _ => TerminalTypeface,
+            (true, true) => _boldItalic,
+            (true, false) => _bold,
+            (false, true) => _italic,
+            _ => _regular,
         };
+    }
+
+    /// <summary>
+    /// Measure the configured font and rebuild the typefaces from it.
+    ///
+    /// Called on construction and whenever the setting changes, so a font change takes effect in
+    /// every open pane without a restart — and so the grid is never drawn against numbers that
+    /// describe a different font from the one the glyphs are in.
+    /// </summary>
+    private void ApplyFont(string? family, double fontSize)
+    {
+        _metrics = TerminalFontMetrics.Measure(family, fontSize);
+
+        var resolved = _metrics.Typeface.FontFamily;
+        _regular = _metrics.Typeface;
+        _bold = new Typeface(resolved, FontStyle.Normal, FontWeight.Bold);
+        _italic = new Typeface(resolved, FontStyle.Italic);
+        _boldItalic = new Typeface(resolved, FontStyle.Italic, FontWeight.Bold);
+
+        // The grid size in cells depends on the cell size, so a font change is a resize.
+        ResizeFromBounds();
+        InvalidateVisual();
     }
 
     /// <summary>How many matches the current query has.</summary>
@@ -400,9 +432,9 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     private TerminalPosition PositionAt(Point point)
     {
         var columns = Math.Max(1, _engine.Columns);
-        var column = Math.Clamp((int)Math.Round((point.X - Inset) / CellWidth), 0, columns);
+        var column = _metrics.ColumnAt(point.X, Inset, columns);
         var row = _viewport.TopRow(_engine.TotalRows, _engine.Rows) +
-                  Math.Clamp((int)((point.Y - Inset) / CellHeight), 0, Math.Max(0, _engine.Rows - 1));
+                  _metrics.RowAt(point.Y, Inset, _engine.Rows);
         return new TerminalPosition(Math.Clamp(row, 0, Math.Max(0, _engine.TotalRows - 1)), column);
     }
 
@@ -611,6 +643,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             return;
         }
 
+        Settings.ShellSettings.Changed -= OnSettingsChanged;
         _engine.Updated -= OnEngineUpdated;
         _engine.TitleChanged -= OnEngineTitleChanged;
         _engine.WorkingDirectoryChanged -= OnEngineWorkingDirectoryChanged;
@@ -699,8 +732,8 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             return;
         }
 
-        var columns = Math.Max(2, (int)((Bounds.Width - 2 * Inset) / CellWidth));
-        var rows = Math.Max(1, (int)((Bounds.Height - 2 * Inset) / CellHeight));
+        var columns = Math.Max(2, _metrics.ColumnsIn(Bounds.Width, Inset));
+        var rows = _metrics.RowsIn(Bounds.Height, Inset);
         if (columns == _engine.Columns && rows == _engine.Rows)
         {
             return;
@@ -721,6 +754,13 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
         InvalidateVisual();
     }
+
+    private void OnSettingsChanged() => Dispatcher.UIThread.Post(() =>
+    {
+        if (_disposed != 0) return;
+        ApplyFont(Settings.ShellSettings.Current.TerminalFontFamily,
+                  Settings.ShellSettings.Current.TerminalFontSize);
+    });
 
     private void OnEngineUpdated()
     {

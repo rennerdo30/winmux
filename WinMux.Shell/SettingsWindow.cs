@@ -26,6 +26,8 @@ internal sealed class SettingsWindow : Window
     private string _pendingDefaultTerminal = string.Empty;
     private readonly ComboBox _tabPlacement;
     private readonly CheckBox _confirmClosing;
+    private readonly TextBox _fontFamily;
+    private readonly NumericUpDown _fontSize;
     private readonly CheckBox _checkUpdates;
     private readonly ComboBox _updateChannel;
 
@@ -87,6 +89,23 @@ internal sealed class SettingsWindow : Window
             ],
             current.DefaultTabPlacement);
 
+        _fontFamily = new TextBox
+        {
+            Text = current.TerminalFontFamily,
+            MinWidth = 260,
+            PlaceholderText = TerminalFontMetrics.DefaultFontFamily,
+        };
+
+        _fontSize = new NumericUpDown
+        {
+            Value = (decimal)current.TerminalFontSize,
+            Minimum = 6,
+            Maximum = 72,
+            Increment = 1,
+            FormatString = "0.#",
+            MinWidth = 110,
+        };
+
         _checkUpdates = new CheckBox
         {
             IsChecked = current.CheckForUpdates,
@@ -123,6 +142,17 @@ internal sealed class SettingsWindow : Window
             ProfileEditor(),
             "Shells and applications alike. These appear in the New menu, in an empty pane's " +
             "launcher and in the command palette."));
+
+        body.Children.Add(SettingsCard.Heading("Terminal"));
+        body.Children.Add(SettingsCard.Row(
+            "Font",
+            _fontFamily,
+            "A fallback list. The first font present is used, and the cell size is measured from " +
+            "whichever that turns out to be."));
+        body.Children.Add(SettingsCard.Row(
+            "Font size",
+            _fontSize,
+            "In pixels, between 6 and 72."));
 
         body.Children.Add(SettingsCard.Heading("New panes"));
         body.Children.Add(SettingsCard.Row(
@@ -175,6 +205,10 @@ internal sealed class SettingsWindow : Window
                 DefaultTerminal = SelectedTerminalId(),
                 DefaultTabPlacement = Selected<TabStripPlacement>(_tabPlacement),
                 ConfirmBeforeClosingPanes = _confirmClosing.IsChecked == true,
+                TerminalFontFamily = string.IsNullOrWhiteSpace(_fontFamily.Text)
+                    ? TerminalFontMetrics.DefaultFontFamily
+                    : _fontFamily.Text.Trim(),
+                TerminalFontSize = (double)(_fontSize.Value ?? (decimal)TerminalFontMetrics.DefaultFontSize),
                 CheckForUpdates = _checkUpdates.IsChecked == true,
                 UpdateChannel = Selected<UpdateChannel>(_updateChannel),
             };

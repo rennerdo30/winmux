@@ -20,7 +20,7 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-16: 593 passed, 0 warnings.** Version 0.6.0.
+**Verified 2026-09-16: 603 passed, 0 warnings.** Version 0.6.0.
 Phases 4, 5 and the Phase 6 work are **pushed**; `origin/main` is current as of 2026-09-15.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
@@ -166,6 +166,15 @@ that a future session recognises them as answers rather than rediscovering them 
   and this machine is Japanese 106/109: `:` unshifted, `"` on Shift+2. `VkKeyScanEx` answers the
   question for every installed layout in a few lines of PowerShell — do that before theorising
   about why a symbol binding does not fire.
+
+**Measuring, not assuming**
+- Do not hardcode a character cell size. The renderer used `CellWidth = 8.45` against a font whose
+  real advance is 8.203 (Cascadia Mono) or 7.697 (Consolas, the fallback and the common case), so
+  every *position* — run origins, cursor, selection, search highlights, coloured backgrounds —
+  drifted from the glyphs across a row. `TerminalFontMetrics` measures the face in use.
+- Do not add a property to `WinMuxSettings` without adding it to `SettingsFile` as well. The file is
+  hand-written rather than serialised from the type, so a forgotten property compiles and silently
+  resets on every launch; that happened twice before `SettingsRoundTripTests` existed to catch it.
 
 **Judgement**
 - Do not render a terminal row as one `FormattedText` with one brush. It looks correct on an
