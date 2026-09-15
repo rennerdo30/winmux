@@ -116,6 +116,7 @@ internal sealed class MainWindow : Window
     /// query and its own idea of what was selected.
     /// </summary>
     private CommandPaletteWindow? _palette;
+    private IDisposable? _foregroundWatch;
 
     /// <summary>The one find bar, for the same reason the palette is one: asking twice means "find".</summary>
     private TerminalSearchWindow? _search;
@@ -228,6 +229,13 @@ internal sealed class MainWindow : Window
         _canvas.Margin = new Thickness(Palette.GapSmall, 4, Palette.GapSmall, Palette.GapSmall);
         _canvas.Background = Palette.WindowBrush;
         _canvas.PropertyChanged += (_, e) => { if (e.Property == BoundsProperty) Relayout(); };
+
+        // Focus is explicit, and the OS is the authority on it (CLAUDE.md section 6). Without this
+        // the shell only ever learns about focus it caused itself, so clicking into an Explorer
+        // pane left it believing a terminal elsewhere was focused — and the next key, or the next
+        // "close pane", acted on that terminal.
+        PlatformServices.Foreground.Changed += OnForegroundWindowChanged;
+        Opened += (_, _) => _foregroundWatch ??= PlatformServices.Foreground.Start();
 
         // Say so when Windows could not give us the backdrop we asked for, rather than leaving
         // someone to wonder why their machine looks different from the screenshots.
@@ -853,6 +861,35 @@ internal sealed class MainWindow : Window
         palette.Closed += (_, _) => _palette = null;
         _palette = palette;
         palette.ShowOver(this);
+    }
+
+    /// <summary>
+    /// Follow the OS when it moves focus to a window one of our panes is standing in for.
+    ///
+    /// Only ever *records* the change; it never calls Focus back, because the window already has
+    /// focus and asking for it again would be a cross-process window call on the UI thread, which
+    /// ADR 0001 measured freezing the shell for six seconds against a wedged application.
+    ///
+    /// A window that belongs to no pane — the user alt-tabbed to their browser — is not interesting:
+    /// WinMux's focused pane is where its keys will go when it is focused again, and moving it
+    /// because the user left would be wrong.
+    /// </summary>
+    private void OnForegroundWindowChanged(ForegroundWindow foreground)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_shutdownStarted) return;
+
+            var hosted = _runtimes
+                .Where(entry => entry.Value is IHostedWindowPane)
+                .Select(entry => (entry.Key, (IHostedWindowPane)entry.Value));
+
+            if (FocusReconciliation.PaneFor(foreground, hosted, _tree.Focused) is not { } pane) return;
+
+            _tree.Focus(pane);
+            UpdateStatus();
+            UpdateTabStrips(_tree.Arrange());
+        });
     }
 
     /// <summary>Reorder the focused tab within its strip.</summary>

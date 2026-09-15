@@ -53,7 +53,18 @@ internal sealed class ForeignAppPaneProvider(Func<WindowHandle> ownerWindow, IHo
     }
 }
 
-internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategyRuntime
+/// <summary>
+/// A pane that stands in for a window it does not own, and can recognise it again.
+///
+/// The shell needs this to reconcile focus: when Windows says some window just became active, the
+/// only way to know whether that is one of our panes is to ask the panes.
+/// </summary>
+internal interface IHostedWindowPane
+{
+    bool OwnsWindow(WindowHandle window);
+}
+
+internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategyRuntime, IHostedWindowPane
 {
     private readonly Pane _pane;
     private readonly ForeignAppPane _app;
@@ -92,6 +103,17 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
     }
 
     public PaneId PaneId => _pane.Id;
+
+    /// <summary>
+    /// Whether <paramref name="window"/> is the window this pane is standing in for.
+    ///
+    /// Both handles count. In embed mode the application is a child of the pane host, so the root
+    /// window Windows reports is the host; in attach mode the application window is top-level and
+    /// is the one reported. A pane that only recognised one of them would reconcile focus in one
+    /// hosting strategy and not the other.
+    /// </summary>
+    public bool OwnsWindow(WindowHandle window) =>
+        !window.IsNone && (window == _app.Hwnd || window == _app.ChildHwnd);
     public PaneKind Kind => PaneKind.ForeignApp;
     public Control View { get; }
     public string? StatusMessage => _app.Notice ?? _app.Status;

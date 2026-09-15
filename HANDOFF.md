@@ -20,11 +20,8 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-15: 534 passed, 0 warnings.** Version 0.6.0.
-**Nothing has been pushed since `68103d5`** (Phase 3), which is where `origin/main` still sits.
-Everything after it — Phases 4, 5 and all of the Phase 6 work — exists only on this machine.
-(A count of commits is deliberately not written here: it would be wrong the moment this file is
-committed, which is the smallest possible example of why section 10 exists.)
+**Verified 2026-09-15: 541 passed, 0 warnings.** Version 0.6.0.
+Phases 4, 5 and the Phase 6 work are **pushed**; `origin/main` is current as of 2026-09-15.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
@@ -72,6 +69,10 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
   ":" were matched by physical key, which encodes a US layout, so on a German keyboard the palette
   had no key at all; they now match the character Avalonia reports as `KeySymbol`. Search is
   `TerminalSearchModel` plus a find bar built like the palette, bound to the prefix and "/".
+- **Tab reordering** by key, menu and pointer drag, and **focus reconciliation**: a new
+  `IForegroundWindowMonitor` (Win32 `SetWinEventHook`) tells the shell when the user focuses a
+  window one of its panes stands in for, so clicking into an Explorer pane no longer leaves the
+  focused pane pointing at a terminal elsewhere (CLAUDE.md section 6).
 
 ## The next action
 
@@ -79,8 +80,7 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
 screen; what is left is feature work, and the next real finding will come from use.
 
 When picking that feature work up, in rough order of what the product is missing:
-**dragging a running window into a pane**, **foreign-window focus reconciliation**, and provider
-discovery and packaging. Snap layouts are a separate, known cost of drawing our
+**dragging a running window into a pane** and provider discovery and packaging. Snap layouts are a separate, known cost of drawing our
 own caption ([ADR 0016](docs/adr/0016-windows-11-chrome.md)) and need a new `IHostWindowService`
 capability to recover.
 
@@ -101,8 +101,6 @@ settings card rather than an architecture change.
   `ITerminalEngine` seam bounds the replacement cost but does not make the call.
 - **An X11 port needs its own host executable, not a shim.** PaneHost keeps its 35 imports
   deliberately (ADR 0013, decision 5). Do not read that as unfinished Phase 5 work.
-- **Nothing is pushed.** Everything after `68103d5` exists only in this checkout, so a lost disk
-  is a lost project. Pushing is the user's call; it has not been made.
 
 ## Do not re-do
 

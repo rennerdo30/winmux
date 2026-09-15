@@ -31,4 +31,7 @@ internal static class PlatformServices
 
     /// <summary>The windows already open, for attaching one into a pane.</summary>
     public static IWindowCatalog Windows { get; } = new Win32WindowCatalog();
+
+    /// <summary>Being told when the user focuses something the shell did not focus itself.</summary>
+    public static IForegroundWindowMonitor Foreground { get; } = new Win32ForegroundWindowMonitor();
 }
