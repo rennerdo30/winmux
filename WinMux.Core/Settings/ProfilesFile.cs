@@ -218,6 +218,8 @@ public static class ProfilesFile
         "application" => ProfileKind.Application,
         "ssh" => ProfileKind.Ssh,
         "rdp" => ProfileKind.Rdp,
+        "sftp" => ProfileKind.Sftp,
+        "ftp" => ProfileKind.Ftp,
         _ => ProfileKind.Terminal,
     };
 
@@ -226,6 +228,8 @@ public static class ProfilesFile
         ProfileKind.Application => "application",
         ProfileKind.Ssh => "ssh",
         ProfileKind.Rdp => "rdp",
+        ProfileKind.Sftp => "sftp",
+        ProfileKind.Ftp => "ftp",
         _ => "terminal",
     };
 

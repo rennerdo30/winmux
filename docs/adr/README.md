@@ -26,3 +26,4 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | [0017](0017-input-queue-attachment.md) | Input-queue attachment: measured | accepted |
 | [0018](0018-terminal-emulation-supply-chain.md) | `Terminal.Emulation`: the supply-chain position | accepted for 0.x |
 | [0019](0019-network-filesystems.md) | Network filesystems: delegate to Windows, ship no client | accepted |
+| [0020](0020-sftp-and-ftp.md) | SFTP and FTP: implement them, because nothing else will | accepted |

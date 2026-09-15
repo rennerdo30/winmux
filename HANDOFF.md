@@ -20,9 +20,10 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-16: 670 passed, 0 warnings.** Version 0.6.0.
-Everything through the network-share guide is **pushed** (`f96a586`); the file-operations work
-described below is the only thing newer than `origin/main`.
+**Verified 2026-09-16: 727 passed, 0 warnings.** Four more are *skipped* by design — the live
+SFTP/FTP tests, which need a server and say so rather than passing quietly (ADR 0020). Version 0.6.0.
+Everything through local file operations is **pushed** (`4bc56ba`); the SFTP/FTP work described
+below is the only thing newer than `origin/main`.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
@@ -77,6 +78,12 @@ needs to know happened, and where the reasoning lives.
   overwrites: a name collision becomes `report (2).txt`, so a mistake never costs the original.
   Delete goes to the Recycle Bin through `IFileTrash`, and a *failed* recycle is never quietly
   upgraded to a permanent delete.
+- **SFTP and FTP are built in** ([ADR 0020](docs/adr/0020-sftp-and-ftp.md)), because unlike SMB
+  there is no Windows client to delegate to. Each is one `IFileBrowserFileSystem` — SSH.NET and
+  FluentFTP, both MIT — and *nothing above that interface changed*. A saved connection is a profile
+  like any other, the password goes to Credential Manager and never to the session file, and SFTP
+  can use a key instead. **Verified against a real server** (SFTPGo portable, both protocols) and
+  then through the UI: session file, credential dialog, listing, folder created on the server.
 - **Network shares are Windows' job, and that is now decided and written down.** WinMux adds no SMB
   or NFS client: Windows mounts a share, WinMux browses the path. An SMBLibrary dependency was
   costed (LGPL-3.0 is compatible with MIT — weak copyleft, linking does not relicense us) and then
@@ -89,11 +96,13 @@ needs to know happened, and where the reasoning lives.
 was seen working on screen; what is left is the class of finding that only comes from use, and this
 project has now had two sessions of code-reading produce less than one screenshot did.
 
-**SFTP and FTP** are the one piece of the 2026-09-16 connection work still unbuilt. The seam is
-ready: `IFileBrowserFileSystem` now carries the write operations, `ICredentialStore` holds the
-passwords, and file transfer within a filesystem is done and tested. What is missing is a client for
-either protocol, and copying *between* two filesystems — which only becomes a question once a second
-one exists.
+The connection work asked for on 2026-09-16 — RDP, SSH, FTP, SCP, SMB, NFS — is now **complete**:
+SSH and RDP delegate to the Windows clients, SMB and NFS to Windows itself (ADR 0019), SFTP and FTP
+are implemented (ADR 0020), and SCP is deliberately absent because it cannot list a directory.
+
+The obvious next piece is **copying between two filesystems** — dragging from an SFTP pane onto a
+local one. Every operation today is within one filesystem; the interface already has the streams
+this would need.
 
 The two things still queued are taste calls rather than gaps, both from the 2026-09-15 critique:
 the toolbar is uniform icon+label with a divider after every group, where Explorer's command bar has

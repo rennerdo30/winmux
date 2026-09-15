@@ -28,16 +28,33 @@ public static class RemoteConnection
     public const int DefaultSshPort = 22;
     public const int DefaultRdpPort = 3389;
 
+    /// <summary>SFTP is carried over SSH, so it is port 22 and not a port of its own.</summary>
+    public const int DefaultSftpPort = 22;
+
+    public const int DefaultFtpPort = 21;
+
     /// <summary>The port a kind uses when the profile does not say.</summary>
     public static int DefaultPortFor(ProfileKind kind) => kind switch
     {
         ProfileKind.Ssh => DefaultSshPort,
         ProfileKind.Rdp => DefaultRdpPort,
+        ProfileKind.Sftp => DefaultSftpPort,
+        ProfileKind.Ftp => DefaultFtpPort,
         _ => 0,
     };
 
     /// <summary>Whether this kind describes a remote host rather than a local program.</summary>
-    public static bool IsConnection(ProfileKind kind) => kind is ProfileKind.Ssh or ProfileKind.Rdp;
+    public static bool IsConnection(ProfileKind kind) =>
+        kind is ProfileKind.Ssh or ProfileKind.Rdp or ProfileKind.Sftp or ProfileKind.Ftp;
+
+    /// <summary>
+    /// Whether this kind is answered by running a program.
+    ///
+    /// SSH and RDP delegate to a Windows client and so have a command line. SFTP and FTP do not —
+    /// WinMux speaks those itself and opens a file-browser pane — so they are connections without a
+    /// program, and <see cref="Resolve"/> has nothing to build for them.
+    /// </summary>
+    public static bool LaunchesProgram(ProfileKind kind) => kind is ProfileKind.Ssh or ProfileKind.Rdp;
 
     /// <summary>
     /// Build the command for a connection profile.
@@ -47,8 +64,14 @@ public static class RemoteConnection
     {
         ArgumentNullException.ThrowIfNull(profile);
 
-        if (!IsConnection(profile.Kind))
-            throw new ArgumentException($"{profile.Kind} is not a connection.", nameof(profile));
+        if (!LaunchesProgram(profile.Kind))
+        {
+            throw new ArgumentException(
+                IsConnection(profile.Kind)
+                    ? $"A {profile.Kind} connection opens a file-browser pane, not a program."
+                    : $"{profile.Kind} is not a connection.",
+                nameof(profile));
+        }
 
         var host = profile.Host.Trim();
         if (host.Length == 0)

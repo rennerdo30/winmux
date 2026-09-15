@@ -150,7 +150,7 @@ internal sealed class MainWindow : Window
         _foreignProvider = new ForeignAppPaneProvider(() => _shellHwnd, PlatformServices.HostWindows);
         _providers = new PaneProviderRegistry([
             new TerminalPaneProvider(),
-            new FileBrowserPaneProvider(() => Environment.CurrentDirectory),
+            new FileBrowserPaneProvider(() => Environment.CurrentDirectory, () => this),
             new EmptyPaneProvider(
                 new EmptyPaneCommands(
                     (pane, profile) => Run(ReplacePaneAsync(pane, ProfilePaneFactory.Create(profile,

@@ -15,9 +15,14 @@ internal interface ITerminalHandoffRuntime
     event EventHandler? TerminalHandoffRequested;
 }
 
-internal sealed class FileBrowserPaneProvider(Func<string> fallbackDirectory) : IPaneProvider
+internal sealed class FileBrowserPaneProvider(
+    Func<string> fallbackDirectory,
+    Func<Window?>? owner = null) : IPaneProvider
 {
     private readonly Func<string> _fallbackDirectory = fallbackDirectory ?? throw new ArgumentNullException(nameof(fallbackDirectory));
+
+    /// <summary>The window a credential prompt is shown over. Null means a remote pane cannot ask.</summary>
+    private readonly Func<Window?> _owner = owner ?? (() => null);
 
     public PaneKind Kind => PaneKind.FileBrowser;
 
@@ -30,7 +35,27 @@ internal sealed class FileBrowserPaneProvider(Func<string> fallbackDirectory) : 
     private async ValueTask<IPaneRuntime> BuildAsync(PaneProviderContext context, CancellationToken token)
     {
         var pane = new Pane(context.PaneId, PaneKind.FileBrowser, context.Title, context.Descriptor);
-        var runtime = new FileBrowserPaneRuntime(pane, _fallbackDirectory());
+
+        // A descriptor carrying a remote target makes this a remote browser. Everything past this
+        // point — the model, the clipboard, every operation — is identical either way, which is the
+        // entire reason IFileBrowserFileSystem is an interface.
+        IFileBrowserFileSystem? filesystem = null;
+        string? connectionNote = null;
+
+        if (Remote.RemoteFileBrowserTarget.From(context.Descriptor) is { } target)
+        {
+            var connector = new Remote.RemoteConnector(PlatformServices.Credentials);
+            filesystem = await connector.ConnectAsync(target, _owner());
+            connectionNote = filesystem is null
+                ? $"Not connected to {target.Display}. Close and reopen the pane to try again."
+                : null;
+        }
+
+        // A remote pane falls back to the remote root, not to a Windows path. "E:\Development" means
+        // nothing on an SFTP server, and the model would report it as unavailable forever.
+        var fallback = filesystem is null ? _fallbackDirectory() : Remote.RemotePath.Root;
+
+        var runtime = new FileBrowserPaneRuntime(pane, fallback, filesystem, connectionNote);
         await runtime.InitializeAsync(token);
         return runtime;
     }
@@ -57,10 +82,19 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
     private bool _rendering;
     private int _disposed;
 
-    public FileBrowserPaneRuntime(Pane pane, string fallbackDirectory)
+    private readonly IFileBrowserFileSystem? _fileSystem;
+    private readonly string? _connectionNote;
+
+    public FileBrowserPaneRuntime(
+        Pane pane,
+        string fallbackDirectory,
+        IFileBrowserFileSystem? fileSystem = null,
+        string? connectionNote = null)
     {
         _pane = pane;
         _fallbackDirectory = fallbackDirectory;
+        _fileSystem = fileSystem;
+        _connectionNote = connectionNote;
         BuildView();
     }
 
@@ -75,8 +109,20 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
     public async Task InitializeAsync(CancellationToken token)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _lifetime.Token);
-        _status.Text = "Loading directory…";
-        _model = await Task.Run(() => new FileBrowserModel(_pane, _fallbackDirectory), linked.Token);
+        _status.Text = _connectionNote ?? "Loading directory…";
+
+        if (_connectionNote is not null)
+        {
+            // The connection was refused or cancelled. Show the reason and stop: falling back to the
+            // local filesystem would put the user somewhere they did not ask to be, under a tab
+            // named after a server.
+            StateChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        _model = await Task.Run(
+            () => new FileBrowserModel(_pane, _fallbackDirectory, _fileSystem),
+            linked.Token);
         RenderModel();
     }
 
@@ -488,5 +534,9 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
         _operation?.Cancel();
         _operation?.Dispose();
         _lifetime.Dispose();
+
+        // A remote filesystem holds a live socket. Closing the pane must close it, or a session of
+        // opening and closing remote panes leaks a connection each time — and servers count those.
+        (_fileSystem as IDisposable)?.Dispose();
     }
 }

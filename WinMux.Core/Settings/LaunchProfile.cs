@@ -16,6 +16,17 @@ public enum ProfileKind
 
     /// <summary>A saved Remote Desktop host. Opens the Windows client in an application pane.</summary>
     Rdp,
+
+    /// <summary>
+    /// A saved SFTP host. Opens a file-browser pane onto the remote filesystem.
+    ///
+    /// SCP has no separate kind: it is a copy command with no directory listing, so there is nothing
+    /// for a browser to show, and every server that speaks it speaks SFTP.
+    /// </summary>
+    Sftp,
+
+    /// <summary>A saved FTP host. Opens a file-browser pane, over FTPS where the server allows it.</summary>
+    Ftp,
 }
 
 /// <summary>
@@ -84,13 +95,16 @@ public sealed record LaunchProfile
     /// <summary>
     /// The pane kind this profile opens.
     ///
-    /// SSH is a terminal because that is what it is; RDP is a hosted window. The connection kinds
-    /// choose an existing provider rather than introducing a pane kind of their own, which is the
-    /// rule in CLAUDE.md section 5a.
+    /// SSH is a terminal because that is what it is; RDP is a hosted window; SFTP and FTP are file
+    /// browsers. Every connection kind chooses an existing provider rather than introducing a pane
+    /// kind of its own, which is the rule in CLAUDE.md section 5a.
     /// </summary>
-    public PaneKind PaneKind => Kind is ProfileKind.Terminal or ProfileKind.Ssh
-        ? Model.PaneKind.Terminal
-        : Model.PaneKind.ForeignApp;
+    public PaneKind PaneKind => Kind switch
+    {
+        ProfileKind.Terminal or ProfileKind.Ssh => Model.PaneKind.Terminal,
+        ProfileKind.Sftp or ProfileKind.Ftp => Model.PaneKind.FileBrowser,
+        _ => Model.PaneKind.ForeignApp,
+    };
 
     /// <summary>
     /// Value equality including <see cref="Args"/>.
@@ -111,6 +125,13 @@ public sealed record LaunchProfile
         WindowClass == other.WindowClass &&
         TitleContains == other.TitleContains &&
         Source == other.Source &&
+        // The connection fields belong here for the same reason Args does. They were left out when
+        // connections were added, so changing a saved host's address compared equal to the old one
+        // and the settings UI discarded the edit as "nothing changed".
+        Host == other.Host &&
+        Port == other.Port &&
+        User == other.User &&
+        Identity == other.Identity &&
         Args.SequenceEqual(other.Args, StringComparer.Ordinal);
 
     public override int GetHashCode()
@@ -125,6 +146,10 @@ public sealed record LaunchProfile
         hash.Add(WindowClass);
         hash.Add(TitleContains);
         hash.Add(Source);
+        hash.Add(Host);
+        hash.Add(Port);
+        hash.Add(User);
+        hash.Add(Identity);
         foreach (var argument in Args) hash.Add(argument, StringComparer.Ordinal);
         return hash.ToHashCode();
     }

@@ -12,6 +12,11 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
+    <!--
+      Dynamic skip. xunit 2.x has no Assert.Skip (that is v3), and a test that silently passes when
+      its server is absent would be a green tick proving nothing. Used only by RemoteLiveTests.
+    -->
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.85" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
 

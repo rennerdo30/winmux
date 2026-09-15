@@ -73,6 +73,9 @@ to there, so the same reasoning points the other way: they need a real client, t
 and `ICredentialStore` now exists to hold their passwords. They belong behind
 `IFileBrowserFileSystem`, which is already the file browser's seam.
 
+> **Built on 2026-09-16** — see [ADR 0020](0020-sftp-and-ftp.md). SCP still gets no kind of its own,
+> for the reason given there: it cannot list a directory.
+
 ## Consequences
 
 - A user-facing guide ships in place of code:

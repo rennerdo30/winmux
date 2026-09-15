@@ -35,6 +35,8 @@ plus, optionally, a port, a user and an SSH identity file. WinMux builds the com
 |---|---|---|
 | SSH | `ssh.exe [-p port] [-i identity] [user@]host` | a terminal pane |
 | Remote Desktop | `mstsc.exe /v:host[:port]` | a hosted application pane |
+| SFTP | nothing — WinMux speaks it | a file-browser pane on the remote |
+| FTP | nothing — WinMux speaks it | a file-browser pane on the remote |
 
 Both clients ship with Windows, so there is nothing to install. The default port is left off the
 command line rather than passed explicitly, so an SSH connection still honours whatever your
@@ -54,6 +56,36 @@ would be worse than using the one Windows provides.
 
 Network shares are the other half of working remotely, and they work differently: Windows mounts
 them and WinMux just uses the path. See [Network shares](/network-shares/).
+
+### Browsing a server
+
+**SFTP** and **FTP** are different from the other two: there is no Windows client to hand them to,
+so WinMux implements them, and the pane you get is the ordinary file browser pointed somewhere else.
+Everything in [Keyboard](/keyboard/#in-a-file-browser-pane) works the same — new folder, rename,
+copy, paste, delete — because it is the same browser.
+
+Two differences you will notice, both of them the protocol's doing rather than a gap:
+
+- **There is no Recycle Bin on a server.** `Delete` says so and refuses; `Shift+Delete` deletes, and
+  asks first. WinMux does not invent a hidden trash folder, because that is a promise it could not
+  keep the moment anyone touched the server by other means.
+- **Copying is a download and an upload.** Neither protocol has a server-side copy, so duplicating a
+  large file on the server costs its size twice over the wire. There is no way around that from a
+  client.
+
+**SFTP can use a key.** Put the private key file in the profile's identity field and there is no
+password to type or store. Otherwise WinMux asks once and offers to keep it in Windows Credential
+Manager.
+
+**SCP has no entry of its own**, deliberately. It is a copy command with no directory listing — there
+is nothing for a browser to show — and every server that speaks SCP speaks SFTP.
+
+<Aside type="caution" title="Plain FTP is clear text">
+FTP sends your password and your files unencrypted. WinMux asks for FTPS and uses it whenever the
+server offers it, and the sign-in dialog says so plainly when it cannot. A server with no encryption
+still connects, because those are exactly the old devices that have nothing else — but know what you
+are sending. SFTP has no such problem.
+</Aside>
 
 ## Hosting an application
 

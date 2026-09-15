@@ -21,9 +21,16 @@ internal static class ProfilePaneFactory
             ? new WorkingDirectory(profile.WorkingDirectory, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow)
             : inherited ?? WorkingDirectory.None;
 
-        // A connection is resolved into a program and arguments first, so everything below treats
-        // it exactly like any other profile — one code path for launching, whatever the source.
-        if (RemoteConnection.IsConnection(profile.Kind))
+        // SFTP and FTP are connections with no program: WinMux speaks them itself, so they become a
+        // file-browser pane pointed at the remote rather than a command line.
+        if (FileBrowser.Remote.RemoteFileBrowserTarget.From(profile) is { } remote)
+        {
+            return RemoteBrowser(profile, remote);
+        }
+
+        // Every other connection is resolved into a program and arguments first, so everything below
+        // treats it exactly like any other profile — one code path for launching, whatever the source.
+        if (RemoteConnection.LaunchesProgram(profile.Kind))
         {
             var command = RemoteConnection.Resolve(profile);
             profile = profile with { Program = command.Program, Args = command.Args };
@@ -32,6 +39,20 @@ internal static class ProfilePaneFactory
         return profile.PaneKind == PaneKind.Terminal
             ? Terminal(profile, cwd)
             : Application(profile, cwd);
+    }
+
+    private static Pane RemoteBrowser(LaunchProfile profile, FileBrowser.Remote.RemoteFileBrowserTarget remote)
+    {
+        // The working directory doubles as the remote starting path, so a profile can open straight
+        // into /srv/www. It is a POSIX path on the far side, not a Windows one.
+        var start = string.IsNullOrWhiteSpace(profile.WorkingDirectory) ? "/" : profile.WorkingDirectory;
+
+        return new Pane(PaneId.New(), PaneKind.FileBrowser, profile.Name, new RestoreDescriptor
+        {
+            Kind = PaneKind.FileBrowser,
+            Title = profile.Name,
+            Extras = remote.ToExtras(start),
+        });
     }
 
     private static Pane Terminal(LaunchProfile profile, WorkingDirectory cwd)

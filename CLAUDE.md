@@ -167,8 +167,14 @@ theirs.
 Windows mounts SMB and NFS; a share is then an ordinary UNC path or drive letter and the file
 browser walks it unchanged. Do not add an SMB or NFS client — it buys no capability the OS does not
 already provide, and it would put a parser for untrusted network bytes inside the shell process that
-priority 2 exists to keep alive. SFTP and FTP are the opposite case, because Windows offers nothing
-to delegate to: they are wanted, and they belong behind `IFileBrowserFileSystem`.
+priority 2 exists to keep alive.
+
+**SFTP and FTP are the opposite case and WinMux does speak them**
+([ADR 0020](docs/adr/0020-sftp-and-ftp.md)), because Windows offers no client to delegate to. Each
+is one `IFileBrowserFileSystem` (SSH.NET and FluentFTP, both MIT) and nothing above that interface
+knows the difference. SCP gets no kind of its own: it cannot list a directory. Remote paths go
+through `RemotePath`, never `System.IO.Path`, which answers for Windows and would put a backslash in
+a POSIX path.
 
 A `Stack` may appear anywhere a node may, including inside another `Stack`
 ([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md)). Its tab strip is **reserved
