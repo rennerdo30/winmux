@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using WinMux.Platform;
+using Avalonia.VisualTree;
 
 namespace WinMux.Shell.Chrome;
 
@@ -26,11 +28,11 @@ namespace WinMux.Shell.Chrome;
 ///
 /// Two consequences of owning the caption, worth knowing before touching this:
 ///
-/// * <b>Snap layouts are lost.</b> Hovering the system maximise button shows Windows 11's snap
-///   flyout, and that is driven by <c>WM_NCHITTEST</c> returning <c>HTMAXBUTTON</c>. Reaching it
-///   would mean a new capability on <c>IHostWindowService</c>, since the shell declares no P/Invoke
-///   (CLAUDE.md section 3). Aero Snap by dragging, the Win+arrow keys and the window menu all still
-///   work, because those are the system's and we have not replaced them.
+/// * <b>Snap layouts are kept, but not for free.</b> Windows 11 offers its snap flyout when the
+///   pointer rests on a window's maximise button, and it finds that button by asking the window —
+///   which an app drawing its own caption never gets asked. <see cref="ISnapLayoutService"/> is the
+///   platform capability that answers, and claiming the rectangle means the system, not Avalonia,
+///   now drives that button: its click and its hover state arrive through the service.
 /// * <b>A maximised extended window is larger than its monitor.</b> Windows oversizes it by the
 ///   resize border on every edge, which would push the caption buttons off-screen. Avalonia reports
 ///   the overhang as <see cref="Window.OffScreenMargin"/>, and the root takes it as padding.
@@ -77,6 +79,24 @@ internal static class TitleBar
         // one is the kind of small wrongness that makes hand-drawn chrome obvious.
         var maximiseGlyph = new Panel { VerticalAlignment = VerticalAlignment.Center };
         var maximise = CaptionButton(maximiseGlyph, "Maximize", () => ToggleMaximised(window));
+
+        // Once the rectangle is claimed, Windows stops delivering ordinary mouse input over it, so
+        // the button's own Click never fires and its hover pseudo-class is never set. Both come
+        // back through the service instead.
+        IDisposable? snap = null;
+        window.Opened += (_, _) =>
+        {
+            if (window.TryGetPlatformHandle()?.Handle is not { } handle || handle == nint.Zero) return;
+
+            snap = PlatformServices.SnapLayouts.Track(
+                WindowHandle.FromPlatformValue(handle),
+                new MaximizeButton(
+                    Bounds: () => ButtonBounds(window, maximise),
+                    Invoke: () => Avalonia.Threading.Dispatcher.UIThread.Post(() => ToggleMaximised(window)),
+                    HoverChanged: hovered => Avalonia.Threading.Dispatcher.UIThread.Post(
+                        () => maximise.Classes.Set(Theme.CaptionHover, hovered))));
+        };
+        window.Closed += (_, _) => snap?.Dispose();
 
         var close = CaptionButton(Icons.CaptionClose(), "Close", window.Close);
         close.Classes.Add(Theme.CaptionClose);
@@ -165,6 +185,28 @@ internal static class TitleBar
         };
 
         return bar;
+    }
+
+    /// <summary>
+    /// Where a caption button is, in the window's client area, in physical pixels.
+    ///
+    /// Physical because that is what the window system speaks; Avalonia's bounds are logical, so
+    /// they are scaled here rather than at the boundary, which has no business knowing about
+    /// Avalonia's coordinate system.
+    /// </summary>
+    private static ClientRect? ButtonBounds(Window window, Visual button)
+    {
+        if (!button.IsVisible || button.Bounds.Width <= 0) return null;
+
+        var topLeft = button.TranslatePoint(new Point(0, 0), window);
+        if (topLeft is not { } origin) return null;
+
+        var scale = window.RenderScaling;
+        return new ClientRect(
+            (int)(origin.X * scale),
+            (int)(origin.Y * scale),
+            (int)(button.Bounds.Width * scale),
+            (int)(button.Bounds.Height * scale));
     }
 
     private static void ToggleMaximised(Window window) =>

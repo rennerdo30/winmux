@@ -77,6 +77,9 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
   windows already open, and a row dragged onto a pane is adopted there. Dragging the
   application's *own* window onto WinMux is not possible: Windows delivers a window-move to the
   window being moved, not to whatever it passes over, so there is no drop to receive.
+- **Snap layouts are back.** `ISnapLayoutService` claims the maximise button's rectangle so
+  Windows 11 offers its flyout again — the affordance taken away by drawing our own caption.
+  See the 2026-09-15 addendum to ADR 0016 for what claiming a caption button costs.
 
 ## The next action
 
@@ -84,7 +87,7 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
 screen; what is left is feature work, and the next real finding will come from use.
 
 When picking that feature work up, in rough order of what the product is missing:
-provider discovery and packaging, and snap layouts. Snap layouts are a separate, known cost of drawing our
+provider discovery and packaging. Snap layouts are a separate, known cost of drawing our
 own caption ([ADR 0016](docs/adr/0016-windows-11-chrome.md)) and need a new `IHostWindowService`
 capability to recover.
 

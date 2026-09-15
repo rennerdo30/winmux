@@ -34,4 +34,7 @@ internal static class PlatformServices
 
     /// <summary>Being told when the user focuses something the shell did not focus itself.</summary>
     public static IForegroundWindowMonitor Foreground { get; } = new Win32ForegroundWindowMonitor();
+
+    /// <summary>Claiming our own maximise button, so Windows 11 still offers snap layouts.</summary>
+    public static ISnapLayoutService SnapLayouts { get; } = new Win32SnapLayoutService();
 }

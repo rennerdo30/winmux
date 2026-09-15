@@ -202,6 +202,16 @@ internal static class Theme
     public const string CaptionButton = "caption-button";
     public const string CaptionClose = "caption-close";
 
+    /// <summary>
+    /// Hover on a caption button, driven by the window system rather than by the pointer.
+    ///
+    /// Once <see cref="WinMux.Platform.ISnapLayoutService"/> claims the maximise button's
+    /// rectangle, Windows stops delivering ordinary mouse input over it, so Avalonia never sets
+    /// <c>:pointerover</c> there. Avalonia also refuses to let anything but the control set that
+    /// pseudo-class — it throws — so the system-driven state needs a name of its own.
+    /// </summary>
+    public const string CaptionHover = "caption-hover";
+
     public static Styles Build()
     {
         var styles = new Styles();
@@ -232,6 +242,13 @@ internal static class Theme
                 new Setter(Layoutable.WidthProperty, Palette.CaptionButtonWidth),
                 new Setter(Layoutable.HeightProperty, Palette.CaptionHeight),
             },
+        });
+
+        // The same appearance as a real hover, for the button the system is hovering for us.
+        styles.Add(new Style(x => x.OfType<Button>().Class(CaptionButton).Class(CaptionHover)
+                                   .Template().OfType<ContentPresenter>())
+        {
+            Setters = { new Setter(ContentPresenter.BackgroundProperty, Palette.HoverBrush) },
         });
 
         // Close is the exception to every hover rule in this file.

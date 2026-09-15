@@ -55,11 +55,10 @@ means giving up Avalonia and the portability CLAUDE.md section 1 keeps open.
 
 ## Consequences
 
-- **Snap layouts are lost.** Hovering the system maximise button shows Windows 11's snap flyout,
-  driven by `WM_NCHITTEST` returning `HTMAXBUTTON`. The shell declares no P/Invoke
-  ([ADR 0013](0013-phase-5-platform-layer.md)), so reaching it needs a new capability on
-  `IHostWindowService`. Aero Snap by dragging, Win+arrow and the window menu all still work: those
-  are the system's, and they were not replaced.
+- **Snap layouts had to be bought back.** Hovering a maximise button shows Windows 11's snap
+  flyout, and the system finds that button by asking the window through `WM_NCHITTEST` — which an
+  app drawing its own caption never gets asked. `ISnapLayoutService` (added 2026-09-15) is the
+  capability that answers; see the addendum below.
 - Dragging the window and double-click-to-maximise stop being free and are handled on the row.
 - A maximised window with an extended client area is larger than its monitor by the resize border;
   the root takes `OffScreenMargin` as its margin so the caption buttons stay reachable.
@@ -92,3 +91,32 @@ Three rules follow, and they are in HANDOFF.md:
 
 The ADR 0014 note should now be read as probably describing the same measurement error rather than
 an Avalonia bug. It has not been re-tested, so the toolbar's buttons stay where they are.
+
+
+---
+
+## Addendum, 2026-09-15 — snap layouts, and what claiming a caption button costs
+
+`ISnapLayoutService` lets the shell say "this rectangle is my maximise button", and
+`Win32SnapLayoutService` answers `WM_NCHITTEST` with `HTMAXBUTTON` over it. The flyout is back,
+verified on screen.
+
+There is no API for this. The only way to be offered the flyout is to answer the hit test the way a
+window with a system caption would, so the implementation subclasses the window procedure — keeping
+the previous one and restoring it on dispose, and passing through every message it does not claim.
+
+**Claiming the rectangle takes the button away from the application**, and all three consequences
+have to be handled or it stops working:
+
+* Windows stops sending ordinary mouse messages over that area, so Avalonia's `Click` never fires.
+  The click arrives as `WM_NCLBUTTONUP` instead.
+* `WM_NCLBUTTONDOWN` must be swallowed. Left to the default handler it begins a caption drag, and
+  the window moves when you press maximise.
+* Hover is the system's to report now, through `WM_NCMOUSEMOVE` and `WM_NCMOUSELEAVE`.
+
+The last one has a trap that crashed the app on first run: Avalonia refuses to let anything but a
+control set its own `:pointerover` and throws `ArgumentException` when you try. The system-driven
+state therefore needs a class of its own — `Theme.CaptionHover` — styled to match.
+
+The contract is stated as intent, so a platform with no such concept returns null from `Track` and
+the application keeps working with one affordance fewer.

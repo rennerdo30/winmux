@@ -407,8 +407,9 @@ target is Win32, so it lives behind `IAppCatalog` in `WinMux.Platform` and is im
   ([ADR 0016](docs/adr/0016-windows-11-chrome.md)).
 - **The window owns its caption.** `WindowDecorations.BorderOnly` leaves Avalonia drawing the
   border, shadow and resize grips and hands the title bar to `Chrome/TitleBar.cs`, which puts the
-  toolbar in it beside the app icon. The cost is that snap layouts need `WM_NCHITTEST`, which the
-  shell cannot reach; the benefit is the single most recognisable Windows 11 signal there is.
+  toolbar in it beside the app icon. Snap layouts come back through `ISnapLayoutService`, which
+  claims the maximise button rectangle — and with it that button’s clicks and hover, which the
+  system then drives. See the 2026-09-15 addendum to ADR 0016 before touching either.
 - **A screenshot is evidence only from a DPI-aware process.** Chrome that lays out correctly and
   appears to paint nothing is, on this machine, more likely a virtualised capture than an Avalonia
   bug — a whole session was spent on that once. Render to a `RenderTargetBitmap` in-process to tell
