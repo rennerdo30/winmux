@@ -165,6 +165,15 @@ public sealed record RestoreDescriptor
     public required PaneKind Kind { get; init; }
     public string Title { get; init; } = string.Empty;
 
+    /// <summary>
+    /// The user named this pane, so nothing else may rename it.
+    ///
+    /// Without this a rename survives until the shell next sets its console title — which cmd does
+    /// on almost every command — and the label the user chose silently reverts. A custom title is a
+    /// decision; an automatic one is a report, and a decision outranks a report.
+    /// </summary>
+    public bool TitleIsCustom { get; init; }
+
     /// <summary>Resolved absolute path. Resolving at save time survives a changed PATH.</summary>
     public string? Program { get; init; }
 

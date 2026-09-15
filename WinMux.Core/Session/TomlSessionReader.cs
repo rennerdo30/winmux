@@ -185,6 +185,7 @@ public static class TomlSessionReader
                 {
                     Kind = kind,
                     Title = title,
+                    TitleIsCustom = Optional(t, "title_custom") is true,
                     Program = Optional(t, "program") as string,
                     Args = StringListOrEmpty(t, "args", at),
                     EnvOverrides = Map(t, "env", at, StringComparer.OrdinalIgnoreCase),

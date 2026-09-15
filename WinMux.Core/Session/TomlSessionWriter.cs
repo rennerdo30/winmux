@@ -95,6 +95,9 @@ public static class TomlSessionWriter
         Kv(sb, PaneKeyWidth, "id", Str(pane.Id.ToString("D")));
         Kv(sb, PaneKeyWidth, "kind", Str(TomlNames.Text(pane.Kind)));
         Kv(sb, PaneKeyWidth, "title", Str(pane.Title));
+        // Only written when true: the common pane takes its title from its program, and a
+        // title_custom = false on every entry would be noise in the part meant to be read.
+        if (pane.Restore.TitleIsCustom) Kv(sb, PaneKeyWidth, "title_custom", "true");
 
         // `is not null` rather than IsNullOrEmpty: an empty program and an absent one are different
         // states, and collapsing them here would make the round trip lossy for no benefit.

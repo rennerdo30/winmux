@@ -240,8 +240,18 @@ internal sealed class MainWindow : Window
 
     private void SyncRuntimeState(Pane pane, IPaneRuntime runtime)
     {
+        // Keep the user's name for the pane across whatever the runtime reports about itself.
+        var custom = pane.Restore.TitleIsCustom ? pane.Title : null;
         pane.Restore = runtime.CaptureRestoreDescriptor();
-        if (!string.IsNullOrWhiteSpace(pane.Restore.Title)) pane.Title = pane.Restore.Title;
+        if (custom is not null)
+        {
+            pane.Title = custom;
+            pane.Restore = pane.Restore with { Title = custom, TitleIsCustom = true };
+        }
+        else if (!string.IsNullOrWhiteSpace(pane.Restore.Title))
+        {
+            pane.Title = pane.Restore.Title;
+        }
         if (!string.IsNullOrWhiteSpace(runtime.StatusMessage))
         {
             _message = $"{pane.Title}: {runtime.StatusMessage}";
@@ -329,6 +339,7 @@ internal sealed class MainWindow : Window
 
         var commands = new TabStripCommands(
             Activate: FocusPane,
+            Rename: pane => Run(RenamePaneAsync(pane)),
             CloseTab: pane => Run(CloseTabAsync(pane)),
             AddTab: stack => Run(AddTabToStackAsync(stack)),
             MoveStrip: SetTabPlacement);
@@ -366,6 +377,59 @@ internal sealed class MainWindow : Window
             _message = ex.Message;
             UpdateStatus();
         }
+    }
+
+    /// <summary>
+    /// Name a pane, or hand it back to whatever it wants to call itself.
+    ///
+    /// tmux binds this to `prefix ,` and so do we, because the people most likely to want it are
+    /// the people who already have that in their fingers.
+    /// </summary>
+    internal async Task RenamePaneAsync(PaneId target)
+    {
+        if (_tree.GetPane(target) is not { } pane)
+        {
+            _message = "no pane to rename";
+            UpdateStatus();
+            return;
+        }
+
+        var prompt = new PromptWindow(
+            "Rename pane",
+            "What should this pane be called? The name stays put even when the program inside " +
+            "changes its own title, and it is saved with the session.",
+            pane.Title,
+            clearLabel: pane.Restore.TitleIsCustom ? "Use automatic name" : null);
+
+        await prompt.ShowDialog(this);
+
+        if (prompt.Cleared)
+        {
+            // Back to automatic. The next title the runtime reports wins, and until then the
+            // current text stays so the tab does not go blank.
+            pane.Restore = pane.Restore with { TitleIsCustom = false };
+            _message = "pane will use its automatic name again";
+        }
+        else if (prompt.Result is { } name)
+        {
+            if (name.Length == 0)
+            {
+                _message = "a pane name cannot be empty";
+                UpdateStatus();
+                return;
+            }
+
+            pane.Title = name;
+            pane.Restore = pane.Restore with { Title = name, TitleIsCustom = true };
+            _message = "renamed to " + name;
+        }
+        else
+        {
+            return;
+        }
+
+        Relayout();
+        _session.RequestSave();
     }
 
     private void FocusPane(PaneId pane)
@@ -521,6 +585,7 @@ internal sealed class MainWindow : Window
         _actions.RegisterAsync(ShellActionNames.ClosePane, _ => new ValueTask(CloseFocusedAsync()));
         _actions.RegisterAsync(ShellActionNames.NewTab, _ => new ValueTask(AddTabAsync()));
         _actions.RegisterAsync(ShellActionNames.NewTabVertical, _ => new ValueTask(AddVerticalTabAsync()));
+        _actions.RegisterAsync(ShellActionNames.RenamePane, _ => new ValueTask(RenamePaneAsync(_tree.Focused)));
         _actions.RegisterAsync(ShellActionNames.NewEmptyPane,
             _ => new ValueTask(AddTabAsync(Pane.Empty(), "new empty pane")));
         _actions.Register(ShellActionNames.MoveTabsTop, () => SetFocusedTabPlacement(TabStripPlacement.Top));
@@ -1290,8 +1355,17 @@ internal sealed class MainWindow : Window
         {
             if (!_runtimes.TryGetValue(pane.Id, out var runtime)) continue;
             runtime.RefreshRestoreState();
+            var custom = pane.Restore.TitleIsCustom ? pane.Title : null;
             pane.Restore = runtime.CaptureRestoreDescriptor();
-            if (!string.IsNullOrWhiteSpace(pane.Restore.Title)) pane.Title = pane.Restore.Title;
+            if (custom is not null)
+            {
+                pane.Title = custom;
+                pane.Restore = pane.Restore with { Title = custom, TitleIsCustom = true };
+            }
+            else if (!string.IsNullOrWhiteSpace(pane.Restore.Title))
+            {
+                pane.Title = pane.Restore.Title;
+            }
         }
     }
 

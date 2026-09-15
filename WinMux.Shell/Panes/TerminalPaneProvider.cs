@@ -92,8 +92,13 @@ internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime
         {
             if (!string.IsNullOrWhiteSpace(title))
             {
-                _pane.Title = title;
-                _pane.Restore = _pane.Restore with { Title = title };
+                // A shell sets its console title constantly — cmd does it on almost every
+                // command — so an automatic title must never overwrite one the user chose.
+                if (!_pane.Restore.TitleIsCustom)
+                {
+                    _pane.Title = title;
+                    _pane.Restore = _pane.Restore with { Title = title };
+                }
             }
             StateChanged?.Invoke(this, EventArgs.Empty);
         });

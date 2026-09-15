@@ -4,10 +4,12 @@ A window multiplexer for Windows. Think **tmux, but outside the terminal** — s
 tabs and saved sessions, where every pane is a real, independent OS process, and a pane can
 be a shell, a file browser, or *any* Windows application.
 
-> Status: **Phase 3 complete — persistent terminal and foreign-app multiplexer.** `WinMux.exe`
-> continuously saves the layout and restore intent, while isolated PaneHost processes embed or
-> attach foreign applications using measured compatibility rules. File panes and broad app
-> compatibility are not done. See `HANDOFF.md` for the measured state.
+> Status: **Phases 0–5 complete; the GUI (Phase 6) is most of the way through its first pass.**
+> `WinMux.exe` continuously saves the layout and restore intent, while isolated PaneHost processes
+> embed or attach foreign applications using measured compatibility rules. Any installed
+> application can be put in a pane from a Start Menu picker, or adopted from a window that is
+> already open. Broad app compatibility is still a measured surface, not a claim.
+> See `HANDOFF.md` for the current state.
 
 ---
 
@@ -41,10 +43,16 @@ shells, and Workspaces-grade persistence — in a single host window with one ke
 ## Pane types
 
 1. **Terminal** — PowerShell, cmd, WSL, pwsh, ssh. Backed by ConPTY, one child process each.
-2. **File browser** *(planned)* — built in, native. Dual-pane friendly, with terminal handoff at the
-   selected directory.
+2. **File browser** — built in, native. Dual-pane friendly, with terminal handoff at the selected
+   directory.
 3. **Foreign app** — applications are embedded or attached through one isolated pane-host process
    per pane. The session can request `auto`, `embed`, or `attach`.
+4. **Empty** — a pane you make first and fill afterwards. It offers your profiles, every
+   application the Start Menu knows about, and the windows already open, which it can adopt.
+
+A **profile** is a named thing you can put in a pane — a shell or an application, it makes no
+difference to the layout. Profiles live in `%APPDATA%\WinMux\profiles.toml`, appear in every menu
+that opens a pane, and are added from the installed-application list rather than by typing paths.
 
 ## Can it really host *any* Windows app?
 
@@ -113,13 +121,19 @@ the target; portability is a design discipline, not a promise.
   system must provide and the shell no longer calls Windows itself. **Not proven on X11**, and it
   will not be until someone writes the X11 host — WinMux is a Windows product today, and keeping
   the seam honest is a discipline rather than a promise.
+- **Phase 6 — the interface.** **In progress.** Nested tab groups with strips on any edge, a
+  toolbar covering every layout operation, Mica and the system accent, profiles and the application
+  catalogue, empty panes, window adoption, renaming, settings. Still missing: terminal selection
+  and scrollback, tab and pane reordering, dragging a window into a pane.
 
 ## Run it
 
 ```powershell
-.\scripts\run.ps1                                          # build and launch
+.\run.cmd                                                   # build and launch
 .\scripts\run.ps1 -Session .\examples\tabs-and-splits.toml  # nested tab groups
 ```
+
+`run.cmd` and `publish.cmd` are double-clickable and need no execution-policy change.
 
 Or by hand:
 
@@ -131,8 +145,8 @@ dotnet build WinMux.slnx -c Release
 For a folder you can copy elsewhere:
 
 ```powershell
-.\scripts\publish.ps1                  # -> dist\Release
-.\scripts\publish.ps1 -SelfContained   # also carries the .NET runtime
+.\publish.cmd                  # -> dist\WinMux-<version>-win-x64\ and a .zip
+.\publish.cmd -SelfContained   # also carries the .NET runtime
 ```
 
 To see the product phases rather than only run unit tests, use the visible walkthroughs:
@@ -145,7 +159,7 @@ To see the product phases rather than only run unit tests, use the visible walkt
 Every layout operation is a toolbar button, so none of this has to be memorised — but the default
 keymap is tmux-style: `Ctrl+B`, then `%`/`"` to split, arrows to move focus,
 `Shift+arrows` to resize, `c` for a tab, `v` for a tab group with its tabs down the side,
-`n`/`p` to cycle, `x` to close, `w` to save, `A` to
+`n`/`p` to cycle, `,` to rename a pane, `e` for an empty pane, `x` to close, `w` to save, `A` to
 toggle a foreign pane between embed and attach, and `:` for
 the command palette. `1`–`4` open cmd, Windows PowerShell, PowerShell 7, or WSL profiles; `i` opens
 cwd-reporting setup. Pass

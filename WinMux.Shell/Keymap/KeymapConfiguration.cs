@@ -49,6 +49,8 @@ public sealed record KeymapConfiguration
         new("C", ShellActionNames.NewTab, scope),
         new("V", ShellActionNames.NewTabVertical, scope),
         new("E", ShellActionNames.NewEmptyPane, scope),
+        // tmux binds rename-window to `prefix ,`.
+        new(",", ShellActionNames.RenamePane, scope),
         new("N", ShellActionNames.NextTab, scope),
         new("P", ShellActionNames.PreviousTab, scope),
         new("W", ShellActionNames.SaveSession, scope),

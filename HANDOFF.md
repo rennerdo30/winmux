@@ -12,9 +12,11 @@ providers behind `WinMux.Panes`. The platform layer is extracted, so `WinMux.She
 strip on any edge ([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md)). Any installed
 application can be put in a pane through a Start Menu picker, kept as a profile, or adopted from a
 window that is already open ([ADR 0015](docs/adr/0015-profiles-app-catalog-and-empty-panes.md)).
+Panes can be renamed — double-click a tab, right-click it, or `Ctrl+B ,` as in tmux — and the name
+outranks whatever the program inside calls itself.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-15 at `c421c9b`: 398 passed, 0 warnings.** Version 0.6.0.
+**Verified 2026-09-15: 404 passed, 0 warnings.** Version 0.6.0.
 **Nothing has been pushed since `68103d5`** (Phase 3), which is where `origin/main` still sits.
 Everything after it — Phases 4, 5 and all of the Phase 6 work — exists only on this machine.
 (A count of commits is deliberately not written here: it would be wrong the moment this file is
@@ -39,6 +41,9 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
   on every title change. See the addenda to ADR 0014.
 - **Build** — the shell had been shipping a stale `WinMux.PaneHost.exe` because the copy target
   guessed the wrong output directory; on a clean clone it would have copied nothing, silently.
+- **Renaming** — `RestoreDescriptor.TitleIsCustom` makes a user-chosen name outrank the automatic
+  one, which matters because cmd sets its console title on almost every command and would otherwise
+  undo the rename within seconds.
 
 ## The next action
 
@@ -104,6 +109,9 @@ dragging a window into a pane, provider discovery and packaging.
   does not ship, or fail on rounded rectangles. Headless Chrome works (`assets/build-icon.py`).
 
 **Judgement**
+- Do not let an automatic title overwrite a name the user chose. A shell sets its console title
+  constantly, so a rename without `TitleIsCustom` reverts within seconds and looks like a bug in
+  the rename rather than in the title handling.
 - Do not ship a capability with no interface. Foreign-app panes existed from Phase 3 with no way to
   create one; pane resizing had no handle. Both went unnoticed for months (CLAUDE.md section 5a).
 - Do not judge a colour from a screenshot: an active tab that looked light-on-dark measured

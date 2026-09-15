@@ -14,11 +14,13 @@ namespace WinMux.Shell.Chrome;
 
 /// <summary>What a tab strip can ask the shell to do. The strip itself owns no state.</summary>
 /// <param name="Activate">Bring a tab forward and focus it.</param>
+/// <param name="Rename">Give the tab's pane a name of the user's choosing.</param>
 /// <param name="CloseTab">Close a tab, by the same path as closing any pane.</param>
 /// <param name="AddTab">Add a tab to this stack.</param>
 /// <param name="MoveStrip">Put this stack's tabs on a different edge.</param>
 internal sealed record TabStripCommands(
     Action<PaneId> Activate,
+    Action<PaneId> Rename,
     Action<PaneId> CloseTab,
     Action<StackNode> AddTab,
     Action<StackNode, TabStripPlacement> MoveStrip);
@@ -150,9 +152,18 @@ internal static class TabStripView
         tab.Classes.Add(Theme.Tab);
         if (isActive) tab.Classes.Add(Theme.ActiveTab);
         tab.Click += (_, _) => commands.Activate(target);
+
+        // Double-click to rename is the convention every tabbed application uses, and it costs
+        // nothing: the first click of the pair has already activated the tab.
+        tab.DoubleTapped += (_, e) => { e.Handled = true; commands.Rename(target); };
+
         tab.ContextMenu = new ContextMenu
         {
-            ItemsSource = new[] { Item("Close tab", () => commands.CloseTab(target)) },
+            ItemsSource = new[]
+            {
+                Item("Rename\u2026", () => commands.Rename(target)),
+                Item("Close tab", () => commands.CloseTab(target)),
+            },
         };
 
         // The accent strip is added to *every* tab, transparent when inactive. Adding it only to the

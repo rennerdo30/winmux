@@ -16,6 +16,7 @@ public static class ShellActionNames
     public const string ClosePane = "close-pane";
     public const string NewTab = "new-tab";
     public const string NewEmptyPane = "new-empty-pane";
+    public const string RenamePane = "rename-pane";
 
     /// <summary>A tab group whose tabs run down the side rather than across the top.</summary>
     public const string NewTabVertical = "new-tab-vertical";
@@ -57,6 +58,7 @@ public static class ShellActionNames
         ClosePane,
         NewTab,
         NewEmptyPane,
+        RenamePane,
         NewTabVertical,
         NextTab,
         PreviousTab,
