@@ -1,45 +1,53 @@
 <#
 .SYNOPSIS
-    Publish WinMux into dist\ as a self-contained folder you can copy anywhere.
+    Package WinMux into a versioned release folder and zip under dist\.
 
 .DESCRIPTION
-    Produces dist\<Configuration>\ containing WinMux.exe, the winmux CLI, WinMux.PaneHost.exe and
-    the shipped foreign-app quirks database. The folder is deliberately flat: PaneHost has to sit
-    beside WinMux.exe, because that is where the shell looks for it.
+    Produces dist\WinMux-<version>-win-x64\ and the matching .zip: WinMux.exe, the winmux CLI,
+    WinMux.PaneHost.exe, the shipped foreign-app quirks database, the example sessions, LICENSE and
+    a short README. The folder is deliberately flat — PaneHost has to sit beside WinMux.exe,
+    because that is where the shell looks for it.
 
-    Framework-dependent by default — it needs the .NET 10 desktop runtime. Pass -SelfContained for
-    a copy that carries its own runtime and needs nothing installed.
+    Framework-dependent by default, so it needs the .NET 10 desktop runtime. -SelfContained
+    produces a copy that carries its own runtime and needs nothing installed.
 
 .EXAMPLE
     .\scripts\publish.ps1
-    Publish Release into dist\Release.
+    Package the current version into dist\.
 
 .EXAMPLE
     .\scripts\publish.ps1 -SelfContained
-    Publish a copy that runs on a machine with no .NET installed.
+    Package a copy that runs on a machine with no .NET.
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
 
-    # Where to publish. Defaults to dist\<Configuration> at the repository root.
+    # Where to put the release folder. Defaults to dist\WinMux-<version>-win-x64.
     [string]$Destination,
 
     # Carry the .NET runtime along, for a machine that has none.
     [switch]$SelfContained,
 
-    # Remove the destination before publishing, so a stale file can never survive a rename.
-    [switch]$Clean
+    # Skip the .zip and leave only the folder.
+    [switch]$NoArchive
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-if (-not $Destination) { $Destination = Join-Path $repo "dist\$Configuration" }
+$shellProject = Join-Path $repo 'WinMux.Shell\WinMux.Shell.csproj'
 
-if ($Clean -and (Test-Path -LiteralPath $Destination)) {
-    Remove-Item -LiteralPath $Destination -Recurse -Force
-}
+# One source of truth: Directory.Build.props. Reading it back from MSBuild rather than repeating
+# it here means the folder name can never disagree with what the binaries report about themselves.
+$version = (dotnet msbuild $shellProject -getProperty:Version -p:Platform=x64 | Select-Object -Last 1).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $version) { throw 'Could not read the product version from MSBuild.' }
+
+$name = "WinMux-$version-win-x64"
+if ($SelfContained) { $name += '-selfcontained' }
+if (-not $Destination) { $Destination = Join-Path $repo "dist\$name" }
+
+if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Recurse -Force }
 New-Item -ItemType Directory -Path $Destination -Force | Out-Null
 $Destination = (Resolve-Path -LiteralPath $Destination).Path
 
@@ -50,27 +58,74 @@ $common = @(
     '-o', $Destination
 )
 
+Write-Host "Packaging WinMux $version ($Configuration, win-x64)..." -ForegroundColor Cyan
+
 # The shell carries PaneHost and the quirks database with it (see CopyPaneHostOnPublish).
-dotnet publish (Join-Path $repo 'WinMux.Shell\WinMux.Shell.csproj') @common
+dotnet publish $shellProject @common
 if ($LASTEXITCODE -ne 0) { throw "Publishing WinMux.Shell failed with exit code $LASTEXITCODE." }
 
 dotnet publish (Join-Path $repo 'WinMux.Cli\WinMux.Cli.csproj') @common
 if ($LASTEXITCODE -ne 0) { throw "Publishing WinMux.Cli failed with exit code $LASTEXITCODE." }
 
+# Things a person unzipping this will want and cannot rebuild.
+Copy-Item -LiteralPath (Join-Path $repo 'LICENSE') -Destination $Destination
+$examples = Join-Path $Destination 'examples'
+New-Item -ItemType Directory -Path $examples -Force | Out-Null
+Copy-Item -Path (Join-Path $repo 'examples\*.toml') -Destination $examples
+
+@"
+WinMux $version (win-x64)
+=========================
+
+A window multiplexer for Windows: tmux's layout model applied to whole applications.
+
+Run it
+------
+  WinMux.exe                       the default layout
+  WinMux.exe examples\tabs-and-splits.toml    a layout with nested tab groups
+
+Note that a session file is LIVE: WinMux saves your layout back to the file you opened, so
+copy an example before editing it if you want to keep the original.
+
+$(if ($SelfContained) { "This copy carries its own .NET runtime; nothing needs to be installed." } else { "Requires the .NET 10 desktop runtime: https://dotnet.microsoft.com/download" })
+
+Everything is on the toolbar. The keyboard is tmux-style: Ctrl+B then % or " to split,
+arrows to move focus, c for a tab, v for a tab group with tabs down the side, x to close,
+: for the command palette.
+
+foreign-app-quirks.json beside this file is yours to edit; it maps applications to an
+embedding strategy and a window-selection rule.
+
+Source and issues: https://github.com/rennerdo30/winmux
+MIT licensed; see LICENSE.
+"@ | Set-Content -LiteralPath (Join-Path $Destination 'README.txt') -Encoding utf8
+
 # Verify rather than trust. Each of these is invisible until it is needed at runtime.
 $required = @(
-    @{ Path = 'WinMux.exe';          Why = 'the shell itself' },
-    @{ Path = 'WinMux.PaneHost.exe'; Why = 'foreign-app panes cannot start without it' },
-    @{ Path = 'winmux.exe';          Why = 'the command line surface' },
-    @{ Path = 'foreign-app-quirks.json'; Why = 'foreign-app selection rules' }
+    @{ Path = 'WinMux.exe';              Why = 'the shell itself' },
+    @{ Path = 'WinMux.PaneHost.exe';     Why = 'foreign-app panes cannot start without it' },
+    @{ Path = 'winmux.exe';              Why = 'the command line surface' },
+    @{ Path = 'foreign-app-quirks.json'; Why = 'foreign-app selection rules' },
+    @{ Path = 'LICENSE';                 Why = 'the licence this ships under' },
+    @{ Path = 'README.txt';              Why = 'how to run it' }
 )
 $missing = $required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $Destination $_.Path)) }
 if ($missing) {
     $detail = ($missing | ForEach-Object { "$($_.Path) ($($_.Why))" }) -join '; '
-    throw "Publish produced an incomplete dist: missing $detail"
+    throw "Packaging produced an incomplete release: missing $detail"
 }
 
 $size = (Get-ChildItem -LiteralPath $Destination -Recurse -File | Measure-Object -Property Length -Sum).Sum
 Write-Host ''
-Write-Host "Published to $Destination ($([math]::Round($size / 1MB, 1)) MB)"
-Write-Host "Run it with:  $(Join-Path $Destination 'WinMux.exe')"
+Write-Host "Release folder: $Destination  ($([math]::Round($size / 1MB, 1)) MB)" -ForegroundColor Green
+
+if (-not $NoArchive) {
+    $archive = Join-Path (Split-Path -Parent $Destination) "$name.zip"
+    if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+    Compress-Archive -Path (Join-Path $Destination '*') -DestinationPath $archive -CompressionLevel Optimal
+    $zipSize = (Get-Item -LiteralPath $archive).Length
+    Write-Host "Archive:        $archive  ($([math]::Round($zipSize / 1MB, 1)) MB)" -ForegroundColor Green
+}
+
+Write-Host ''
+Write-Host "Run it with:    $(Join-Path $Destination 'WinMux.exe')"

@@ -1,0 +1,25 @@
+<Project>
+
+  <!--
+    Product identity, in one place, for every project in the solution.
+
+    Before this there was no version anywhere: the built WinMux.exe reported 1.0.0.0 because that
+    is what MSBuild invents when nobody says otherwise, and a published folder could not be told
+    apart from any other. A release people can name is the difference between "a folder on my
+    machine" and something shippable.
+
+    0.x on purpose. CLAUDE.md still lists open decisions that belong before v1 — the
+    Terminal.Emulation supply-chain call among them — and a 1.0 is a promise about compatibility
+    that this project has not earned yet.
+  -->
+  <PropertyGroup>
+    <Version>0.6.0</Version>
+    <Product>WinMux</Product>
+    <Company>WinMux</Company>
+    <Authors>WinMux contributors</Authors>
+    <Copyright>Copyright (c) WinMux contributors</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/rennerdo30/winmux</RepositoryUrl>
+  </PropertyGroup>
+
+</Project>
