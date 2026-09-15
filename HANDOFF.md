@@ -143,6 +143,10 @@ keeps scrollback and can address it while the control has no wheel handler at al
 - Do not `dotnet build` WinMux.Shell.csproj alone and then run `bin/x64/Release/...`. The project
   is x64 only through the solution mapping, so a bare project build lands in `bin/Release/` and you
   test a stale exe. Build the solution (ADR 0014 addendum).
+- Do not call `SessionController.RequestSave()` from anything that fires at input frequency
+  without checking what capture costs. Debouncing the *write* does not help when producing the
+  snapshot is the expensive part: it walks every process on the machine per terminal pane
+  (120 ms for 334 processes). Window drag ran at 0.9 fps because of this (ADR 0014 addendum).
 - Do not judge a colour from a screenshot. An active tab that looked light-on-dark measured
   `#3A3A3A` — exactly right. Sample the pixel, or dump the resolved palette at runtime.
 - Do not leave `ThemeVariant.Default` and assume the platform is followed; read

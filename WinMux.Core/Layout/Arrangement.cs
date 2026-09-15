@@ -71,7 +71,7 @@ public sealed class Arrangement
 public readonly record struct LayoutMetrics(int DividerThickness, int HorizontalTabStrip, int VerticalTabStrip)
 {
     /// <summary>What the shell uses: a pixel surface at 100% scale.</summary>
-    public static readonly LayoutMetrics Default = new(6, 28, 180);
+    public static readonly LayoutMetrics Default = new(6, 34, 180);
 
     /// <summary>A character grid. Tabs are listed in text instead, so no strip is reserved.</summary>
     public static readonly LayoutMetrics CharacterGrid = new(1, 0, 0);
@@ -87,8 +87,14 @@ public static class Layouter
     /// <summary>Width of the gap between siblings, in pixels. Also the divider hit target.</summary>
     public const int DividerThickness = 6;
 
-    /// <summary>Height of a top or bottom tab strip, in pixels.</summary>
-    public const int TabStripThickness = 28;
+    /// <summary>
+    /// Height of a top or bottom tab strip, in pixels.
+    ///
+    /// Sized from what has to fit rather than picked: a 12px label needs about 16px of line box,
+    /// plus the tab's vertical padding, its accent strip and the strip's own border. 28 was too
+    /// small for that and clipped every label along its baseline.
+    /// </summary>
+    public const int TabStripThickness = 34;
 
     /// <summary>Width of a left or right tab strip, in pixels.</summary>
     public const int VerticalTabStripThickness = 180;

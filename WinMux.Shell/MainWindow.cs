@@ -154,7 +154,11 @@ internal sealed class MainWindow : Window
             _cwdCaptureTimer.Start();
         };
         Closing += (_, e) => Shutdown(e);
-        PositionChanged += (_, _) => Relayout();
+        // Moving the window changes no pane rectangle, so a full relayout — which rebuilds every
+        // tab strip — is pure waste at mouse-move frequency. The one thing that must follow the
+        // window is a foreign pane: its host is a separate top-level window positioned in SCREEN
+        // coordinates, so it does not move with us for free.
+        PositionChanged += (_, _) => FollowWindowMove();
         // Attach-mode windows sit above the shell but are not owned by it, so activating the shell
         // buries them. Re-assert placement (and z-order) whenever we come forward.
         Activated += (_, _) => { _session.Activate(this); _foreignProvider.Refresh(); Relayout(); };
@@ -265,6 +269,25 @@ internal sealed class MainWindow : Window
     /// many as there are stacks — usually one or two — so the cost is nothing next to the bugs that
     /// come from keeping a second model of the tree in sync with the tree.
     /// </summary>
+    /// <summary>
+    /// Re-assert foreign window placement after the shell window moves. Everything else in the
+    /// layout is expressed in canvas coordinates and has not changed.
+    /// </summary>
+    private void FollowWindowMove()
+    {
+        if (_canvas.Bounds.Width < 4 || _canvas.Bounds.Height < 4) return;
+
+        var arrangement = _tree.Arrange();
+        foreach (var pane in _tree.Panes)
+        {
+            if (!_runtimes.TryGetValue(pane.Id, out var runtime)) continue;
+            runtime.Arrange(new PaneArrangement(arrangement[pane.Id], arrangement.IsVisible(pane.Id)));
+        }
+
+        // The window's own bounds are persisted, so this still needs saving — just not per frame.
+        _session.RequestSave();
+    }
+
     private void UpdateTabStrips(Arrangement arrangement)
     {
         foreach (var strip in _tabStrips) _canvas.Children.Remove(strip);

@@ -135,3 +135,42 @@ system shows Mica.
 - The accent strip was added only to the active tab, which made it two pixels shorter than its
   neighbours and shifted the row as the selection moved. It is now on every tab, transparent when
   inactive.
+
+---
+
+## Addendum — dragging the window ran at one frame per second
+
+Reported as "like 5fps" when moving the window. Measured: **60 programmatic moves took 70.0 s —
+0.9 moves per second**, on the five-pane `tabs-and-splits` session.
+
+The cause was not rendering. `PositionChanged` called `Relayout()`, which ended in
+`SessionController.RequestSave()`. The autosaver debounces the *write*, but the **snapshot was
+captured synchronously first**, and capturing asks every pane for its restore descriptor — which a
+terminal pane answers by walking the machine's entire process list and reading a PEB (ADR 0004,
+strategy 2). One Toolhelp32 snapshot measured **120 ms against 334 processes**, and the resolver
+does one per pane plus a fallback. Dragging the window enumerated every process on the system,
+several times, per mouse move.
+
+Two fixes:
+
+1. **`RequestSave` is now cheap and coalescing.** It starts a 400 ms `DispatcherTimer`; the
+   snapshot is taken once the caller stops asking. `SaveNow` still captures immediately, so
+   shutdown and explicit saves are unchanged.
+2. **A window move no longer relayouts.** Moving the window changes no pane rectangle, so
+   rebuilding every tab strip was pure waste at mouse-move frequency. `FollowWindowMove` re-asserts
+   foreign window placement only — the one thing that must follow, because a foreign pane's host is
+   a separate top-level window positioned in *screen* coordinates.
+
+**After: 60 moves in 1.34 s — 44.8 moves per second.** Same session, same harness: **52× faster**.
+
+The general lesson is worth keeping: *debouncing the write does not help when producing the input
+is the expensive part.* The autosaver looked correct in isolation and was.
+
+### Also fixed here
+
+- **Tab labels were clipped along the baseline.** A 28-pixel strip could not hold a 12px line plus
+  the tab's padding, its accent strip and the strip's own border. The strip is 34 now, sized from
+  what has to fit, with the paddings trimmed to match.
+- The focused strip drew a full-width two-pixel accent slab along its content edge, far louder than
+  Windows draws anything. It is a one-pixel hairline again; the focused tab's own accent already
+  says which group has focus.

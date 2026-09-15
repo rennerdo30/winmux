@@ -11,6 +11,7 @@ internal sealed class SessionController : IDisposable
     private readonly SessionAutosaver _autosaver;
     private readonly CommandServer _commandServer;
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly DispatcherTimer _captureDebounce;
     private MainWindow? _activeWindow;
     private int _disposed;
 
@@ -20,6 +21,14 @@ internal sealed class SessionController : IDisposable
         _autosaver.SaveCompleted += OnSaveCompleted;
         _commandServer = new CommandServer(DispatchRemoteAsync);
         SessionPath = Path.GetFullPath(path);
+
+        // Capturing a snapshot is expensive: it asks every pane for its restore descriptor, and a
+        // terminal pane answers by walking the machine's whole process list and reading a PEB
+        // (ADR 0004, strategy 2). The autosaver already debounces the *write*, but the capture ran
+        // synchronously on the UI thread at every call — so dragging the window, which fires
+        // PositionChanged per mouse move, enumerated every process on the system per frame.
+        _captureDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _captureDebounce.Tick += (_, _) => { _captureDebounce.Stop(); CaptureAndQueue(); };
     }
 
     public string SessionPath { get; }
@@ -38,7 +47,17 @@ internal sealed class SessionController : IDisposable
 
     public void StartCommandServer() => _ = RunCommandServerAsync();
 
+    /// <summary>
+    /// Ask for a save. Cheap and coalescing: the snapshot is taken once the caller stops asking.
+    /// </summary>
     public void RequestSave()
+    {
+        if (_disposed != 0 || _windows.Count == 0) return;
+        _captureDebounce.Stop();
+        _captureDebounce.Start();
+    }
+
+    private void CaptureAndQueue()
     {
         if (_disposed != 0 || _windows.Count == 0) return;
         _autosaver.RequestSave(CaptureSnapshot());
@@ -48,6 +67,8 @@ internal sealed class SessionController : IDisposable
     {
         if (_disposed != 0) return new SessionSaveResult(false, new ObjectDisposedException(nameof(SessionController)));
         if (_windows.Count == 0) return new SessionSaveResult(false, new InvalidOperationException("The session has no windows."));
+        // An explicit save is not a request; take the snapshot now rather than waiting out a debounce.
+        _captureDebounce.Stop();
         _autosaver.RequestSave(CaptureSnapshot());
         return _autosaver.FlushAsync().GetAwaiter().GetResult();
     }
@@ -75,6 +96,8 @@ internal sealed class SessionController : IDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _lifetime.Cancel();
+        // Stop before the autosaver goes away, or a pending tick captures against a disposed sink.
+        _captureDebounce.Stop();
         _autosaver.SaveCompleted -= OnSaveCompleted;
         _autosaver.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _lifetime.Dispose();

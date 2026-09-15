@@ -149,7 +149,7 @@ internal static class Theme
 
         AddButton(styles, ToolbarButton, Palette.TextBrush, Palette.ControlRadius, new Thickness(10, 6));
         AddButton(styles, IconButton, Palette.MutedTextBrush, Palette.ControlRadius, new Thickness(8, 6));
-        AddButton(styles, Tab, Palette.MutedTextBrush, Palette.ControlRadius, new Thickness(11, 5));
+        AddButton(styles, Tab, Palette.MutedTextBrush, Palette.ControlRadius, new Thickness(11, 4));
         AddButton(styles, CloseButton, Palette.FaintTextBrush, Palette.ControlRadius, new Thickness(5, 2));
 
         // Windows 11 marks the selected item with a filled card, not a heavier font.

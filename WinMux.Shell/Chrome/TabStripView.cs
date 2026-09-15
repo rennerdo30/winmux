@@ -69,22 +69,26 @@ internal static class TabStripView
             Content = items,
             HorizontalScrollBarVisibility = vertical ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Hidden,
             VerticalScrollBarVisibility = vertical ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled,
-            Padding = vertical ? new Thickness(6, 6) : new Thickness(6, 3),
+            Padding = vertical ? new Thickness(6, 6) : new Thickness(6, 0),
         };
 
         return new Border
         {
             Background = Palette.SurfaceBrush,
-            BorderBrush = stackHasFocus ? Palette.AccentBrush : Palette.EdgeBrush,
+            BorderBrush = Palette.EdgeBrush,
             BorderThickness = ContentEdge(strip.Placement, stackHasFocus),
             Child = scroller,
         };
     }
 
-    /// <summary>A hairline on the side facing the content, brightened when this stack has focus.</summary>
+    /// <summary>
+    /// A hairline on the side facing the content. Always one pixel and always the edge colour: a
+    /// full-width accent slab under the focused strip shouted far louder than Windows ever does,
+    /// and the focused tab's own accent already says which group has focus.
+    /// </summary>
     private static Thickness ContentEdge(TabStripPlacement placement, bool focused)
     {
-        var weight = focused ? AccentWeight : 1;
+        const double weight = 1;
         return placement switch
         {
             TabStripPlacement.Top => new Thickness(0, 0, 0, weight),
