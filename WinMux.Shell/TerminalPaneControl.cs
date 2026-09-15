@@ -29,6 +29,10 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     private static readonly IBrush SelectionBrush = new SolidColorBrush(Color.FromArgb(0x66, 0x3B, 0x78, 0xFF));
     private static readonly IBrush ScrollbarBrush = new SolidColorBrush(Color.FromArgb(0x55, 0xCC, 0xCC, 0xCC));
 
+    /// <summary>Every match, and the one the user is standing on. Distinct, or "next" means nothing.</summary>
+    private static readonly IBrush MatchBrush = new SolidColorBrush(Color.FromArgb(0x55, 0xC1, 0x9C, 0x00));
+    private static readonly IBrush CurrentMatchBrush = new SolidColorBrush(Color.FromArgb(0xAA, 0xF9, 0xF1, 0xA5));
+
     /// <summary>
     /// Space between the pane's edge and its text, in pixels.
     ///
@@ -60,6 +64,10 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     private readonly TerminalViewport _viewport = new();
     private bool _dragging;
+
+    private IReadOnlyList<TerminalMatch> _matches = [];
+    private int _currentMatch = -1;
+    private string _searchQuery = "";
 
     private IPtySession? _session;
     private Task? _startTask;
@@ -184,6 +192,20 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             }
         }
 
+        // Matches, under the selection and over the text, so both stay readable.
+        for (var i = 0; i < _matches.Count; i++)
+        {
+            var match = _matches[i];
+            var screenRow = match.Row - firstRow;
+            if (screenRow < 0 || screenRow >= visibleRows) continue;
+
+            context.FillRectangle(
+                i == _currentMatch ? CurrentMatchBrush : MatchBrush,
+                new Rect(Inset + match.Column * CellWidth, Inset + screenRow * CellHeight,
+                    match.Length * CellWidth, CellHeight),
+                2);
+        }
+
         // Selection goes on top, translucent, so the text stays readable through it. It was drawn
         // underneath when every glyph was opaque and the background never was.
         for (var row = 0; row < visibleRows; row++)
@@ -292,6 +314,86 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             (false, true) => ItalicTypeface,
             _ => TerminalTypeface,
         };
+    }
+
+    /// <summary>How many matches the current query has.</summary>
+    public int MatchCount => _matches.Count;
+
+    /// <summary>Which match is current, or -1. Together with <see cref="MatchCount"/>, "3 of 17".</summary>
+    public int CurrentMatch => _currentMatch;
+
+    /// <summary>
+    /// Search the whole buffer, scrollback included, and go to the match nearest the view.
+    /// </summary>
+    /// <returns>True if anything matched.</returns>
+    public bool Search(string? query)
+    {
+        _searchQuery = query ?? "";
+        _matches = TerminalSearchModel.Find(BufferText(), _searchQuery);
+        _currentMatch = TerminalSearchModel.NearestTo(_matches, _viewport.TopRow(_engine.TotalRows, _engine.Rows));
+        GoToCurrentMatch();
+        return _matches.Count > 0;
+    }
+
+    /// <summary>Step to the next or previous match, wrapping.</summary>
+    public void StepMatch(bool forward)
+    {
+        if (_matches.Count == 0) return;
+        _currentMatch = TerminalSearchModel.Step(_currentMatch, _matches.Count, forward);
+        GoToCurrentMatch();
+    }
+
+    /// <summary>Drop the search and its highlights, and return to the live screen.</summary>
+    public void ClearSearch()
+    {
+        _searchQuery = "";
+        _matches = [];
+        _currentMatch = -1;
+        _viewport.ScrollToBottom();
+        InvalidateVisual();
+    }
+
+    private void GoToCurrentMatch()
+    {
+        if (_currentMatch >= 0 && _currentMatch < _matches.Count)
+        {
+            _viewport.ScrollToRow(
+                _matches[_currentMatch].Row, _engine.TotalRows, _engine.Rows, _engine.ScrollbackCount);
+        }
+
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// The whole buffer as plain text, one string per absolute row.
+    ///
+    /// Built per search rather than kept: the engine is the buffer, and a second copy maintained
+    /// alongside it would be a cache to invalidate on every write.
+    /// </summary>
+    private IReadOnlyList<string> BufferText()
+    {
+        var total = _engine.TotalRows;
+        var columns = _engine.Columns;
+        var cells = new TerminalCell[columns];
+        var rows = new List<string>(total);
+        var line = new StringBuilder(columns);
+
+        for (var row = 0; row < total; row++)
+        {
+            Array.Clear(cells);
+            var info = _engine.CopyRow(row, cells);
+            line.Clear();
+            for (var column = 0; column < Math.Min(info.Length, columns); column++)
+            {
+                if (cells[column].IsWideTrailing) continue;
+                if (cells[column].IsBlank || cells[column].Character == '\0') line.Append(' ');
+                else cells[column].AppendGlyph(line);
+            }
+
+            rows.Add(line.ToString());
+        }
+
+        return rows;
     }
 
     /// <summary>The absolute cell under a point, clamped so a drag outside the control still works.</summary>

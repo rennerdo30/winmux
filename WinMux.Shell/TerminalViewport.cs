@@ -75,6 +75,24 @@ internal sealed class TerminalViewport
     public bool ScrollToTop(int scrollbackRows) => Scroll(int.MaxValue, scrollbackRows);
 
     /// <summary>
+    /// Bring an absolute row into view, roughly a third from the top.
+    ///
+    /// A third rather than the very top, because a search match with no lines above it gives no
+    /// context, and no context is most of why you searched.
+    /// </summary>
+    /// <returns>True when the view moved.</returns>
+    public bool ScrollToRow(int row, int totalRows, int screenRows, int scrollbackRows)
+    {
+        if (screenRows <= 0) return false;
+
+        var desiredTop = Math.Max(0, row - screenRows / 3);
+        var offset = Math.Clamp(totalRows - screenRows - desiredTop, 0, Math.Max(0, scrollbackRows));
+        if (offset == ScrollOffset) return false;
+        ScrollOffset = offset;
+        return true;
+    }
+
+    /// <summary>
     /// Account for output that has arrived since the last frame.
     ///
     /// While the user is reading history, new output must not drag the text upward under them:

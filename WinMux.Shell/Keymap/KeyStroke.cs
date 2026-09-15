@@ -113,6 +113,30 @@ public readonly record struct KeyStroke(Key Key, KeyModifiers Modifiers = KeyMod
         return KeyDisplayNames.TryGetValue(key, out var name) ? name : key.ToString();
     }
 
+    /// <summary>
+    /// The character a gesture was written as, when it was written as one: "%", ":", "\"".
+    ///
+    /// Symbol bindings cannot be matched by physical key, because which key produces a symbol is a
+    /// property of the keyboard layout. Parsing ":" yields Shift+OemSemicolon, which is where the
+    /// colon lives on a US keyboard and nowhere near where it lives on a German one (Shift+Period).
+    /// Matching those bindings against the character the key actually produced is the only thing
+    /// that works on both, and Avalonia reports it as <c>KeyEventArgs.KeySymbol</c>.
+    ///
+    /// Modified gestures are excluded: Ctrl+% is about the key, not the character, and a layout
+    /// that puts % elsewhere should move that binding with it.
+    /// </summary>
+    public static bool TryGetSymbol(string? gesture, out string symbol)
+    {
+        symbol = string.Empty;
+        if (string.IsNullOrWhiteSpace(gesture)) return false;
+
+        var trimmed = gesture.Trim();
+        if (!SymbolKeys.ContainsKey(trimmed)) return false;
+
+        symbol = trimmed;
+        return true;
+    }
+
     public static KeyStroke Parse(string gesture)
     {
         if (!TryParse(gesture, out var stroke, out var error))

@@ -116,6 +116,9 @@ internal sealed class MainWindow : Window
     /// query and its own idea of what was selected.
     /// </summary>
     private CommandPaletteWindow? _palette;
+
+    /// <summary>The one find bar, for the same reason the palette is one: asking twice means "find".</summary>
+    private TerminalSearchWindow? _search;
     private readonly SessionController _session;
     private readonly DispatcherTimer _cwdCaptureTimer;
 
@@ -745,7 +748,9 @@ internal sealed class MainWindow : Window
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        var route = _keymap.Route(e.Key, e.KeyModifiers);
+        // KeySymbol is what this keyboard produced, which is the only way a binding written as "%"
+        // or ":" can work on a layout that does not put them where a US keyboard does.
+        var route = _keymap.Route(new KeyStroke(e.Key, e.KeyModifiers), e.KeySymbol);
         e.Handled = route.Handled;
         if (!route.Handled) return;
 
@@ -790,6 +795,7 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.ResizeUp, () => ResizeFocused(FocusDirection.Up));
         _actions.Register(ShellActionNames.ResizeDown, () => ResizeFocused(FocusDirection.Down));
         _actions.Register(ShellActionNames.ShowPalette, ShowPalette);
+        _actions.Register(ShellActionNames.FindInPane, ShowSearch);
         _actions.Register(ShellActionNames.SendPrefix, SendPrefix);
         _actions.RegisterAsync(ShellActionNames.NewTerminalCmd, _ => new ValueTask(AddTabAsync(TerminalProfiles.Cmd)));
         _actions.RegisterAsync(ShellActionNames.NewTerminalWindowsPowerShell,
@@ -840,6 +846,39 @@ internal sealed class MainWindow : Window
         palette.Closed += (_, _) => _palette = null;
         _palette = palette;
         palette.ShowOver(this);
+    }
+
+    /// <summary>
+    /// Open the find bar over the focused terminal.
+    ///
+    /// Only terminals: a file browser has its own filtering and a foreign application is not ours
+    /// to search. Saying so is better than opening a bar that would never match anything.
+    /// </summary>
+    private void ShowSearch()
+    {
+        if (_search is { } open)
+        {
+            open.Activate();
+            return;
+        }
+
+        if (_runtimes.GetValueOrDefault(_tree.Focused)?.View is not TerminalPaneControl terminal)
+        {
+            ShowMessage("the focused pane is not a terminal, so there is nothing to search");
+            return;
+        }
+
+        var bounds = _tree.Arrange(new CoreRect(0, 0, (int)_canvas.Bounds.Width, (int)_canvas.Bounds.Height))
+            [_tree.Focused];
+
+        var search = new TerminalSearchWindow(terminal);
+        search.Closed += (_, _) => _search = null;
+        _search = search;
+        search.ShowOver(this, new Avalonia.Rect(
+            _canvas.Bounds.X + bounds.X,
+            _canvas.Bounds.Y + bounds.Y,
+            bounds.Width,
+            bounds.Height));
     }
 
     private void SendPrefix()

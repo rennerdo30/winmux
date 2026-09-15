@@ -32,6 +32,7 @@ public static class ShellActionNames
     public const string ResizeUp = "resize-up";
     public const string ResizeDown = "resize-down";
     public const string ShowPalette = "show-palette";
+    public const string FindInPane = "find-in-pane";
     public const string SendPrefix = "send-prefix";
     public const string NewTerminalCmd = "new-terminal-cmd";
     public const string NewTerminalWindowsPowerShell = "new-terminal-windows-powershell";
@@ -71,6 +72,7 @@ public static class ShellActionNames
         ResizeUp,
         ResizeDown,
         ShowPalette,
+        FindInPane,
         SendPrefix,
         NewTerminalCmd,
         NewTerminalWindowsPowerShell,

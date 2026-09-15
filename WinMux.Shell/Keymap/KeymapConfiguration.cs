@@ -59,6 +59,7 @@ public sealed record KeymapConfiguration
         new("Shift+Up", ShellActionNames.ResizeUp, scope),
         new("Shift+Down", ShellActionNames.ResizeDown, scope),
         new(":", ShellActionNames.ShowPalette, scope),
+        new("/", ShellActionNames.FindInPane, scope),
         new("B", ShellActionNames.SendPrefix, scope),
         new("1", ShellActionNames.NewTerminalCmd, scope),
         new("2", ShellActionNames.NewTerminalWindowsPowerShell, scope),

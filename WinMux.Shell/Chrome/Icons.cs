@@ -91,6 +91,11 @@ internal static class Icons
         10,
         new Polyline { Points = { new Point(5, 6.5), new Point(8, 9.5), new Point(11, 6.5) } });
 
+    /// <summary>An upward chevron, for the opposite direction.</summary>
+    public static Control ChevronUp() => Draw(
+        10,
+        new Polyline { Points = { new Point(5, 9.5), new Point(8, 6.5), new Point(11, 9.5) } });
+
     /// <summary>A gear, for settings.</summary>
     public static Control Settings() => Draw(
         new Ellipse

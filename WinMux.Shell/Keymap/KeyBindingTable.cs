@@ -8,6 +8,15 @@ public sealed class KeyBindingTable
     private readonly Dictionary<KeyStroke, string> _prefixed = [];
     private readonly Dictionary<KeyStroke, string> _direct = [];
 
+    /// <summary>
+    /// Bindings written as a character rather than a key, matched against what the keyboard
+    /// actually produced. See <see cref="KeyStroke.TryGetSymbol"/> for why they cannot be matched
+    /// by key: "%" and ":" are not on the same keys on every layout, and the parsed stroke encodes
+    /// a US keyboard's answer.
+    /// </summary>
+    private readonly Dictionary<string, string> _symbolPrefixed = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _symbolDirect = new(StringComparer.Ordinal);
+
     public KeyStroke? Prefix { get; }
     public IReadOnlyList<KeyBinding> Bindings { get; }
 
@@ -36,6 +45,12 @@ public sealed class KeyBindingTable
                     nameof(configuration));
             }
 
+            if (KeyStroke.TryGetSymbol(item.Gesture, out var symbol))
+            {
+                var symbols = item.Scope == KeyBindingScope.Direct ? _symbolDirect : _symbolPrefixed;
+                symbols[symbol] = action;
+            }
+
             parsed.Add(new KeyBinding(gesture, action, item.Scope));
         }
 
@@ -61,4 +76,17 @@ public sealed class KeyBindingTable
 
     public bool TryGetPrefixed(KeyStroke gesture, out string actionName) =>
         _prefixed.TryGetValue(gesture.Normalized(), out actionName!);
+
+    /// <summary>Match a produced character against the bindings written as characters.</summary>
+    public bool TryGetDirectSymbol(string? symbol, out string actionName)
+    {
+        actionName = string.Empty;
+        return !string.IsNullOrEmpty(symbol) && _symbolDirect.TryGetValue(symbol, out actionName!);
+    }
+
+    public bool TryGetPrefixedSymbol(string? symbol, out string actionName)
+    {
+        actionName = string.Empty;
+        return !string.IsNullOrEmpty(symbol) && _symbolPrefixed.TryGetValue(symbol, out actionName!);
+    }
 }
