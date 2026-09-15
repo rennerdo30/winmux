@@ -400,6 +400,19 @@ target is Win32, so it lives behind `IAppCatalog` in `WinMux.Platform` and is im
 - **Chrome colours live in `WinMux.Shell/Chrome/Theme.cs`**, and interaction states are Avalonia
   *styles*, not properties set per control. Setting `Background` on a Button replaces the value
   Fluent's template animates and silently removes its hover and pressed feedback.
+- **Sizes live there too, and they are not a matter of taste.** `Palette` carries Fluent 2's ramp —
+  body 14px, caption 12, subtitle 20, controls 32 tall, gaps of 8/12/20 — because Windows 11 is
+  specified at those numbers and a chrome built one step smaller reads as an older application
+  wearing a dark theme. New chrome takes the ramp; it does not invent a size
+  ([ADR 0016](docs/adr/0016-windows-11-chrome.md)).
+- **The window owns its caption.** `WindowDecorations.BorderOnly` leaves Avalonia drawing the
+  border, shadow and resize grips and hands the title bar to `Chrome/TitleBar.cs`, which puts the
+  toolbar in it beside the app icon. The cost is that snap layouts need `WM_NCHITTEST`, which the
+  shell cannot reach; the benefit is the single most recognisable Windows 11 signal there is.
+- **A screenshot is evidence only from a DPI-aware process.** Chrome that lays out correctly and
+  appears to paint nothing is, on this machine, more likely a virtualised capture than an Avalonia
+  bug — a whole session was spent on that once. Render to a `RenderTargetBitmap` in-process to tell
+  the two apart, and sample pixels rather than judging colours by eye.
 
 ## 7. Phase 0 — spikes (do these first)
 

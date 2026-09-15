@@ -71,7 +71,7 @@ public sealed class Arrangement
 public readonly record struct LayoutMetrics(int DividerThickness, int HorizontalTabStrip, int VerticalTabStrip)
 {
     /// <summary>What the shell uses: a pixel surface at 100% scale.</summary>
-    public static readonly LayoutMetrics Default = new(6, 34, 180);
+    public static readonly LayoutMetrics Default = new(6, 40, 220);
 
     /// <summary>A character grid. Tabs are listed in text instead, so no strip is reserved.</summary>
     public static readonly LayoutMetrics CharacterGrid = new(1, 0, 0);
@@ -94,10 +94,10 @@ public static class Layouter
     /// plus the tab's vertical padding, its accent strip and the strip's own border. 28 was too
     /// small for that and clipped every label along its baseline.
     /// </summary>
-    public const int TabStripThickness = 34;
+    public const int TabStripThickness = 40;
 
     /// <summary>Width of a left or right tab strip, in pixels.</summary>
-    public const int VerticalTabStripThickness = 180;
+    public const int VerticalTabStripThickness = 220;
 
     /// <summary>Content a stack must keep for its tab strip to be worth reserving at all.</summary>
     private const int MinimumContentExtent = 8;

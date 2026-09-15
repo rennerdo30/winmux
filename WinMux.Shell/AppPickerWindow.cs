@@ -60,8 +60,7 @@ internal sealed class AppPickerWindow : Window
         var browse = new Button
         {
             Content = "Browse…",
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
+            Classes = { Chrome.Theme.DialogButton },
         };
         browse.Click += (_, _) => _ = BrowseAsync();
 
@@ -69,9 +68,7 @@ internal sealed class AppPickerWindow : Window
         {
             Content = "Choose",
             IsDefault = true,
-            MinWidth = 96,
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
+            Classes = { Chrome.Theme.DialogButton },
         };
         choose.Click += (_, _) => Accept();
 
@@ -79,9 +76,7 @@ internal sealed class AppPickerWindow : Window
         {
             Content = "Cancel",
             IsCancel = true,
-            MinWidth = 96,
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
+            Classes = { Chrome.Theme.DialogButton },
         };
         cancel.Click += (_, _) => Close();
 
@@ -158,7 +153,7 @@ internal sealed class AppPickerWindow : Window
                     new TextBlock
                     {
                         Text = app.Program,
-                        FontSize = 11,
+                        FontSize = Palette.CaptionSize,
                         Foreground = Palette.FaintTextBrush,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                     },

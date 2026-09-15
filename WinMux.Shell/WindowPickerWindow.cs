@@ -51,8 +51,7 @@ internal sealed class WindowPickerWindow : Window
         var refresh = new Button
         {
             Content = "Refresh",
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
+            Classes = { Chrome.Theme.DialogButton },
         };
         refresh.Click += (_, _) => Render();
 
@@ -60,9 +59,7 @@ internal sealed class WindowPickerWindow : Window
         {
             Content = "Attach",
             IsDefault = true,
-            MinWidth = 96,
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
+            Classes = { Chrome.Theme.DialogButton },
         };
         attach.Click += (_, _) => Accept();
 
@@ -70,9 +67,7 @@ internal sealed class WindowPickerWindow : Window
         {
             Content = "Cancel",
             IsCancel = true,
-            MinWidth = 96,
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
+            Classes = { Chrome.Theme.DialogButton },
         };
         cancel.Click += (_, _) => Close();
 
@@ -144,7 +139,7 @@ internal sealed class WindowPickerWindow : Window
                         Text = window.ProcessName.Length > 0
                             ? $"{window.ProcessName}  ({window.ProcessId})"
                             : $"process {window.ProcessId}",
-                        FontSize = 11,
+                        FontSize = Palette.CaptionSize,
                         Foreground = Palette.FaintTextBrush,
                     },
                 },

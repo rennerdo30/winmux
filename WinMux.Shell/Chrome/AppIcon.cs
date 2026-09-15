@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 
 namespace WinMux.Shell.Chrome;
@@ -26,6 +27,25 @@ internal static class AppIcon
             return null;
         }
     });
+
+    private static readonly Lazy<Bitmap?> Mark = new(() =>
+    {
+        try
+        {
+            using var stream = AssetLoader.Open(new Uri("avares://WinMux/Assets/winmux-256.png"));
+            return new Bitmap(stream);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    });
+
+    /// <summary>
+    /// The same mark as a bitmap, for the title bar, which draws an Image rather than setting a
+    /// window icon. Null if it could not be decoded — the caption still works without it.
+    /// </summary>
+    public static Bitmap? Bitmap => Mark.Value;
 
     /// <summary>Give a window the app icon, if it could be loaded.</summary>
     public static void Apply(Window window)

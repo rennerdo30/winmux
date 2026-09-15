@@ -113,6 +113,47 @@ internal static class Icons
     public static Control More() => Draw(
         Dot(4.5), Dot(8), Dot(11.5));
 
+    // The four caption glyphs, built through Draw like every other icon here so the chrome has one
+    // way of drawing an icon rather than two. They were briefly hand-rolled as bare shapes in a
+    // fixed-size Panel next to the title bar, on the belief that they were failing to render; the
+    // real fault was in the screenshot harness (ADR 0016), and either construction works.
+
+    /// <summary>The caption's minimise bar.</summary>
+    public static Control CaptionMinimise() => Draw(
+        CaptionSize,
+        new Line { StartPoint = new Point(3, 8), EndPoint = new Point(13, 8) });
+
+    /// <summary>The caption's maximise square.</summary>
+    public static Control CaptionMaximise() => Draw(
+        CaptionSize,
+        CaptionSquare(new Rect(3, 3, 10, 10)));
+
+    /// <summary>The caption's restore-down pair: the front window, and the one behind it.</summary>
+    public static Control CaptionRestore() => Draw(
+        CaptionSize,
+        CaptionSquare(new Rect(3, 5.5, 7.5, 7.5)),
+        new ShapePath { Data = Geometry.Parse("M 5.5,5 L 5.5,3 L 13,3 L 13,10.5 L 11,10.5") });
+
+    /// <summary>The caption's close cross. Wider than <see cref="Close"/>, which is a tab's.</summary>
+    public static Control CaptionClose() => Draw(
+        CaptionSize,
+        new Line { StartPoint = new Point(3.5, 3.5), EndPoint = new Point(12.5, 12.5) },
+        new Line { StartPoint = new Point(3.5, 12.5), EndPoint = new Point(12.5, 3.5) });
+
+    /// <summary>Caption glyphs are 10px, the system metric, against the toolbar's 16.</summary>
+    private const double CaptionSize = 10;
+
+    private static Shape CaptionSquare(Rect rect) => new Rectangle
+    {
+        Width = rect.Width,
+        Height = rect.Height,
+        RadiusX = 0.5,
+        RadiusY = 0.5,
+        Margin = new Thickness(rect.X, rect.Y, 0, 0),
+        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+    };
+
     private static Shape Outline() => new Rectangle
     {
         Width = 11,

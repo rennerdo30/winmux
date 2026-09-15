@@ -92,9 +92,7 @@ internal sealed class ProfileEditorWindow : Window
         {
             Content = "Save",
             IsDefault = true,
-            MinWidth = 96,
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
+            Classes = { Chrome.Theme.DialogButton },
         };
         save.Click += (_, _) => Accept();
 
@@ -102,9 +100,7 @@ internal sealed class ProfileEditorWindow : Window
         {
             Content = "Cancel",
             IsCancel = true,
-            MinWidth = 96,
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
+            Classes = { Chrome.Theme.DialogButton },
         };
         cancel.Click += (_, _) => Close();
 
@@ -202,14 +198,7 @@ internal sealed class ProfileEditorWindow : Window
         CornerRadius = Palette.ControlRadius,
     };
 
-    private static Control Section(string text) => new TextBlock
-    {
-        Text = text.ToUpperInvariant(),
-        FontSize = 11,
-        FontWeight = FontWeight.SemiBold,
-        Foreground = Palette.FaintTextBrush,
-        Margin = new Thickness(0, 12, 0, 2),
-    };
+    private static Control Section(string text) => SettingsCard.Heading(text);
 
     private static Control Row(string label, Control control)
     {

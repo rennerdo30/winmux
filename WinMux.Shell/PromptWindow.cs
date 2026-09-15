@@ -120,9 +120,7 @@ internal sealed class PromptWindow : Window
         Content = content,
         IsDefault = isDefault,
         IsCancel = isCancel,
-        MinWidth = 92,
-        Padding = new Thickness(14, 7),
-        CornerRadius = Palette.ControlRadius,
+        Classes = { Chrome.Theme.DialogButton },
     };
 
     private void Accept()

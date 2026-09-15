@@ -79,13 +79,15 @@ internal static class ShellToolbar
 
         // Session and settings live in the same row as everything else.
         //
-        // They were a separate right-aligned group, docked to the right of the toolbar, and they
-        // did not render — not the buttons, not a debug background on the panel itself — while the
-        // layout system reported the group as visible with sensible bounds. The identical controls
-        // render correctly in this StackPanel. Rather than ship chrome that depends on behaviour
-        // nobody can explain, they sit in the flow, which is also where Windows Terminal keeps its
-        // equivalents. The row scrolls when the window is too narrow, so a button can be off-screen
-        // but never silently absent.
+        // They were a separate right-aligned group once, and did not render — not the buttons, not
+        // a debug background on the panel itself — while layout reported the group as visible with
+        // sensible bounds. That was recorded as an unexplained Avalonia failure. It is now very
+        // likely to have been neither Avalonia nor right-alignment: the caption buttons produced
+        // the identical symptom later, and the cause was a DPI-unaware screenshot capturing the
+        // wrong region of the screen (ADR 0016). Nobody has re-tested the right-aligned group, so
+        // these stay in the flow — which is where Windows Terminal keeps its equivalents anyway.
+        // The row scrolls when the window is too narrow, so a button can be off-screen but never
+        // silently absent.
         bar.Children.Add(SplitButton(
             Icons.Save(), string.Empty, "Save the session now",
             () => dispatch(ShellActionNames.SaveSession),

@@ -46,8 +46,8 @@ internal sealed class MainWindow : Window
     private readonly List<Control> _dividerHandles = [];
     private readonly TextBlock _status = new()
     {
-        Margin = new Thickness(10, 4),
-        FontSize = 11.5,
+        Margin = new Thickness(Palette.GapMedium, 5),
+        FontSize = Palette.CaptionSize,
         Foreground = Palette.MutedTextBrush,
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
@@ -133,8 +133,11 @@ internal sealed class MainWindow : Window
             SetFocusedTabPlacement,
             (profile, split) => Run(OpenProfileAsync(profile, split)),
             () => Settings.ShellProfiles.All);
-        DockPanel.SetDock(toolbar, Dock.Top);
-        dock.Children.Add(toolbar);
+        // The toolbar is the caption row's left half rather than a bar beneath the system one.
+        // Two stacked bars is the most visible way an app can fail to look like Windows 11.
+        var caption = Chrome.TitleBar.Build(this, toolbar);
+        DockPanel.SetDock(caption, Dock.Top);
+        dock.Children.Add(caption);
         var statusBar = new Border
         {
             Background = Palette.SurfaceBrush,
@@ -148,6 +151,11 @@ internal sealed class MainWindow : Window
         dock.Children.Add(statusBar);
         dock.Children.Add(_canvas);
         Content = dock;
+
+        // A maximised window with an extended client area is deliberately larger than the monitor,
+        // by the resize border on each edge. Without this the caption buttons sit past the right
+        // edge of the screen and cannot be clicked.
+        dock.Bind(MarginProperty, this.GetObservable(OffScreenMarginProperty));
 
         // The canvas shows through the divider gutters, so it is the line between panes.
         _canvas.Background = Palette.WindowBrush;

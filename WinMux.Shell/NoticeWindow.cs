@@ -52,7 +52,7 @@ internal sealed class NoticeWindow : Window
         var heading = new TextBlock
         {
             Text = title,
-            FontSize = 17,
+            FontSize = Palette.SubtitleSize,
             FontWeight = FontWeight.SemiBold,
             Foreground = Palette.TextBrush,
             TextWrapping = TextWrapping.Wrap,
@@ -70,9 +70,7 @@ internal sealed class NoticeWindow : Window
         {
             Content = confirmText,
             IsDefault = true,
-            MinWidth = 96,
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
+            Classes = { Chrome.Theme.DialogButton },
         };
         confirm.Click += (_, _) => { Confirmed = true; Close(); };
 
@@ -88,9 +86,7 @@ internal sealed class NoticeWindow : Window
             {
                 Content = cancelText,
                 IsCancel = true,
-                MinWidth = 96,
-                Padding = new Thickness(14, 7),
-                CornerRadius = Palette.ControlRadius,
+                Classes = { Chrome.Theme.DialogButton },
             };
             cancel.Click += (_, _) => Close();
             actions.Children.Add(cancel);

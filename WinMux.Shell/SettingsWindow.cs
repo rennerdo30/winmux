@@ -47,7 +47,7 @@ internal sealed class SettingsWindow : Window
         _profiles = [.. profiles];
 
         Title = "WinMux settings";
-        Width = 560;
+        Width = 620;
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         ShowInTaskbar = false;
@@ -69,7 +69,7 @@ internal sealed class SettingsWindow : Window
 
         _profileList = new ListBox
         {
-            Height = 190,
+            Height = 210,
             CornerRadius = Palette.ControlRadius,
             Background = Palette.SurfaceBrush,
         };
@@ -84,67 +84,64 @@ internal sealed class SettingsWindow : Window
             ],
             current.DefaultTabPlacement);
 
+        // The card supplies the label, so the box itself is only the switch.
         _confirmClosing = new CheckBox
         {
-            Content = "Ask before an action closes panes that are still running",
             IsChecked = current.ConfirmBeforeClosingPanes,
             Foreground = Palette.TextBrush,
+            MinWidth = 0,
         };
 
-        var cwd = new Button
-        {
-            Content = "Set up shell directory reporting…",
-            Padding = new Thickness(12, 6),
-            CornerRadius = Palette.ControlRadius,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
+        var cwd = new Button { Content = "Set up…", Classes = { Chrome.Theme.DialogButton } };
         cwd.Click += (_, _) => { OpenCwdReporting = true; Close(); };
 
-        var body = new StackPanel { Margin = new Thickness(22, 20, 22, 20), Spacing = 6 };
-        body.Children.Add(Section("Appearance"));
-        body.Children.Add(Row("Theme", _theme));
+        var body = new StackPanel { Margin = new Thickness(24, 4, 24, 24), Spacing = Palette.GapSmall };
 
-        body.Children.Add(Section("Profiles"));
-        body.Children.Add(new TextBlock
-        {
-            Text = "Everything you can open in a pane: shells and applications alike. These appear " +
-                   "in the New menu, in an empty pane's launcher and in the command palette.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Palette.MutedTextBrush,
-            Margin = new Thickness(0, 0, 0, 6),
-        });
-        body.Children.Add(_profileList);
-        body.Children.Add(ProfileButtons());
+        body.Children.Add(SettingsCard.Heading("Appearance"));
+        body.Children.Add(SettingsCard.Row(
+            "Theme",
+            _theme,
+            "Follow Windows to switch with the system light and dark setting."));
 
-        body.Children.Add(Section("New panes"));
-        body.Children.Add(Row("Default terminal", _terminal));
-        body.Children.Add(Row("Tabs in a new group", _tabPlacement));
-        body.Children.Add(Section("Sessions"));
-        body.Children.Add(_confirmClosing);
-        body.Children.Add(Info("Session file", sessionPath));
-        body.Children.Add(Info("Settings file", settingsPath));
-        body.Children.Add(Info("Profiles file", profilesPath));
-        body.Children.Add(Section("Working directories"));
-        body.Children.Add(new TextBlock
-        {
-            Text = "Restoring a pane's directory needs the shell to report it. Without the profile " +
-                   "snippets, a PowerShell pane restores to the wrong directory as soon as you cd.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Palette.MutedTextBrush,
-            Margin = new Thickness(0, 0, 0, 6),
-        });
-        body.Children.Add(cwd);
-        body.Children.Add(Section("About"));
-        body.Children.Add(Info("Version", typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "unknown"));
+        body.Children.Add(SettingsCard.Heading("Profiles"));
+        body.Children.Add(SettingsCard.Stacked(
+            "Everything you can open in a pane",
+            ProfileEditor(),
+            "Shells and applications alike. These appear in the New menu, in an empty pane's " +
+            "launcher and in the command palette."));
 
-        var save = new Button
-        {
-            Content = "Save",
-            IsDefault = true,
-            MinWidth = 96,
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
-        };
+        body.Children.Add(SettingsCard.Heading("New panes"));
+        body.Children.Add(SettingsCard.Row(
+            "Default terminal",
+            _terminal,
+            "What a new terminal pane opens, and what the prefix key's split commands use."));
+        body.Children.Add(SettingsCard.Row(
+            "Tabs in a new group",
+            _tabPlacement,
+            "Which edge a stack's tab strip takes when you first tab a pane."));
+
+        body.Children.Add(SettingsCard.Heading("Sessions"));
+        body.Children.Add(SettingsCard.Row(
+            "Confirm before closing running panes",
+            _confirmClosing,
+            "Asks first when an action would close a pane with a program still in it."));
+        body.Children.Add(SettingsCard.Info("Session file", sessionPath));
+        body.Children.Add(SettingsCard.Info("Settings file", settingsPath));
+        body.Children.Add(SettingsCard.Info("Profiles file", profilesPath));
+
+        body.Children.Add(SettingsCard.Heading("Working directories"));
+        body.Children.Add(SettingsCard.Row(
+            "Shell directory reporting",
+            cwd,
+            "Restoring a pane's directory needs the shell to report it. Without the profile " +
+            "snippets, a PowerShell pane restores to the wrong directory as soon as you cd."));
+
+        body.Children.Add(SettingsCard.Heading("About"));
+        body.Children.Add(SettingsCard.Info(
+            "Version",
+            typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "unknown"));
+
+        var save = new Button { Content = "Save", IsDefault = true, Classes = { Chrome.Theme.DialogButton } };
         save.Click += (_, _) =>
         {
             Profiles = _profiles;
@@ -158,14 +155,7 @@ internal sealed class SettingsWindow : Window
             Close();
         };
 
-        var cancel = new Button
-        {
-            Content = "Cancel",
-            IsCancel = true,
-            MinWidth = 96,
-            Padding = new Thickness(14, 7),
-            CornerRadius = Palette.ControlRadius,
-        };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, Classes = { Chrome.Theme.DialogButton } };
         cancel.Click += (_, _) => Close();
 
         var footer = new Border
@@ -173,11 +163,11 @@ internal sealed class SettingsWindow : Window
             Background = Palette.DialogFooterBrush,
             BorderBrush = Palette.EdgeBrush,
             BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(20, 14),
+            Padding = new Thickness(Palette.GapLarge, Palette.GapMedium),
             Child = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 8,
+                Spacing = Palette.GapSmall,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Children = { cancel, save },
             },
@@ -186,7 +176,7 @@ internal sealed class SettingsWindow : Window
         var root = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(footer, Dock.Bottom);
         root.Children.Add(footer);
-        root.Children.Add(new ScrollViewer { Content = body, MaxHeight = 620 });
+        root.Children.Add(new ScrollViewer { Content = body, MaxHeight = 640 });
         Content = root;
 
         KeyDown += (_, e) =>
@@ -198,21 +188,22 @@ internal sealed class SettingsWindow : Window
         RenderProfiles();
     }
 
-    /// <summary>Add from the catalogue, add by hand, edit, or remove.</summary>
-    private Control ProfileButtons()
+    /// <summary>The list, and beneath it: add from the catalogue, add by hand, edit, or remove.</summary>
+    private Control ProfileEditor()
     {
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Margin = new Thickness(0, 8, 0, 0),
+            Spacing = Palette.GapSmall,
+            Margin = new Thickness(0, Palette.GapMedium, 0, 0),
         };
 
         row.Children.Add(Small("Add application…", () => _ = AddFromCatalogAsync()));
         row.Children.Add(Small("Add manually…", () => _ = AddManuallyAsync()));
         row.Children.Add(Small("Edit…", () => _ = EditSelectedAsync()));
         row.Children.Add(Small("Remove", RemoveSelected));
-        return row;
+
+        return new StackPanel { Children = { _profileList, row } };
     }
 
     private Button Small(string label, Action invoke)
@@ -220,7 +211,8 @@ internal sealed class SettingsWindow : Window
         var button = new Button
         {
             Content = label,
-            Padding = new Thickness(11, 6),
+            MinHeight = Palette.ControlHeight,
+            Padding = Palette.ButtonPadding,
             CornerRadius = Palette.ControlRadius,
         };
         button.Click += (_, _) => invoke();
@@ -306,7 +298,7 @@ internal sealed class SettingsWindow : Window
                     new TextBlock
                     {
                         Text = profile.Program + (profile.Args.Count > 0 ? " " + string.Join(" ", profile.Args) : ""),
-                        FontSize = 11,
+                        FontSize = Palette.CaptionSize,
                         Foreground = Palette.FaintTextBrush,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                     },
@@ -331,56 +323,6 @@ internal sealed class SettingsWindow : Window
 
     private string SelectedTerminalId() =>
         (_terminal.SelectedItem as ComboBoxItem)?.Tag as string ?? _pendingDefaultTerminal;
-
-    private static Control Section(string text) => new TextBlock
-    {
-        Text = text.ToUpperInvariant(),
-        FontSize = 11,
-        FontWeight = FontWeight.SemiBold,
-        Foreground = Palette.FaintTextBrush,
-        Margin = new Thickness(0, 14, 0, 2),
-    };
-
-    private static Control Row(string label, Control control)
-    {
-        var grid = new Grid
-        {
-            Margin = new Thickness(0, 2),
-            ColumnDefinitions = [new ColumnDefinition(190, GridUnitType.Pixel), new ColumnDefinition(GridLength.Star)],
-        };
-        var text = new TextBlock
-        {
-            Text = label,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Palette.TextBrush,
-        };
-        Grid.SetColumn(text, 0);
-        Grid.SetColumn(control, 1);
-        grid.Children.Add(text);
-        grid.Children.Add(control);
-        return grid;
-    }
-
-    private static Control Info(string label, string value)
-    {
-        var grid = new Grid
-        {
-            Margin = new Thickness(0, 2),
-            ColumnDefinitions = [new ColumnDefinition(190, GridUnitType.Pixel), new ColumnDefinition(GridLength.Star)],
-        };
-        var name = new TextBlock { Text = label, Foreground = Palette.MutedTextBrush };
-        var text = new SelectableTextBlock
-        {
-            Text = value,
-            Foreground = Palette.MutedTextBrush,
-            TextWrapping = TextWrapping.Wrap,
-        };
-        Grid.SetColumn(name, 0);
-        Grid.SetColumn(text, 1);
-        grid.Children.Add(name);
-        grid.Children.Add(text);
-        return grid;
-    }
 
     private static ComboBox Choice<T>((string Label, T Value)[] options, T current)
     {

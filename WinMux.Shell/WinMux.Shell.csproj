@@ -34,6 +34,8 @@
   <ItemGroup>
     <!-- The window icon. The same file the executable carries, so they cannot disagree. -->
     <AvaloniaResource Include="..\assets\winmux.ico" Link="Assets/winmux.ico" />
+    <!-- The .ico is what a Window wants; the title bar draws an Image, which wants a bitmap. -->
+    <AvaloniaResource Include="..\assets\winmux-256.png" Link="Assets/winmux-256.png" />
   </ItemGroup>
 
   <ItemGroup>

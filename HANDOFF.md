@@ -14,7 +14,10 @@ application can be put in a pane through a Start Menu picker, kept as a profile,
 window that is already open ([ADR 0015](docs/adr/0015-profiles-app-catalog-and-empty-panes.md)).
 Panes can be renamed — double-click a tab, right-click it, or `Ctrl+B ,` as in tmux — and the name
 outranks whatever the program inside calls itself. Terminals scroll back through their history and
-support mouse selection with copy.
+support mouse selection with copy. The window wears its own Windows 11 caption: the toolbar lives
+*in* the title bar next to the app icon, with minimise, maximise and close drawn by us
+([ADR 0016](docs/adr/0016-windows-11-chrome.md)), and the chrome and dialogs are on Fluent 2's type
+ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
 **Verified 2026-09-15: 424 passed, 0 warnings.** Version 0.6.0.
@@ -48,6 +51,10 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
 - **Scrollback and selection** — `TerminalViewport` holds the arithmetic (where the view sits,
   what a drag covers) in absolute row coordinates, so a selection survives new output and a parked
   view does not slide. The engine had kept 5,000 rows since Phase 1 with no way to look at them.
+- **Windows 11 chrome** — Fluent 2's type ramp (body 14, caption 12, controls 32 tall) replaced a
+  ramp one step small throughout, the settings page became rounded cards instead of a label-and-
+  combo grid, and the toolbar moved into the title bar. ADR 0016. Most of that session went on a
+  bug that was not in the app: see *Do not re-do → Build and tooling*.
 
 ## The next action
 
@@ -96,8 +103,19 @@ follow-on now that the history is reachable.
   short geometric or widget-shaped name in Core has an Avalonia namesake.
 - Do not set `Background` directly on a Button — it replaces what Fluent's template animates and
   silently kills hover and pressed feedback. Style the templated `ContentPresenter`.
-- Do not put a right-aligned group in the toolbar: docked right, or in a Grid `Auto` column, it
-  reports sensible bounds and paints nothing. Unexplained (ADR 0014). Use the main `StackPanel`.
+- Do not trust "it lays out correctly but paints nothing" without a DPI-aware screenshot — see
+  *Build and tooling* below. The earlier note here, that a right-aligned toolbar group paints
+  nothing and the reason is unknown, was very likely that measurement error rather than an Avalonia
+  bug. The buttons still sit in the main `StackPanel`; moving them back is untested but should work.
+- Do not left-align a child inside a Grid star column and expect it to be clipped to that column.
+  `HorizontalAlignment.Left` makes a control take its *desired* width instead of the width it was
+  given, and a Grid does not clip children, so it draws straight over the next column. Let it fill
+  the column and give the overflow to a ScrollViewer.
+- Do not draw a title bar while Avalonia is also drawing one. Avalonia 12 replaced 11's chrome-hints
+  enum with `Window.WindowDecorations` (`Full` / `BorderOnly` / `None`) and
+  `Avalonia.Controls.Chrome.WindowDrawnDecorations`. `BorderOnly` is the setting that leaves the
+  border, shadow and resize grips to Avalonia and the caption to the app; at the default `Full` the
+  window title paints twice, overlapping itself.
 - Do not leave `ThemeVariant.Default` and assume the platform is followed; read
   `IPlatformSettings.GetColorValues()` and set Dark or Light explicitly.
 - Do not reuse the horizontal tab-strip thickness for a vertical strip (28px of titles is a column
@@ -109,6 +127,14 @@ follow-on now that the history is reachable.
   lands in `bin/Release/` and you test a stale exe. Build the solution.
 - Do not guess another project's output path in a copy target; ask MSBuild with `GetTargetPath`.
 - Do not run `scripts/phase*-demo.ps1` under Windows PowerShell 5.1; the verifiers need pwsh 7.
+- **Do not screenshot the app from a DPI-unaware process.** PowerShell is one. On this 150% display
+  every coordinate it sees is virtualised, so `GetWindowRect` reported 1500x900 for a window that
+  was really 2250x1350 and `CopyFromScreen` captured the wrong region — which looked exactly like
+  the right-hand end of the chrome failing to render, through several rounds of investigation.
+  Call `SetProcessDpiAwarenessContext(-4)` first. The tell that it is the harness and not the app:
+  render the control in-process to a `RenderTargetBitmap` and compare.
+- Do not resize an Avalonia window with `SetWindowPos` from outside it. Avalonia goes on laying out
+  at the size it believes it has, and everything past that width falls outside the real window.
 - Do not rasterise an SVG with cairosvg, rlPyCairo or svglib+renderPM — all need a cairo Windows
   does not ship, or fail on rounded rectangles. Headless Chrome works (`assets/build-icon.py`).
 

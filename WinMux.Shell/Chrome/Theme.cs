@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Styling;
@@ -58,6 +59,49 @@ internal static class Palette
     public static readonly CornerRadius ControlRadius = new(4);
     public static readonly CornerRadius SurfaceRadius = new(8);
     public static readonly CornerRadius PillRadius = new(999);
+
+    /// <summary>
+    /// Fluent 2's type ramp, which is not a matter of taste.
+    ///
+    /// Windows 11 sets body text at 14px and captions at 12. The chrome was built at 12 and 11 —
+    /// one step small throughout — and undersized dense text is the loudest signal that something
+    /// is an older application wearing a dark theme, louder than any colour.
+    /// </summary>
+    public const double CaptionSize = 12;
+    public const double BodySize = 14;
+    public const double SubtitleSize = 20;
+
+    /// <summary>
+    /// WinUI's minimum control height. A 14px label in a 26px button is the other half of looking
+    /// cramped: Fluent's controls are deliberately touch-sized even on a desktop.
+    /// </summary>
+    public const double ControlHeight = 32;
+
+    /// <summary>Fluent's spacing rhythm. Gaps below 8 read as a dense tool, not as Windows.</summary>
+    public const double GapSmall = 8;
+    public const double GapMedium = 12;
+    public const double GapLarge = 20;
+
+    /// <summary>Standard button padding for a 14px label at <see cref="ControlHeight"/>.</summary>
+    public static readonly Thickness ButtonPadding = new(12, 5, 12, 6);
+
+    /// <summary>
+    /// The caption row, at the height Windows 11 gives a title bar that also holds controls.
+    /// A bare caption is 32; Explorer and Terminal both run taller because things live in it.
+    /// </summary>
+    public const double CaptionHeight = 40;
+
+    /// <summary>A caption button's width. 46 is the system metric, and muscle memory depends on it.</summary>
+    public const double CaptionButtonWidth = 46;
+
+    /// <summary>
+    /// Close-on-hover red. Not themed, and not ours to choose: this exact pair is what every
+    /// Windows title bar does, and a close button that lights up any other colour is wrong in a
+    /// way people notice without being able to say why.
+    /// </summary>
+    public static readonly SolidColorBrush CaptionCloseHoverBrush = new(Color.FromRgb(0xC4, 0x2B, 0x1C));
+    public static readonly SolidColorBrush CaptionClosePressedBrush = new(Color.FromRgb(0xB1, 0x27, 0x19));
+    public static readonly SolidColorBrush CaptionCloseTextBrush = new(Colors.White);
 
     /// <summary>
     /// Repaint every brush for the system's current theme and accent. Safe to call again whenever
@@ -154,15 +198,110 @@ internal static class Theme
     public const string Tab = "tab";
     public const string ActiveTab = "active-tab";
     public const string CloseButton = "close-button";
+    public const string DialogButton = "dialog-button";
+    public const string CaptionButton = "caption-button";
+    public const string CaptionClose = "caption-close";
 
     public static Styles Build()
     {
         var styles = new Styles();
 
-        AddButton(styles, ToolbarButton, Palette.TextBrush, Palette.ControlRadius, new Thickness(10, 6));
-        AddButton(styles, IconButton, Palette.MutedTextBrush, Palette.ControlRadius, new Thickness(8, 6));
-        AddButton(styles, Tab, Palette.MutedTextBrush, Palette.ControlRadius, new Thickness(11, 4));
-        AddButton(styles, CloseButton, Palette.FaintTextBrush, Palette.ControlRadius, new Thickness(5, 2));
+        AddButton(styles, ToolbarButton, Palette.TextBrush, Palette.ControlRadius, new Thickness(12, 6));
+        AddButton(styles, IconButton, Palette.MutedTextBrush, Palette.ControlRadius, new Thickness(10, 6));
+        AddButton(styles, Tab, Palette.MutedTextBrush, new CornerRadius(6, 6, 0, 0), new Thickness(14, 7));
+        AddButton(styles, CloseButton, Palette.FaintTextBrush, Palette.ControlRadius, new Thickness(6, 3));
+
+        // The caption buttons. Square, full-height and flush to the window edge, because that is
+        // what the system's own are — rounding them or insetting them is the giveaway that an app
+        // has drawn its own title bar rather than merged into one.
+        AddButton(styles, CaptionButton, Palette.TextBrush, new CornerRadius(0), new Thickness(0));
+        foreach (var selector in new Func<Style>[]
+                 {
+                     () => new Style(x => x.OfType<Button>().Class(CaptionButton)),
+                     () => new Style(x => x.OfType<Button>().Class(CaptionButton).Template().OfType<ContentPresenter>()),
+                 })
+        {
+            var style = selector();
+            style.Setters.Add(new Setter(Layoutable.MinHeightProperty, 0.0));
+            styles.Add(style);
+        }
+        styles.Add(new Style(x => x.OfType<Button>().Class(CaptionButton))
+        {
+            Setters =
+            {
+                new Setter(Layoutable.WidthProperty, Palette.CaptionButtonWidth),
+                new Setter(Layoutable.HeightProperty, Palette.CaptionHeight),
+            },
+        });
+
+        // Close is the exception to every hover rule in this file.
+        styles.Add(new Style(x => x.OfType<Button>().Class(CaptionClose).Class(":pointerover"))
+        {
+            Setters = { new Setter(TemplatedControl.ForegroundProperty, Palette.CaptionCloseTextBrush) },
+        });
+        styles.Add(new Style(x => x.OfType<Button>().Class(CaptionClose).Class(":pointerover")
+                                   .Template().OfType<ContentPresenter>())
+        {
+            Setters = { new Setter(ContentPresenter.BackgroundProperty, Palette.CaptionCloseHoverBrush) },
+        });
+        styles.Add(new Style(x => x.OfType<Button>().Class(CaptionClose).Class(":pressed"))
+        {
+            Setters = { new Setter(TemplatedControl.ForegroundProperty, Palette.CaptionCloseTextBrush) },
+        });
+        styles.Add(new Style(x => x.OfType<Button>().Class(CaptionClose).Class(":pressed")
+                                   .Template().OfType<ContentPresenter>())
+        {
+            Setters = { new Setter(ContentPresenter.BackgroundProperty, Palette.CaptionClosePressedBrush) },
+        });
+
+        // Every dialog button, without each one restating the metrics.
+        styles.Add(new Style(x => x.OfType<Button>().Class(DialogButton))
+        {
+            Setters =
+            {
+                new Setter(Layoutable.MinHeightProperty, Palette.ControlHeight),
+                new Setter(Layoutable.MinWidthProperty, 100.0),
+                new Setter(TemplatedControl.PaddingProperty, Palette.ButtonPadding),
+                new Setter(TemplatedControl.CornerRadiusProperty, Palette.ControlRadius),
+                new Setter(TemplatedControl.FontSizeProperty, Palette.BodySize),
+                new Setter(TemplatedControl.FontFamilyProperty, Palette.UiFont),
+            },
+        });
+
+        // Text entry and pickers are the controls that most obviously look wrong when short.
+        foreach (var type in new[] { typeof(TextBox), typeof(ComboBox) })
+        {
+            styles.Add(new Style(x => x.Is(type))
+            {
+                Setters =
+                {
+                    new Setter(Layoutable.MinHeightProperty, Palette.ControlHeight),
+                    new Setter(TemplatedControl.CornerRadiusProperty, Palette.ControlRadius),
+                    new Setter(TemplatedControl.FontSizeProperty, Palette.BodySize),
+                    new Setter(TemplatedControl.FontFamilyProperty, Palette.UiFont),
+                },
+            });
+        }
+
+        styles.Add(new Style(x => x.OfType<CheckBox>())
+        {
+            Setters =
+            {
+                new Setter(TemplatedControl.FontSizeProperty, Palette.BodySize),
+                new Setter(TemplatedControl.FontFamilyProperty, Palette.UiFont),
+                new Setter(Layoutable.MinHeightProperty, Palette.ControlHeight),
+            },
+        });
+
+        styles.Add(new Style(x => x.OfType<ListBoxItem>())
+        {
+            Setters =
+            {
+                new Setter(TemplatedControl.CornerRadiusProperty, Palette.ControlRadius),
+                new Setter(TemplatedControl.PaddingProperty, new Thickness(10, 7)),
+                new Setter(TemplatedControl.FontSizeProperty, Palette.BodySize),
+            },
+        });
 
         // Windows 11 marks the selected item with a filled card, not a heavier font.
         styles.Add(new Style(x => x.OfType<Button>().Class(ActiveTab).Template().OfType<ContentPresenter>())
@@ -185,7 +324,10 @@ internal static class Theme
             Setters =
             {
                 new Setter(TextBlock.FontFamilyProperty, Palette.UiFont),
-                new Setter(TextBlock.FontSizeProperty, 12.0),
+                new Setter(TextBlock.FontSizeProperty, Palette.BodySize),
+                // Fluent pairs 14px body with a 20px line box. Without it, wrapped paragraphs in
+                // the dialogs sit too close together to read as Windows text.
+                new Setter(TextBlock.LineHeightProperty, 20.0),
             },
         });
 
@@ -197,7 +339,7 @@ internal static class Theme
             {
                 new Setter(TemplatedControl.CornerRadiusProperty, Palette.SurfaceRadius),
                 new Setter(TemplatedControl.FontFamilyProperty, Palette.UiFont),
-                new Setter(TemplatedControl.FontSizeProperty, 12.0),
+                new Setter(TemplatedControl.FontSizeProperty, Palette.BodySize),
             },
         });
 
@@ -221,7 +363,8 @@ internal static class Theme
                 new Setter(TemplatedControl.CornerRadiusProperty, radius),
                 new Setter(TemplatedControl.PaddingProperty, padding),
                 new Setter(TemplatedControl.FontFamilyProperty, Palette.UiFont),
-                new Setter(TemplatedControl.FontSizeProperty, 12.0),
+                new Setter(TemplatedControl.FontSizeProperty, Palette.BodySize),
+                new Setter(Layoutable.MinHeightProperty, Palette.ControlHeight),
             },
         });
 
