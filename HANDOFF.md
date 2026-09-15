@@ -20,8 +20,9 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-16: 640 passed, 0 warnings.** Version 0.6.0.
-Phases 4, 5 and the Phase 6 work are **pushed**; `origin/main` is current as of 2026-09-15.
+**Verified 2026-09-16: 648 passed, 0 warnings.** Version 0.6.0.
+Everything through the credential store is **pushed** (`7dae17f`); the network-share work described
+below is the only thing newer than `origin/main`.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
@@ -65,12 +66,28 @@ needs to know happened, and where the reasoning lives.
   `checksums.txt`. Windows locks a running image, so it stages beside the install, saves the
   session, and hands the swap to a script. `Help` in the toolbar links the docs, the releases and
   the updater.
+- **The terminal measures its own font** instead of assuming an 8.45px cell, and the family and
+  size are settings. The old constant was wrong for both the default face and the fallback, so
+  every *position* in a row drifted away from its glyphs.
+- **SSH and Remote Desktop are profiles**, not a new pane kind — one list behind every surface that
+  opens a pane (CLAUDE.md section 5a). `ICredentialStore` landed with them, backed by Windows
+  Credential Manager, so that no password ever reaches a file WinMux owns.
+- **Network shares are Windows' job, and that is now decided and written down.** WinMux adds no SMB
+  or NFS client: Windows mounts a share, WinMux browses the path. An SMBLibrary dependency was
+  costed (LGPL-3.0 is compatible with MIT — weak copyleft, linking does not relicense us) and then
+  **dropped as unnecessary**. The guide is
+  [Network shares](docs/src/content/docs/network-shares.mdx).
 
 ## The next action
 
 **Use it for an hour, then write down what annoyed you.** Everything on the feature list is done and
 was seen working on screen; what is left is the class of finding that only comes from use, and this
 project has now had two sessions of code-reading produce less than one screenshot did.
+
+The one real gap left in the file browser is **transfer**: it navigates and selects, but cannot
+copy, move or delete — locally or on a share. That, and SFTP/FTP browsing behind
+`IFileBrowserFileSystem` (unblocked now that `ICredentialStore` exists), are the next pieces of
+engineering rather than taste calls.
 
 The two things still queued are taste calls rather than gaps, both from the 2026-09-15 critique:
 the toolbar is uniform icon+label with a divider after every group, where Explorer's command bar has
@@ -102,6 +119,12 @@ that a future session recognises them as answers rather than rediscovering them 
 - **Higher-integrity attach is constrained by UIPI**, and always will be. A non-elevated process
   cannot manipulate an elevated application's windows. Failures are detected and explained in plain
   words, and **WinMux will not ship elevated to work around it** (CLAUDE.md section 5).
+- **WinMux speaks no network filesystem protocol, and will not**
+  ([ADR 0019](docs/adr/0019-network-filesystems.md)). Windows mounts SMB natively and
+  NFS through an optional component; a share is then an ordinary path and the file browser walks it.
+  A built-in client would reimplement Kerberos, DFS and offline files, and would parse untrusted
+  network bytes inside the WinMux process, for no capability gained. SFTP and FTP are *not* covered
+  by this — Windows has nothing to delegate to there, so they remain real work that is wanted.
 - **An X11 port needs its own host executable, not a shim.** `WinMux.PaneHost` keeps its 35 imports
   deliberately; reparenting *is* a platform implementation (ADR 0013, decision 5). This is the
   design, not a gap in it.
@@ -176,6 +199,14 @@ that a future session recognises them as answers rather than rediscovering them 
   hand-written rather than serialised from the type, so a forgotten property compiles and silently
   resets on every launch; that happened twice before `SettingsRoundTripTests` existed to catch it.
 
+**Network paths**
+- Do not give `cmd.exe` a UNC working directory. It prints a warning nobody sees and starts in
+  `C:\Windows` instead, which defeats session restore silently — a `cmd` pane saved on a share comes
+  back somewhere else. PowerShell, pwsh and WSL are all fine. Measured 2026-09-16.
+- Do not assume a share root behaves like a directory. `Directory.GetParent(@"\\server\share")`
+  returns `null`, so "up" has to be handled as a root the way `C:\` is. `FileBrowserUncTests` pins
+  this, and normalisation, and the offline-share fallback.
+
 **Secrets**
 - Do not put a password in the profiles file, or any file WinMux owns. It is plain text,
   hand-editable, copied between machines and committed by mistake. `ICredentialStore` is the
@@ -186,6 +217,10 @@ that a future session recognises them as answers rather than rediscovering them 
   in the OS store and is materialised late and briefly.
 
 **Judgement**
+- Do not carry an unverified convenience claim forward as if it were a finding. "SMB already works
+  via UNC paths" was asserted across several turns, written into a plan, and only checked afterwards
+  — where it happened to be true. `\\localhost\C$` is reachable without elevation and makes the
+  check a two-minute job on any Windows machine; there was never a reason not to do it first.
 - Do not render a terminal row as one `FormattedText` with one brush. It looks correct on an
   uncoloured prompt and silently throws away every colour and attribute the engine parsed; a run
   per cell is the other wrong answer, at 12,000 text layouts a second on a wide row.

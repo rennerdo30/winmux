@@ -30,6 +30,16 @@ automatically.
 **It refuses for its own reasons.** WinMux falls back to attach mode and says why. `Ctrl+B` `a`
 switches back and forth at any time.
 
+## A network share will not open
+
+Usually one of two SMB defaults that modern Windows tightened: signing is required, and guest access
+is refused. Both are checked with one command, and both have a proper fix on the server side.
+
+A `cmd` pane that keeps restoring to `C:\Windows` instead of a share is a third, separate problem:
+`cmd.exe` cannot start in a UNC directory at all and says so on a line nobody reads.
+
+See [Network shares](/network-shares/) for all three.
+
 ## The chrome looks wrong
 
 If Mica is unavailable, WinMux says so in the status bar on startup and uses an opaque window. That

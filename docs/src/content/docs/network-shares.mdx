@@ -1,0 +1,154 @@
+---
+title: Network shares
+description: Using SMB and NFS shares in WinMux, through the ones Windows already speaks.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+WinMux speaks no network filesystem protocol of its own. It does not need to: Windows already speaks
+SMB natively and NFS through an optional component, and once a share is reachable it is an ordinary
+path. A file-browser pane will browse it, a terminal pane will start in it, and a session will
+restore to it.
+
+So this page is mostly about Windows, and about the four things that actually go wrong.
+
+<Aside title="Why not build it in?">
+A built-in SMB or NFS client would be a second implementation of something the operating system
+already does correctly, including Kerberos, DFS referrals, offline files and the credential prompt.
+It would also be a protocol parser processing untrusted bytes from the network inside the WinMux
+process, which is a meaningful thing to take on for no capability gained.
+
+Read [Architecture](/architecture/) for the general rule this follows: WinMux composes what the
+system provides rather than reimplementing it.
+</Aside>
+
+## SMB: mapping a share
+
+Any of these work, and WinMux does not care which you use:
+
+```powershell
+# A drive letter that comes back after a reboot.
+net use Z: \\nas.example.com\media /persistent:yes
+
+# The same thing, PowerShell's way.
+New-PSDrive -Name Z -PSProvider FileSystem -Root \\nas.example.com\media -Persist
+
+# Or map nothing at all and use the UNC path directly.
+```
+
+**Mapping a drive letter is optional.** A UNC path works everywhere a path works in WinMux — type
+`\\nas.example.com\media` into a file-browser pane's address bar and press Enter, or set it as a
+profile's working directory.
+
+To save the password, let Windows save it, in the store built for that:
+
+```powershell
+cmdkey /add:nas.example.com /user:media-user /pass
+```
+
+WinMux never sees it and never stores it. See [Profiles](/profiles/#remote-connections) for the same
+policy applied to SSH and Remote Desktop.
+
+## NFS: mounting an export
+
+The NFS client is an optional Windows component, and it is not present on Home editions. Check what
+your machine offers and turn it on from an **elevated** prompt:
+
+```powershell
+Get-WindowsOptionalFeature -Online -FeatureName *NFS*
+Enable-WindowsOptionalFeature -Online -FeatureName ClientForNFS-Infrastructure -All
+```
+
+The exact feature names vary by edition, which is why the first command is there. Once installed,
+`mount.exe`, `umount.exe` and `showmount.exe` are in `System32`.
+
+<Aside type="caution" title="Windows spells NFS exports backwards">
+Windows' NFS client does **not** take `server:/export`. It takes a UNC-shaped path:
+
+```powershell
+showmount -e nas.example.com              # list the exports
+mount -o anon \\nas.example.com\export Z:  # not nas.example.com:/export
+```
+
+`-o anon` mounts as the anonymous user, which is what most home NAS exports expect. Without it the
+mount uses your Windows identity, and an export mapped by UID will reject it or give you files you
+cannot write.
+</Aside>
+
+Mounted, it is a drive letter like any other, and everything below applies to it too.
+
+## Using a share in WinMux
+
+**In a file-browser pane** — type the path into the address bar and press Enter. UNC paths and
+mapped drives both work, the current directory and selection are saved into the session, and a
+share that is unreachable at restore time falls back to a local directory with an explanation
+*without* forgetting where you were. Reconnect, reopen, and you are back on the share.
+
+**As a profile's working directory** — set `\\nas.example.com\media` or `Z:\` as the working
+directory of a terminal profile. See [Profiles](/profiles/).
+
+**Navigating up from a share root** stops there. `\\nas.example.com\media` has no parent the way
+`C:\` has none; WinMux says so rather than doing something surprising.
+
+<Aside type="danger" title="cmd.exe cannot start in a UNC directory">
+This one is silent and costs people an afternoon. Give `cmd.exe` a UNC working directory and it
+prints a warning you will not see and **starts in `C:\Windows` instead**:
+
+```
+'\\nas.example.com\media'
+CMD.EXE was started with the above path as the current directory.
+UNC paths are not supported.  Defaulting to Windows directory.
+```
+
+It is a limitation of `cmd` itself, not of WinMux, and nothing can fix it from outside. It matters
+here because it defeats session restore quietly: a `cmd` pane saved on a share comes back in
+`C:\Windows`.
+
+PowerShell, pwsh and WSL all handle UNC working directories correctly. **Map a drive letter for
+`cmd` panes, or use a different shell.**
+</Aside>
+
+## When a share will not connect
+
+Modern Windows tightened two SMB defaults, and between them they account for most failures against
+a NAS or a Samba server. Check what your machine is actually doing:
+
+```powershell
+Get-SmbClientConfiguration |
+  Select-Object RequireSecuritySignature, EnableInsecureGuestLogons
+```
+
+**`RequireSecuritySignature : True`** — the client requires SMB signing. A server that does not
+offer it is refused. Fix it on the server if you possibly can; every current NAS firmware and every
+supported Samba release supports signing.
+
+**`EnableInsecureGuestLogons : False`** — guest access is refused. A share with no authentication
+will not open. Give the share a real user instead.
+
+Both defaults exist because the alternatives are downgrade-attackable. Turning either off weakens
+every SMB connection the machine makes, not only the one that is failing, so treat it as a last
+resort on a network you control — and know that is the trade you are making.
+
+Other things worth checking, in order of how often they are the answer:
+
+- **`net use` reports the real error.** Run it by hand; the message is more specific than a file
+  browser can be.
+- **Credentials are cached per server, not per share.** `cmdkey /list` shows what Windows is
+  reusing; `cmdkey /delete:nas.example.com` clears a stale one.
+- **You cannot hold two sessions to one server as two different users.** Windows refuses with
+  `ERROR_SESSION_CREDENTIAL_CONFLICT`. Disconnect the first (`net use \\server /delete`) or reach
+  the server by another name.
+- **SMB1 is gone**, and is not coming back. A device that offers nothing newer needs replacing or
+  isolating, not enabling.
+
+## What WinMux does not do
+
+Stated plainly so nobody waits for it:
+
+- **No built-in SMB or NFS client.** Mount it with Windows; WinMux browses the result.
+- **No SFTP, FTP or SCP browsing yet.** Unlike SMB and NFS, Windows has nothing to delegate to
+  here, so these need real work rather than a document. They are wanted and not yet built.
+- **No file transfer.** The file browser navigates and selects; it does not copy, move or delete.
+  This is true of local files too.
+- **No credential storage of its own**, for a share or anything else. Windows Credential Manager
+  holds it, and you can inspect and delete what is in there without trusting WinMux to do it.

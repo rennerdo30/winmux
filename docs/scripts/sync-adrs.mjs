@@ -26,9 +26,16 @@ const quote = (value) => `'${value.replace(/'/g, "''")}'`;
 /**
  * Links between ADRs are written relative to docs/adr/ ("0016-....md"). On the site they are
  * routes, so the extension goes and the path becomes site-absolute.
+ *
+ * An ADR may also point at a guide page, written as the real repository path
+ * ("../src/content/docs/network-shares.mdx") so that it resolves when the ADR is read on GitHub —
+ * which is where they are read most. Guides are top-level routes, so the whole prefix collapses to
+ * a slug.
  */
 function rewriteLinks(body) {
-  return body.replace(/\]\((\.\/)?(\d{4}-[a-z0-9-]+)\.md(#[^)]*)?\)/gi, "](/adr/$2/$3)");
+  return body
+    .replace(/\]\((\.\/)?(\d{4}-[a-z0-9-]+)\.md(#[^)]*)?\)/gi, "](/adr/$2/$3)")
+    .replace(/\]\(\.\.\/src\/content\/docs\/([a-z0-9-]+)\.mdx?(#[^)]*)?\)/gi, "](/$1/$2)");
 }
 
 const files = (await readdir(source)).filter((name) => name.endsWith(".md")).sort();

@@ -163,6 +163,13 @@ The file browser is the documented exception to "a pane is a process": it is tru
 WinMux UI, because a subprocess boundary buys nothing there. Terminal and foreign-app panes keep
 theirs.
 
+**WinMux implements no network filesystem protocol** ([ADR 0019](docs/adr/0019-network-filesystems.md)).
+Windows mounts SMB and NFS; a share is then an ordinary UNC path or drive letter and the file
+browser walks it unchanged. Do not add an SMB or NFS client — it buys no capability the OS does not
+already provide, and it would put a parser for untrusted network bytes inside the shell process that
+priority 2 exists to keep alive. SFTP and FTP are the opposite case, because Windows offers nothing
+to delegate to: they are wanted, and they belong behind `IFileBrowserFileSystem`.
+
 A `Stack` may appear anywhere a node may, including inside another `Stack`
 ([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md)). Its tab strip is **reserved
 geometry**, not decoration: `Layouter` carves the band out of the stack's rectangle before placing

@@ -27,6 +27,7 @@ export default defineConfig({
             { label: "Sessions", slug: "sessions" },
             { label: "Keyboard", slug: "keyboard" },
             { label: "Profiles and applications", slug: "profiles" },
+            { label: "Network shares", slug: "network-shares" },
             { label: "Settings", slug: "settings" },
           ],
         },

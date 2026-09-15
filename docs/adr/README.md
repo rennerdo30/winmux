@@ -18,3 +18,11 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | [0009](0009-phase-1-terminal-runtime.md) | Phase 1 terminal runtime and named actions | accepted |
 | [0010](0010-phase-2-persistence-runtime.md) | Phase 2 persistence runtime and cwd recovery | accepted |
 | [0011](0011-phase-3-foreign-app-runtime.md) | Phase 3 foreign-app runtime and compatibility selection | accepted |
+| [0012](0012-phase-4-pane-providers-and-file-browser.md) | Phase 4 pane providers and built-in file browser | accepted |
+| [0013](0013-phase-5-platform-layer.md) | Phase 5 platform layer | accepted |
+| [0014](0014-nested-tab-groups-and-shell-chrome.md) | Nested tab groups, tab placement, and a real toolbar | accepted |
+| [0015](0015-profiles-app-catalog-and-empty-panes.md) | Profiles, the application catalogue, and empty panes | accepted |
+| [0016](0016-windows-11-chrome.md) | Looking like Windows 11 | accepted |
+| [0017](0017-input-queue-attachment.md) | Input-queue attachment: measured | accepted |
+| [0018](0018-terminal-emulation-supply-chain.md) | `Terminal.Emulation`: the supply-chain position | accepted for 0.x |
+| [0019](0019-network-filesystems.md) | Network filesystems: delegate to Windows, ship no client | accepted |
