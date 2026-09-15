@@ -20,7 +20,7 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-16: 625 passed, 0 warnings.** Version 0.6.0.
+**Verified 2026-09-16: 640 passed, 0 warnings.** Version 0.6.0.
 Phases 4, 5 and the Phase 6 work are **pushed**; `origin/main` is current as of 2026-09-15.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
@@ -175,6 +175,15 @@ that a future session recognises them as answers rather than rediscovering them 
 - Do not add a property to `WinMuxSettings` without adding it to `SettingsFile` as well. The file is
   hand-written rather than serialised from the type, so a forgotten property compiles and silently
   resets on every launch; that happened twice before `SettingsRoundTripTests` existed to catch it.
+
+**Secrets**
+- Do not put a password in the profiles file, or any file WinMux owns. It is plain text,
+  hand-editable, copied between machines and committed by mistake. `ICredentialStore` is the
+  contract and Windows Credential Manager is the implementation; a test asserts that no key written
+  to the profiles file is named after a secret.
+- Do not reach for `SecureString`. Microsoft documents it as not recommended for new development,
+  and a .NET string cannot be zeroed anyway. The protection that is real is that the secret lives
+  in the OS store and is materialised late and briefly.
 
 **Judgement**
 - Do not render a terminal row as one `FormattedText` with one brush. It looks correct on an
