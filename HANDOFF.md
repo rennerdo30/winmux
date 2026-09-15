@@ -25,7 +25,7 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
 
 ## What just happened
 
-**2026-09-15**, one long session, eleven commits:
+**2026-09-15**, one long session (see `git log` from `68103d5` for the commits):
 
 - **Phase 5** — `WinMux.Platform` extracted; `Win32Interop.cs` deleted rather than ported, because
   18 of its 24 imports had no callers. ADR 0013.
@@ -54,8 +54,9 @@ dragging a window into a pane, provider discovery and packaging.
 
 ## Blocked / needs a human
 
-- **Mixed-scale multi-monitor is unmeasured.** Both monitors here are 144 DPI. Someone must set
-  different display scales and run `scripts/phase4-demo.ps1` across them before fidelity is claimed.
+- **Mixed-scale multi-monitor is unmeasured.** The development machine has two monitors at the
+  same scale, so nothing has exercised mixed DPI. Someone must set different display scales and run
+  `scripts/phase4-demo.ps1` across them before fidelity is claimed.
 - **Input-queue starvation is unmeasured** (ADR 0001, finding 4). Until it is, keep PaneHost
   top-level and never reparent it into the shell.
 - **Higher-integrity attach is constrained by UIPI.** Failures are visible; WinMux will not elevate.
@@ -63,7 +64,8 @@ dragging a window into a pane, provider discovery and packaging.
   `ITerminalEngine` seam bounds the replacement cost but does not make the call.
 - **An X11 port needs its own host executable, not a shim.** PaneHost keeps its 35 imports
   deliberately (ADR 0013, decision 5). Do not read that as unfinished Phase 5 work.
-- **Nothing is pushed.** Eleven commits sit on local `main` only.
+- **Nothing is pushed.** Everything after `68103d5` exists only in this checkout, so a lost disk
+  is a lost project. Pushing is the user's call; it has not been made.
 
 ## Do not re-do
 
@@ -114,5 +116,6 @@ dragging a window into a pane, provider discovery and packaging.
   return before async pane creation completes (ADR 0012).
 
 **Environment**
-- `E:\Development\winmux` and `D:\Development\winmux` are the same project via subst/junction.
+- The development checkout is reachable by two drive letters via subst/junction, so a tool may
+  report a path that looks unfamiliar. It is the same working tree.
 - Opening a session file under `examples/` rewrites it — `scripts/run.ps1` copies it aside first.
