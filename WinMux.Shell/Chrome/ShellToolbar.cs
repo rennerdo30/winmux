@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
-using Avalonia.Media;
 using WinMux.Core.Layout;
 using WinMux.Shell.Actions;
 
@@ -21,7 +20,6 @@ namespace WinMux.Shell.Chrome;
 /// </summary>
 internal static class ShellToolbar
 {
-
     /// <param name="dispatch">Runs a named action, exactly as a key binding would.</param>
     /// <param name="setTabPlacement">Moves the focused stack's tabs. Not a named action: it needs a target.</param>
     public static Control Build(Action<string> dispatch, Action<TabStripPlacement> setTabPlacement)
@@ -30,13 +28,12 @@ internal static class ShellToolbar
         {
             Orientation = Orientation.Horizontal,
             Spacing = 2,
-            Margin = new Thickness(6, 4),
+            Margin = new Thickness(8, 6),
             VerticalAlignment = VerticalAlignment.Center,
         };
 
         bar.Children.Add(SplitButton(
-            "New terminal",
-            "Open a terminal in a new tab",
+            Icons.Terminal(), "Terminal", "Open a terminal in a new tab",
             () => dispatch(ShellActionNames.NewTab),
             [
                 ("Command Prompt", ShellActionNames.NewTerminalCmd),
@@ -46,24 +43,24 @@ internal static class ShellToolbar
             ],
             dispatch));
 
-        bar.Children.Add(Command("Files", "Open the file browser in a new tab", ShellActionNames.NewFileBrowser, dispatch));
+        bar.Children.Add(Command(Icons.Folder(), "Files", "Open the file browser in a new tab",
+            ShellActionNames.NewFileBrowser, dispatch));
 
-        bar.Children.Add(Separator());
+        bar.Children.Add(Divider());
 
-        bar.Children.Add(Command("▥  Split right", "Split the focused pane into columns",
+        bar.Children.Add(Command(Icons.SplitColumns(), "Split right", "Split the focused pane into columns",
             ShellActionNames.SplitColumns, dispatch));
-        bar.Children.Add(Command("▤  Split down", "Split the focused pane into rows",
+        bar.Children.Add(Command(Icons.SplitRows(), "Split down", "Split the focused pane into rows",
             ShellActionNames.SplitRows, dispatch));
 
-        bar.Children.Add(Separator());
+        bar.Children.Add(Divider());
 
         bar.Children.Add(SplitButton(
-            "▧  Tab this pane",
-            "Turn the focused pane into a tab group",
+            Icons.TabGroup(), "Tab group", "Turn the focused pane into a tab group",
             () => dispatch(ShellActionNames.NewTab),
             [
-                ("Tab group, tabs on top", ShellActionNames.NewTab),
-                ("Tab group, tabs on the left", ShellActionNames.NewTabVertical),
+                ("New tab here", ShellActionNames.NewTab),
+                ("New tab, tabs down the side", ShellActionNames.NewTabVertical),
             ],
             dispatch,
             extras:
@@ -74,19 +71,20 @@ internal static class ShellToolbar
                 ("Move tabs to the right", () => setTabPlacement(TabStripPlacement.Right)),
             ]));
 
-        bar.Children.Add(Separator());
-        bar.Children.Add(Command("Close pane", "Close the focused pane", ShellActionNames.ClosePane, dispatch));
+        bar.Children.Add(Divider());
+        bar.Children.Add(Command(Icons.Close(16), "Close pane", "Close the focused pane",
+            ShellActionNames.ClosePane, dispatch));
 
         var right = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 2,
-            Margin = new Thickness(6, 4),
+            Margin = new Thickness(8, 6),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        right.Children.Add(Command("Save", "Save the session now", ShellActionNames.SaveSession, dispatch));
-        right.Children.Add(Command("⌘  Commands", "Every action by name (Ctrl+B then :)",
+        right.Children.Add(IconOnly(Icons.Save(), "Save the session now", ShellActionNames.SaveSession, dispatch));
+        right.Children.Add(IconOnly(Icons.Commands(), "All commands by name (Ctrl+B then :)",
             ShellActionNames.ShowPalette, dispatch));
 
         var dock = new DockPanel { LastChildFill = false };
@@ -104,15 +102,25 @@ internal static class ShellToolbar
         };
     }
 
-    private static Control Command(string label, string tip, string action, Action<string> dispatch)
+    private static Control Command(Control icon, string label, string tip, string action, Action<string> dispatch)
     {
-        var button = Styled(label, tip);
+        var button = Styled(WithLabel(icon, label), tip);
         button.Click += (_, _) => dispatch(action);
         return button;
     }
 
-    /// <summary>A primary action with a dropdown of variants beside it.</summary>
+    private static Control IconOnly(Control icon, string tip, string action, Action<string> dispatch)
+    {
+        var button = Styled(icon, tip);
+        button.Classes.Remove(Theme.ToolbarButton);
+        button.Classes.Add(Theme.IconButton);
+        button.Click += (_, _) => dispatch(action);
+        return button;
+    }
+
+    /// <summary>A primary action with a dropdown of variants attached to its right edge.</summary>
     private static Control SplitButton(
+        Control icon,
         string label,
         string tip,
         Action primary,
@@ -120,12 +128,16 @@ internal static class ShellToolbar
         Action<string> dispatch,
         (string Header, Action Invoke)[]? extras = null)
     {
-        var main = Styled(label, tip);
-        main.Click += (_, _) => primary();
+        var main = Styled(WithLabel(icon, label), tip);
+        main.CornerRadius = new CornerRadius(4, 0, 0, 4);
 
-        var chevron = Styled("˅", "More");
-        chevron.Padding = new Thickness(4, 5);
-        chevron.FontSize = 11;
+        var chevron = Styled(Icons.Chevron(), "More");
+        chevron.Classes.Remove(Theme.ToolbarButton);
+        chevron.Classes.Add(Theme.IconButton);
+        chevron.CornerRadius = new CornerRadius(0, 4, 4, 0);
+        chevron.Padding = new Thickness(3, 6);
+
+        main.Click += (_, _) => primary();
 
         var items = new List<Control>();
         foreach (var (header, action) in variants)
@@ -136,7 +148,7 @@ internal static class ShellToolbar
         }
         if (extras is { Length: > 0 })
         {
-            items.Add(new Avalonia.Controls.Separator());
+            items.Add(new Separator());
             foreach (var (header, invoke) in extras)
             {
                 var item = new MenuItem { Header = header };
@@ -155,11 +167,19 @@ internal static class ShellToolbar
         return group;
     }
 
-    private static Button Styled(string label, string tip)
+    private static Control WithLabel(Control icon, string label)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+        row.Children.Add(icon);
+        row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
+        return row;
+    }
+
+    private static Button Styled(object content, string tip)
     {
         var button = new Button
         {
-            Content = label,
+            Content = content,
             VerticalAlignment = VerticalAlignment.Center,
             [ToolTip.TipProperty] = tip,
         };
@@ -167,10 +187,10 @@ internal static class ShellToolbar
         return button;
     }
 
-    private static Control Separator() => new Border
+    private static Control Divider() => new Border
     {
         Width = 1,
-        Margin = new Thickness(6, 7),
+        Margin = new Thickness(6, 8),
         Background = Palette.EdgeBrush,
     };
 }

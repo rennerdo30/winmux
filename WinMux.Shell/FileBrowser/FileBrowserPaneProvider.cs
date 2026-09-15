@@ -46,7 +46,7 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
     private readonly TextBlock _status = new()
     {
         Margin = new Thickness(8, 4),
-        Foreground = new SolidColorBrush(Color.FromRgb(0xa6, 0xad, 0xc8)),
+        Foreground = Chrome.Palette.MutedTextBrush,
         TextWrapping = TextWrapping.Wrap,
     };
     private readonly SemaphoreSlim _operationLock = new(1, 1);
@@ -97,9 +97,18 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
         return ValueTask.CompletedTask;
     }
 
+    private static Button ToolbarButton(string content)
+    {
+        var button = new Button { Content = content };
+        button.Classes.Add(Chrome.Theme.ToolbarButton);
+        return button;
+    }
+
     private void BuildView()
     {
-        _root.Background = new SolidColorBrush(Color.FromRgb(0x18, 0x18, 0x25));
+        // The browser is shell UI, so it takes the shell's colours rather than its own. It used to
+        // carry a hardcoded palette that drifted from the chrome around it.
+        _root.Background = Chrome.Palette.SurfaceBrush;
         _root.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
         _root.RowDefinitions.Add(new RowDefinition(GridLength.Star));
         _root.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
@@ -111,9 +120,12 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
             new ColumnDefinition(GridLength.Star),
             new ColumnDefinition(GridLength.Auto),
         }};
-        var up = new Button { Content = "↑", Padding = new Thickness(10, 4) };
-        var refresh = new Button { Content = "↻", Padding = new Thickness(10, 4) };
-        var terminal = new Button { Content = "Terminal here", Padding = new Thickness(10, 4) };
+        var up = ToolbarButton("↑");
+        var refresh = ToolbarButton("↻");
+        var terminal = ToolbarButton("Terminal here");
+        _path.Margin = new Thickness(6, 0);
+        _path.CornerRadius = Chrome.Palette.ControlRadius;
+        _path.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
         ToolTip.SetTip(up, "Parent directory");
         ToolTip.SetTip(refresh, "Refresh");
         Grid.SetColumn(up, 0);

@@ -61,7 +61,7 @@ internal static class TabStripView
                 commands));
         }
 
-        items.Children.Add(Icon("＋", "Add a tab to this group", () => commands.AddTab(strip.Stack), vertical));
+        items.Children.Add(Icon(Icons.Add(), "Add a tab to this group", () => commands.AddTab(strip.Stack), vertical));
         items.Children.Add(PlacementButton(strip, commands, vertical));
 
         var scroller = new ScrollViewer
@@ -123,9 +123,8 @@ internal static class TabStripView
 
         var close = new Button
         {
-            Content = "✕",
-            Margin = new Thickness(6, 0, 0, 0),
-            FontSize = 10,
+            Content = Icons.Close(9),
+            Margin = new Thickness(7, 0, -3, 0),
             VerticalAlignment = VerticalAlignment.Center,
             [ToolTip.TipProperty] = "Close this tab",
         };
@@ -152,15 +151,15 @@ internal static class TabStripView
             ItemsSource = new[] { Item("Close tab", () => commands.CloseTab(target)) },
         };
 
-        if (!isActive) return tab;
-
-        // An accent line on the content side of the active tab, the way every modern tabbed UI
-        // marks the current one. Drawn as a sibling rather than a border so the tab's own rounded
-        // corners survive.
+        // The accent strip is added to *every* tab, transparent when inactive. Adding it only to the
+        // active one made that tab two pixels shorter than its neighbours, so the row visibly
+        // shifted as the selection moved.
         var accent = new Border
         {
-            Background = hasFocus ? Palette.AccentBrush : Palette.MutedTextBrush,
-            Opacity = hasFocus ? 1 : 0.5,
+            Background = isActive
+                ? (hasFocus ? Palette.AccentBrush : Palette.MutedTextBrush)
+                : Brushes.Transparent,
+            Opacity = isActive && !hasFocus ? 0.5 : 1,
         };
 
         var stacked = new DockPanel { LastChildFill = true };
@@ -192,7 +191,7 @@ internal static class TabStripView
     {
         var button = new Button
         {
-            Content = vertical ? "Tab position…" : "⋯",
+            Content = Icons.More(),
             HorizontalAlignment = vertical ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
             HorizontalContentAlignment = vertical ? HorizontalAlignment.Left : HorizontalAlignment.Center,
             [ToolTip.TipProperty] = "Where these tabs sit",
@@ -229,7 +228,7 @@ internal static class TabStripView
         return item;
     }
 
-    private static Control Icon(string glyph, string tip, Action invoke, bool vertical)
+    private static Control Icon(Control glyph, string tip, Action invoke, bool vertical)
     {
         var button = new Button
         {

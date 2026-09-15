@@ -19,8 +19,32 @@ internal sealed class App : Application
     public override void Initialize()
     {
         Styles.Add(new FluentTheme());
+
+        // Follow the system. An app that ignores the light/dark setting and picks its own accent
+        // reads as foreign on Windows 11 before anyone looks at a single control.
+        //
+        // The variant is set *explicitly* rather than left at ThemeVariant.Default. Default did not
+        // pick up the platform here: Fluent kept resolving its light control colours while our own
+        // brushes painted dark, so every templated control — the active tab, the dialogs — came out
+        // light-on-dark. Asking Windows and saying the answer out loud is unambiguous.
+        var settings = PlatformSettings;
+        if (settings is not null)
+        {
+            Apply(settings.GetColorValues());
+            settings.ColorValuesChanged += (_, values) => Dispatcher.UIThread.Post(() => Apply(values));
+        }
+
+        void Apply(Avalonia.Platform.PlatformColorValues values)
+        {
+            RequestedThemeVariant = values.ThemeVariant == Avalonia.Platform.PlatformThemeVariant.Dark
+                ? Avalonia.Styling.ThemeVariant.Dark
+                : Avalonia.Styling.ThemeVariant.Light;
+            Chrome.Palette.Apply(values);
+        }
+
         // After Fluent, so the chrome's own styles win where they overlap.
         Styles.Add(Chrome.Theme.Build());
+
     }
 
     public override void OnFrameworkInitializationCompleted()

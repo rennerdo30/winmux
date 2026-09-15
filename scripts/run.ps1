@@ -30,6 +30,9 @@ param(
     # Run the already-built binaries instead of building first.
     [switch]$NoBuild,
 
+    # Open a session under examples\ directly, accepting that WinMux will write back to it.
+    [switch]$InPlace,
+
     # Block until the window closes, and report its exit code.
     [switch]$Wait,
 
@@ -60,8 +63,23 @@ if (-not (Test-Path -LiteralPath $paneHost)) {
 $arguments = @()
 if ($Session) {
     $resolved = (Resolve-Path -LiteralPath $Session).Path
+
+    # A session file is live: WinMux saves the layout back to whatever it opened. That is right for
+    # a session and wrong for an example, which is documentation — opening one directly rewrites it
+    # and strips its comments. Copy it aside unless the caller insists.
+    $examples = Join-Path $repo 'examples'
+    if (-not $InPlace -and $resolved.StartsWith($examples, [StringComparison]::OrdinalIgnoreCase)) {
+        $scratch = Join-Path ([IO.Path]::GetTempPath()) ("winmux-" + (Split-Path -Leaf $resolved))
+        Copy-Item -LiteralPath $resolved -Destination $scratch -Force
+        Write-Host "Session: $scratch"
+        Write-Host "         (copied from $resolved so the example is not overwritten; -InPlace to edit it)"
+        $resolved = $scratch
+    }
+    else {
+        Write-Host "Session: $resolved"
+    }
+
     $arguments += $resolved
-    Write-Host "Session: $resolved"
 }
 if ($Passthrough) { $arguments += $Passthrough }
 

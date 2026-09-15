@@ -51,6 +51,9 @@ measured checks without the long-running walkthrough.
 - `Layouter` reserves the strip out of the stack's rectangle and reports it on the `Arrangement`.
   One strip per stack, wherever the stack is — the old single top bar could only ever describe one.
 - A toolbar, per-stack strips with `+`/close/placement menus, and a centralised `Chrome/Theme.cs`.
+- The chrome now takes its light/dark variant and its accent from Windows, renders on a **Mica**
+  backdrop (verified by reading back `ActualTransparencyLevel`), and draws its icons as geometry
+  rather than trusting a symbol font to exist. See the addendum to ADR 0014.
 - `scripts/run.ps1`, `scripts/publish.ps1` (to `dist/`), and `examples/tabs-and-splits.toml`.
 - **A shipped build bug, found while producing a testable exe:** the shell copied PaneHost from
   `bin/$(Configuration)` while PaneHost, being x64-only, builds to `bin/x64/$(Configuration)`.
@@ -137,4 +140,11 @@ keeps scrollback and can address it while the control has no wheel handler at al
   of ellipses (ADR 0014). `LayoutMetrics` carries both.
 - Do not guess another project's output path in a copy target. PaneHost is x64-only and builds to
   `bin/x64/...`; ask MSBuild with `GetTargetPath`.
+- Do not `dotnet build` WinMux.Shell.csproj alone and then run `bin/x64/Release/...`. The project
+  is x64 only through the solution mapping, so a bare project build lands in `bin/Release/` and you
+  test a stale exe. Build the solution (ADR 0014 addendum).
+- Do not judge a colour from a screenshot. An active tab that looked light-on-dark measured
+  `#3A3A3A` — exactly right. Sample the pixel, or dump the resolved palette at runtime.
+- Do not leave `ThemeVariant.Default` and assume the platform is followed; read
+  `IPlatformSettings.GetColorValues()` and set Dark or Light explicitly.
 - `E:\Development\winmux` and `D:\Development\winmux` are the same project via subst/junction.

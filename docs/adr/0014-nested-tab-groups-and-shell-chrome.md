@@ -95,3 +95,43 @@ model supported nesting; the UI could not express it, and therefore nobody could
 - **The clamp for a squeezed stack was wrong in a way the test caught**: it shrank the strip to fit
   rather than dropping it, so a 10-pixel-tall stack got a 9-pixel strip and a 1-pixel pane. The
   rule is now full thickness or nothing — the panes are what the user is looking at.
+
+---
+
+## Addendum, same day — native Windows 11 appearance
+
+The chrome above was consistent but invented. Three things make an app read as foreign on Windows 11
+before anyone examines a single control, and it had all three: it ignored the light/dark setting,
+it chose its own accent instead of the user's, and it painted a flat opaque background where the
+system shows Mica.
+
+- **The theme variant is read from `IPlatformSettings.GetColorValues()` and set explicitly**, not
+  left at `ThemeVariant.Default`. Default did not resolve the platform here: Fluent kept using its
+  light control colours underneath our dark brushes.
+- **The accent is the user's**, lightened for dark mode and darkened for light, never a literal.
+- **Mica**, via `TransparencyLevelHint`, with `AcrylicBlur` and then `None` behind it. Confirmed
+  active on this machine by reading back `ActualTransparencyLevel`. The chrome brushes carry alpha
+  so the backdrop shows through; the shell says so in the status bar if Windows refuses it.
+- **Brushes are mutable singletons whose `Color` is mutated in place.** Styles capture a brush
+  reference once, so swapping the objects on a theme change would leave everything already on
+  screen painted in the old scheme.
+- **Icons are drawn geometry, not a symbol font.** Segoe Fluent Icons is the right look, but a
+  wrong codepoint renders as a hollow box and a machine without the font renders every icon as one
+  — a failure that looks like a broken application and that no test we run would catch.
+- The restore notice, the first thing seen when opening a session, became a real dialog: heading,
+  body, shaded action footer, Esc to dismiss. Dialogs use **opaque** surfaces, because a dialog has
+  no backdrop of its own and the translucent chrome brushes let the panes read through the text.
+- The file browser's hardcoded palette was replaced with the shared one it had drifted from.
+
+### What failed here
+
+- **Reading a screenshot is not measuring.** The active tab looked like a light card with dark text
+  and I nearly rewrote the style resolution over it. Sampling the actual pixel gave `#3A3A3A` —
+  exactly the brush it was supposed to be. The rendering was right and the reading was wrong; a
+  runtime dump of the resolved palette settled it in one run.
+- **`dotnet build` on the shell project alone writes to `bin\Release\`, not `bin\x64\Release\`**,
+  because the project is x64-only through the solution's platform mapping. Two rounds of "my change
+  had no effect" were actually a stale exe. Build the solution, or pass `-p:Platform=x64`.
+- The accent strip was added only to the active tab, which made it two pixels shorter than its
+  neighbours and shifted the row as the selection moved. It is now on every tab, transparent when
+  inactive.

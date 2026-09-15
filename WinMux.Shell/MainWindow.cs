@@ -97,6 +97,17 @@ internal sealed class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.Manual;
             Position = new PixelPoint(tree.Bounds.X, tree.Bounds.Y);
         }
+        // Mica: the Windows 11 backdrop, the desktop wallpaper blurred and tinted behind the app.
+        // It is the single biggest reason a window reads as native, and it costs one hint plus
+        // translucent chrome brushes. Windows falls back down the list on its own, and the opaque
+        // fallback keeps the window readable if none of them is available.
+        TransparencyLevelHint =
+        [
+            WindowTransparencyLevel.Mica,
+            WindowTransparencyLevel.AcrylicBlur,
+            WindowTransparencyLevel.None,
+        ];
+        TransparencyBackgroundFallback = new SolidColorBrush(Palette.OpaqueWindowFallback);
         Background = Palette.WindowBrush;
 
         var dock = new DockPanel();
@@ -120,6 +131,14 @@ internal sealed class MainWindow : Window
         // The canvas shows through the divider gutters, so it is the line between panes.
         _canvas.Background = Palette.WindowBrush;
         _canvas.PropertyChanged += (_, e) => { if (e.Property == BoundsProperty) Relayout(); };
+
+        // Say so when Windows could not give us the backdrop we asked for, rather than leaving
+        // someone to wonder why their machine looks different from the screenshots.
+        Opened += (_, _) =>
+        {
+            if (ActualTransparencyLevel == WindowTransparencyLevel.None)
+                _message = "Mica is unavailable on this system; using an opaque window";
+        };
         _canvas.PointerPressed += BeginDividerDrag;
         _canvas.PointerMoved += ContinueDividerDrag;
         _canvas.PointerReleased += EndDividerDrag;
