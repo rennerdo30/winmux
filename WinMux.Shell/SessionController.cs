@@ -8,7 +8,7 @@ namespace WinMux.Shell;
 internal sealed class SessionController : IDisposable
 {
     private readonly List<MainWindow> _windows = [];
-    private readonly SessionAutosaver _autosaver;
+    private SessionAutosaver _autosaver;
     private readonly CommandServer _commandServer;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _captureDebounce;
@@ -31,7 +31,7 @@ internal sealed class SessionController : IDisposable
         _captureDebounce.Tick += (_, _) => { _captureDebounce.Stop(); CaptureAndQueue(); };
     }
 
-    public string SessionPath { get; }
+    public string SessionPath { get; private set; }
 
     public void Register(MainWindow window)
     {
@@ -71,6 +71,35 @@ internal sealed class SessionController : IDisposable
         _captureDebounce.Stop();
         _autosaver.RequestSave(CaptureSnapshot());
         return _autosaver.FlushAsync().GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Save to a different file and keep working there, the way Save As has always behaved.
+    ///
+    /// The old file is flushed first: a pending debounced write against it would otherwise either
+    /// be lost or land after the rename, and losing the last edit is exactly what priority 1 forbids.
+    /// </summary>
+    public async Task<SessionSaveResult> SaveAsAsync(string path)
+    {
+        if (_disposed != 0)
+            return new SessionSaveResult(false, new ObjectDisposedException(nameof(SessionController)));
+        if (_windows.Count == 0)
+            return new SessionSaveResult(false, new InvalidOperationException("The session has no windows."));
+
+        var destination = Path.GetFullPath(path);
+        if (string.Equals(destination, SessionPath, StringComparison.OrdinalIgnoreCase)) return SaveNow();
+
+        _captureDebounce.Stop();
+        var pending = await _autosaver.FlushAsync().ConfigureAwait(true);
+        if (!pending.Succeeded) return pending;
+
+        _autosaver.SaveCompleted -= OnSaveCompleted;
+        await _autosaver.DisposeAsync().ConfigureAwait(true);
+
+        _autosaver = new SessionAutosaver(destination);
+        _autosaver.SaveCompleted += OnSaveCompleted;
+        SessionPath = destination;
+        return SaveNow();
     }
 
     /// <summary>Persist current intent before any foreign application is detached.</summary>

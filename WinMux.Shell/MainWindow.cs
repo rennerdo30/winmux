@@ -15,6 +15,7 @@ using WinMux.Shell.FileBrowser;
 using WinMux.Shell.Keymap;
 using WinMux.Shell.Panes;
 using WinMux.Platform;
+using Avalonia.Platform.Storage;
 using CoreRect = WinMux.Core.Layout.Rect;
 
 namespace WinMux.Shell;
@@ -494,6 +495,7 @@ internal sealed class MainWindow : Window
         _actions.Register(ShellActionNames.NextTab, () => CycleTab(1));
         _actions.Register(ShellActionNames.PreviousTab, () => CycleTab(-1));
         _actions.Register(ShellActionNames.SaveSession, SaveSession);
+        _actions.RegisterAsync(ShellActionNames.SaveSessionAs, _ => new ValueTask(SaveSessionAsAsync()));
         _actions.Register(ShellActionNames.ResizeLeft, () => ResizeFocused(FocusDirection.Left));
         _actions.Register(ShellActionNames.ResizeRight, () => ResizeFocused(FocusDirection.Right));
         _actions.Register(ShellActionNames.ResizeUp, () => ResizeFocused(FocusDirection.Up));
@@ -761,6 +763,53 @@ internal sealed class MainWindow : Window
         {
             _paneCloseInProgress = false;
         }
+    }
+
+    /// <summary>
+    /// Save the layout to a file the user picks, and keep working there afterwards — Save As, not
+    /// "export a copy". The controller moves the autosaver with it.
+    /// </summary>
+    private async Task SaveSessionAsAsync()
+    {
+        var suggested = Path.GetFileName(_session.SessionPath);
+        var startIn = Path.GetDirectoryName(_session.SessionPath);
+
+        var picked = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save session as",
+            SuggestedFileName = string.IsNullOrWhiteSpace(suggested) ? "session.toml" : suggested,
+            DefaultExtension = "toml",
+            ShowOverwritePrompt = true,
+            FileTypeChoices =
+            [
+                new FilePickerFileType("WinMux session") { Patterns = ["*.toml"] },
+            ],
+            SuggestedStartLocation = string.IsNullOrWhiteSpace(startIn)
+                ? null
+                : await StorageProvider.TryGetFolderFromPathAsync(startIn),
+        });
+
+        if (picked is null)
+        {
+            _message = "save as cancelled";
+            UpdateStatus();
+            return;
+        }
+
+        var path = picked.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            _message = "that location is not a file WinMux can write to";
+            UpdateStatus();
+            return;
+        }
+
+        RefreshPaneRestoreStates();
+        var result = await _session.SaveAsAsync(path);
+        _message = result.Succeeded
+            ? "session is now " + _session.SessionPath
+            : "could not save as: " + result.Error?.Message;
+        UpdateStatus();
     }
 
     private void SaveSession()

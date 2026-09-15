@@ -105,11 +105,12 @@ public class KeymapTests
 
     /// <summary>
     /// Actions that ship with no key on purpose. Each is reachable from the toolbar's Tab menu and
-    /// from the ⋮ button on any tab strip, and all four are in the command palette and the CLI like
+    /// from a toolbar menu, and all of them are in the command palette and the CLI like
     /// every other named action — they are simply not worth a prefix key apiece.
     /// </summary>
     private static readonly string[] MenuOnlyActions =
     [
+        ShellActionNames.SaveSessionAs,
         ShellActionNames.MoveTabsTop,
         ShellActionNames.MoveTabsBottom,
         ShellActionNames.MoveTabsLeft,

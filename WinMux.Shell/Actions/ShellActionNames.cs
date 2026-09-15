@@ -21,6 +21,7 @@ public static class ShellActionNames
     public const string NextTab = "next-tab";
     public const string PreviousTab = "previous-tab";
     public const string SaveSession = "save-session";
+    public const string SaveSessionAs = "save-session-as";
 
     public const string ResizeLeft = "resize-left";
     public const string ResizeRight = "resize-right";
@@ -56,6 +57,7 @@ public static class ShellActionNames
         NextTab,
         PreviousTab,
         SaveSession,
+        SaveSessionAs,
         ResizeLeft,
         ResizeRight,
         ResizeUp,

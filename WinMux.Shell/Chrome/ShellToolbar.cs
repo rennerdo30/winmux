@@ -83,7 +83,14 @@ internal static class ShellToolbar
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        right.Children.Add(IconOnly(Icons.Save(), "Save the session now", ShellActionNames.SaveSession, dispatch));
+        right.Children.Add(SplitButton(
+            Icons.Save(), string.Empty, "Save the session now",
+            () => dispatch(ShellActionNames.SaveSession),
+            [
+                ("Save", ShellActionNames.SaveSession),
+                ("Save as…", ShellActionNames.SaveSessionAs),
+            ],
+            dispatch));
         right.Children.Add(IconOnly(Icons.Commands(), "All commands by name (Ctrl+B then :)",
             ShellActionNames.ShowPalette, dispatch));
 
@@ -169,6 +176,8 @@ internal static class ShellToolbar
 
     private static Control WithLabel(Control icon, string label)
     {
+        if (string.IsNullOrEmpty(label)) return icon;
+
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
         row.Children.Add(icon);
         row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });

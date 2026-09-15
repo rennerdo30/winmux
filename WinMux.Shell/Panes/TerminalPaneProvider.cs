@@ -124,10 +124,11 @@ internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime
     public void Arrange(PaneArrangement arrangement) { }
 
     /// <summary>
-    /// Strategy 2 of the layered cwd capture (CLAUDE.md section 4). Stateless, so one is enough.
+    /// Strategy 2 of the layered cwd capture (CLAUDE.md section 4). One for the whole shell, so
+    /// every pane shares the cached process list rather than each paying for its own.
     /// </summary>
     private static readonly Cwd.ProcessWorkingDirectoryResolver WorkingDirectories =
-        new(PlatformServices.Processes);
+        new(new Cwd.CachedProcessInspector(PlatformServices.Processes));
 
     public void RefreshRestoreState()
     {

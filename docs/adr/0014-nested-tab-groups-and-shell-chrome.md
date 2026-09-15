@@ -174,3 +174,50 @@ is the expensive part.* The autosaver looked correct in isolation and was.
 - The focused strip drew a full-width two-pixel accent slab along its content edge, far louder than
   Windows draws anything. It is a one-pixel hairline again; the focused tab's own accent already
   says which group has focus.
+
+---
+
+## Addendum — the process walk was on the interactive path, not just the drag
+
+The previous addendum moved the process walk off the *window drag*. It was still on the path of
+**every terminal title change**: `runtime.StateChanged` → `SyncRuntimeState` →
+`CaptureRestoreDescriptor()` → `RefreshRestoreState()` → a full snapshot. A shell emits title
+updates as you use it, so with eight panes open the UI froze constantly.
+
+Measured, on this machine with ~330 processes:
+
+| | cost |
+|---|---|
+| `SnapshotProcesses` | **123 ms** |
+| `TryReadWorkingDirectory` | **0.12 ms** |
+| one capture pass, 7 terminal panes | **821 ms** |
+
+The snapshot is a thousand times the price of the answer it enables, and it was being paid per
+pane, per event.
+
+`CachedProcessInspector` decorates `IProcessInspector`: one recent process list shared by every
+caller, served immediately and refreshed in the background past a 5 s TTL. Only the snapshot is
+cached — `TryReadWorkingDirectory` goes straight through, so the *directory* is always read live
+from whichever process the tree points at. Staleness therefore degrades rather than lies: the worst
+case is choosing a pane's root over a child spawned moments ago, which is the answer we would give
+if that child did not exist, and it corrects on the next pass. A failed refresh keeps the last good
+list, because "every pane's process has vanished" is a much worse answer than a few seconds of age.
+
+**End to end, on the reported eight-pane session: 60 window moves in 59 ms — 1,014 per second,
+against 0.9 per second when this was first reported.**
+
+The tests assert call counts, not elapsed time: a timing assertion is flaky on a busy machine, and
+"how many times did we ask the operating system" is the property that matters.
+
+Still true and still worth fixing one day: `CreateToolhelp32Snapshot` at 123 ms is simply a slow
+call. `NtQuerySystemInformation(SystemProcessInformation)` returns the same facts in single-digit
+milliseconds. The cache makes that a background cost rather than an interactive one, so it is no
+longer urgent.
+
+### Save As
+
+The layout could be saved but not saved *elsewhere*. `save-session-as` opens a file picker and then
+**keeps working in the new file** — Save As, not "export a copy": the controller flushes the old
+autosaver, replaces it, and moves `SessionPath`. Flushing first matters, because a pending debounced
+write against the old path would otherwise be lost, which is precisely what priority 1 forbids.
+It is on the Save button's dropdown, in the palette and in the CLI, with no key binding.
