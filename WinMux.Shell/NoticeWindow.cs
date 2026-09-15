@@ -47,6 +47,7 @@ internal sealed class NoticeWindow : Window
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Palette.DialogBrush;
+        Chrome.AppIcon.Apply(this);
 
         var heading = new TextBlock
         {

@@ -16,6 +16,13 @@ public readonly struct PaneKind : IEquatable<PaneKind>, IComparable<PaneKind>, I
     public static PaneKind FileBrowser { get; } = new("file-browser");
     public static PaneKind ForeignApp { get; } = new("foreign-app");
 
+    /// <summary>
+    /// A pane with nothing in it yet, showing a launcher. A first-class state rather than a gap:
+    /// "make a pane, then decide" is a supported workflow (CLAUDE.md section 5a), and it is also
+    /// what an adopted pane falls back to when the window it held cannot be restored.
+    /// </summary>
+    public static PaneKind Empty { get; } = new("empty");
+
     /// <summary>The normalized provider identifier.</summary>
     /// <exception cref="InvalidOperationException">The value is an uninitialized default.</exception>
     public string Value => _value
@@ -212,6 +219,10 @@ public sealed class Pane
             Program = program,
             Cwd = cwd ?? WorkingDirectory.None,
         });
+
+    /// <summary>A pane with nothing in it yet.</summary>
+    public static Pane Empty(string title = "empty pane") =>
+        new(PaneId.New(), PaneKind.Empty, title, new RestoreDescriptor { Kind = PaneKind.Empty, Title = title });
 
     public static Pane FileBrowser(string directory, string title = "files", string? selectedPath = null)
     {

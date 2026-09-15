@@ -82,6 +82,13 @@ internal sealed class MainWindow : Window
         _providers = new PaneProviderRegistry([
             new TerminalPaneProvider(),
             new FileBrowserPaneProvider(() => Environment.CurrentDirectory),
+            new EmptyPaneProvider(
+                new EmptyPaneCommands(
+                    (pane, profile) => Run(ReplacePaneAsync(pane, ProfilePaneFactory.Create(profile,
+                        _tree.GetPane(_tree.Focused)?.Restore.Cwd), "opened " + profile.Name)),
+                    pane => Run(ChooseApplicationForAsync(pane)),
+                    pane => Run(AttachWindowToAsync(pane))),
+                () => Settings.ShellProfiles.All),
             _foreignProvider,
         ]);
         _cwdCaptureTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
@@ -99,6 +106,7 @@ internal sealed class MainWindow : Window
         _keymap = new KeymapRouter(new KeyBindingTable(keymapConfiguration), _actions);
 
         Title = string.IsNullOrWhiteSpace(title) ? "WinMux" : title;
+        Chrome.AppIcon.Apply(this);
         Width = tree.Bounds.Width > 0 ? Math.Max(640, tree.Bounds.Width) : 1400;
         Height = tree.Bounds.Height > 0 ? Math.Max(400, tree.Bounds.Height) : 860;
         if (!tree.Bounds.IsEmpty)
@@ -513,6 +521,8 @@ internal sealed class MainWindow : Window
         _actions.RegisterAsync(ShellActionNames.ClosePane, _ => new ValueTask(CloseFocusedAsync()));
         _actions.RegisterAsync(ShellActionNames.NewTab, _ => new ValueTask(AddTabAsync()));
         _actions.RegisterAsync(ShellActionNames.NewTabVertical, _ => new ValueTask(AddVerticalTabAsync()));
+        _actions.RegisterAsync(ShellActionNames.NewEmptyPane,
+            _ => new ValueTask(AddTabAsync(Pane.Empty(), "new empty pane")));
         _actions.Register(ShellActionNames.MoveTabsTop, () => SetFocusedTabPlacement(TabStripPlacement.Top));
         _actions.Register(ShellActionNames.MoveTabsBottom, () => SetFocusedTabPlacement(TabStripPlacement.Bottom));
         _actions.Register(ShellActionNames.MoveTabsLeft, () => SetFocusedTabPlacement(TabStripPlacement.Left));
@@ -706,6 +716,103 @@ internal sealed class MainWindow : Window
         }
         return OpenProfileAsync(profile);
     }
+
+    /// <summary>
+    /// Swap one pane for another in place, keeping its position in the tree.
+    ///
+    /// This is how an empty pane becomes something: the layout the user built stays exactly as it
+    /// is, and only the contents change.
+    /// </summary>
+    private async Task ReplacePaneAsync(PaneId target, Pane replacement, string message)
+    {
+        if (_tree.Find(target) is null) return;
+
+        var runtime = await CreateNewRuntimeAsync(replacement);
+
+        if (_runtimes.TryGetValue(target, out var existing))
+        {
+            var closed = await CloseRuntimeSafelyAsync(existing, PaneCloseReason.PaneRemoved);
+            if (!closed.Succeeded)
+            {
+                await runtime.DisposeAsync();
+                _message = "kept the pane because it could not close safely: " + closed.Message;
+                UpdateStatus();
+                return;
+            }
+            await RemoveRuntimeAsync(target);
+        }
+
+        _tree.ReplacePane(target, replacement);
+        AddRuntime(replacement, runtime);
+        _tree.Focus(replacement.Id);
+        _message = message;
+        Relayout();
+        _runtimes.GetValueOrDefault(replacement.Id)?.Focus();
+    }
+
+    private async Task ChooseApplicationForAsync(PaneId target)
+    {
+        var picker = new AppPickerWindow(PlatformServices.Apps);
+        await picker.ShowDialog(this);
+        if (picker.Result is not { } app) return;
+
+        // Opened without becoming a profile: putting something in a pane once should not require
+        // curating a list first. "Add application…" in Settings is there when it is worth keeping.
+        await ReplacePaneAsync(target, ProfilePaneFactory.Create(new Core.Settings.LaunchProfile
+        {
+            Id = Core.Settings.LaunchProfile.MakeId(app.Name),
+            Name = app.Name,
+            Kind = Core.Settings.ProfileKind.Application,
+            Program = app.Program,
+            Args = app.Arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            WorkingDirectory = app.WorkingDirectory,
+        }), "opened " + app.Name);
+    }
+
+    private async Task AttachWindowToAsync(PaneId target)
+    {
+        var picker = new WindowPickerWindow(PlatformServices.Windows, [_shellHwnd, .. ClaimedWindows()]);
+        await picker.ShowDialog(this);
+        if (picker.Result is not { } window) return;
+
+        await ReplacePaneAsync(target, AdoptedPane(window), "attached " + window.Title);
+    }
+
+    /// <summary>
+    /// A pane for a window that already exists.
+    ///
+    /// The handle goes in as a launch-time instruction, and the program path goes in as the restore
+    /// descriptor — so this session adopts the window that is there now, and the next session starts
+    /// the same program instead of chasing a handle that will not exist. Without a readable path,
+    /// which an elevated process will not give, restoring lands on an empty pane that says why.
+    /// </summary>
+    private static Pane AdoptedPane(Platform.AdoptableWindow window)
+    {
+        var extras = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["adopt_window"] = window.Window.Value.ToString(),
+        };
+        if (window.ProgramPath.Length == 0)
+            extras["note"] = "This pane held an attached window. WinMux could not read that " +
+                             "program's path, so it cannot be reopened automatically.";
+
+        return new Pane(PaneId.New(), PaneKind.ForeignApp, window.Title, new RestoreDescriptor
+        {
+            Kind = PaneKind.ForeignApp,
+            Title = window.Title,
+            Program = window.ProgramPath,
+            Strategy = HostStrategy.Embed,
+            Extras = extras,
+        });
+    }
+
+    private IEnumerable<WindowHandle> ClaimedWindows() =>
+        _runtimes.Keys.Select(id => _tree.GetPane(id)).OfType<Pane>()
+            .Select(pane => pane.Restore.Extras.TryGetValue("adopt_window", out var text) &&
+                            long.TryParse(text, out var value)
+                ? WindowHandle.FromPlatformValue((nint)value)
+                : WindowHandle.None)
+            .Where(handle => !handle.IsNone);
 
     private Task AddTabAsync() => AddTabAsync(NewTerminalPane(), "new tab");
 

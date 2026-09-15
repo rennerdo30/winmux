@@ -44,6 +44,7 @@ internal sealed class ProfileEditorWindow : Window
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Palette.DialogBrush;
+        Chrome.AppIcon.Apply(this);
 
         _name = Field(profile.Name, "Shown in every menu that opens a pane");
         _program = Field(profile.Program, @"e.g. pwsh.exe or C:\Program Files\App\app.exe");

@@ -58,8 +58,15 @@ internal sealed record LaunchSpec(
     HostStrategy Strategy,
     int SettleMilliseconds,
     IntPtr OwnerWindow,
-    IReadOnlySet<IntPtr> ExcludedWindows)
+    IReadOnlySet<IntPtr> ExcludedWindows,
+    IntPtr AdoptWindow)
 {
+    /// <summary>
+    /// True when this host was asked to take a window that already exists rather than start a
+    /// program. Nothing is launched and nothing is searched for: the window is known.
+    /// </summary>
+    public bool IsAdoption => AdoptWindow != IntPtr.Zero;
+
     public static LaunchSpec Parse(string[] args)
     {
         string? program = null;
@@ -71,6 +78,7 @@ internal sealed record LaunchSpec(
         var strategy = HostStrategy.Embed;
         var settleMilliseconds = 400;
         var ownerWindow = IntPtr.Zero;
+        var adoptWindow = IntPtr.Zero;
         var arguments = new List<string>();
         var excluded = new HashSet<IntPtr>();
         var afterSeparator = false;
@@ -121,6 +129,11 @@ internal sealed record LaunchSpec(
                     throw new ArgumentException("--settle-ms must be a non-negative integer");
                 continue;
             }
+            if (!afterSeparator && args[i] == "--adopt" && ++i < args.Length && long.TryParse(args[i], out var adopt))
+            {
+                adoptWindow = new IntPtr(adopt);
+                continue;
+            }
             if (!afterSeparator && args[i] == "--owner" && ++i < args.Length && long.TryParse(args[i], out var owner))
             {
                 ownerWindow = new IntPtr(owner);
@@ -134,9 +147,13 @@ internal sealed record LaunchSpec(
             if (afterSeparator) arguments.Add(args[i]);
         }
 
-        if (string.IsNullOrWhiteSpace(program)) throw new ArgumentException("missing --program <path>");
+        // Adoption needs no program: the window is already there, and demanding a path would mean
+        // inventing one that must never be launched.
+        if (string.IsNullOrWhiteSpace(program) && adoptWindow == IntPtr.Zero)
+            throw new ArgumentException("missing --program <path> or --adopt <hwnd>");
+        program ??= string.Empty;
         return new LaunchSpec(program, arguments, windowClass, windowTitleContains, processName, matchMode, strategy,
-            settleMilliseconds, ownerWindow, excluded);
+            settleMilliseconds, ownerWindow, excluded, adoptWindow);
     }
 
     private static HostStrategy ParseStrategy(string value) => value.ToLowerInvariant() switch
@@ -244,6 +261,23 @@ internal sealed class PaneHostWindow : IDisposable
     {
         try
         {
+            if (_launch.IsAdoption)
+            {
+                // The window was chosen from a list of what is already on screen, so the only thing
+                // worth checking is that it still exists — between the user picking it and this
+                // running, they may well have closed it.
+                if (!IsWindow(_launch.AdoptWindow))
+                {
+                    WriteProtocol("ERROR=that window has closed");
+                    return;
+                }
+
+                GetWindowThreadProcessId(_launch.AdoptWindow, out var adoptedOwner);
+                _launchedProcessId = adoptedOwner;
+                PostMessageW(_hostWindow, WmAppAdopt, _launch.AdoptWindow, IntPtr.Zero);
+                return;
+            }
+
             var before = AdoptableWindows().ToHashSet();
             var start = new ProcessStartInfo(_launch.Program) { UseShellExecute = false };
             foreach (var argument in _launch.Arguments) start.ArgumentList.Add(argument);

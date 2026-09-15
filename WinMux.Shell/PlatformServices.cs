@@ -28,4 +28,7 @@ internal static class PlatformServices
 
     /// <summary>The applications this machine has, for the profile and pane launchers.</summary>
     public static IAppCatalog Apps { get; } = new Win32AppCatalog();
+
+    /// <summary>The windows already open, for attaching one into a pane.</summary>
+    public static IWindowCatalog Windows { get; } = new Win32WindowCatalog();
 }

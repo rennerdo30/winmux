@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <ApplicationIcon>..\assets\winmux.ico</ApplicationIcon>
     <OutputType>Exe</OutputType>
     <!-- net10.0, not net10.0-windows: the CLI only touches WinMux.Core, so it stays portable too. -->
     <TargetFramework>net10.0</TargetFramework>

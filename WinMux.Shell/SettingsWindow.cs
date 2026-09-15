@@ -53,6 +53,7 @@ internal sealed class SettingsWindow : Window
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Palette.DialogBrush;
+        Chrome.AppIcon.Apply(this);
 
         _theme = Choice(
             [("Follow Windows", ThemePreference.System), ("Dark", ThemePreference.Dark), ("Light", ThemePreference.Light)],

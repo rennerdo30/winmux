@@ -108,4 +108,42 @@ public sealed class LaunchSpecTests
 
         Assert.Equal("--settle-ms must be a non-negative integer", error.Message);
     }
+
+    [Fact]
+    public void Adopting_a_window_needs_no_program()
+    {
+        // The window already exists. Demanding a path would mean inventing one that must never
+        // actually be launched.
+        var spec = LaunchSpec.Parse(["--adopt", "123456"]);
+
+        Assert.True(spec.IsAdoption);
+        Assert.Equal(new IntPtr(123456), spec.AdoptWindow);
+        Assert.Equal(string.Empty, spec.Program);
+    }
+
+    [Fact]
+    public void Without_a_program_or_a_window_the_error_names_both_ways_in()
+    {
+        var error = Assert.Throws<ArgumentException>(() => LaunchSpec.Parse(["--strategy", "embed"]));
+
+        Assert.Contains("--program", error.Message);
+        Assert.Contains("--adopt", error.Message);
+    }
+
+    [Fact]
+    public void A_launch_is_not_an_adoption()
+    {
+        Assert.False(LaunchSpec.Parse(["--program", "app.exe"]).IsAdoption);
+    }
+
+    [Fact]
+    public void Adoption_still_accepts_a_strategy_and_an_owner()
+    {
+        // An adopted window is hosted exactly like a launched one, so every hosting option applies.
+        var spec = LaunchSpec.Parse(["--adopt", "99", "--strategy", "attach", "--owner", "42"]);
+
+        Assert.True(spec.IsAdoption);
+        Assert.Equal(HostStrategy.Attach, spec.Strategy);
+        Assert.Equal(new IntPtr(42), spec.OwnerWindow);
+    }
 }

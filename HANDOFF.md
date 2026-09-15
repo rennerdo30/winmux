@@ -2,6 +2,14 @@
 
 ## Where we are
 
+**Latest: profiles, the application catalogue, empty panes and window adoption**
+([ADR 0015](docs/adr/0015-profiles-app-catalog-and-empty-panes.md)). Any installed application can
+be put in a pane through a Start Menu picker; a profile keeps it. An empty pane is a first-class
+state that offers profiles, the catalogue, and the windows already open — which it can adopt via
+`WinMux.PaneHost --adopt`. The app has an icon (`assets/winmux.svg`, rasterised by
+`assets/build-icon.py`) carried by every executable.
+
+
 **Phase 6 (GUI) has started and its first slice is done:** tab groups nest anywhere in the tree,
 each with its own strip on any edge, and every layout operation is a toolbar button as well as a
 key. The tab strip is reserved geometry emitted by the layout engine, which is what keeps it from
@@ -143,6 +151,12 @@ keeps scrollback and can address it while the control has no wheel handler at al
 - Do not `dotnet build` WinMux.Shell.csproj alone and then run `bin/x64/Release/...`. The project
   is x64 only through the solution mapping, so a bare project build lands in `bin/Release/` and you
   test a stale exe. Build the solution (ADR 0014 addendum).
+- Do not add a capability without an interface for it. Foreign-app panes shipped in Phase 3 and
+  could only be created by hand-editing TOML; pane resizing had no handle. Both went unnoticed for
+  months (CLAUDE.md section 5a).
+- Do not try to rasterise an SVG on Windows with cairosvg, rlPyCairo or svglib+renderPM — all three
+  end at a native cairo Windows does not ship, or fail on rounded rectangles. Headless Chrome works
+  and needs nothing extra; see `assets/build-icon.py`.
 - Do not put a right-aligned group in the toolbar. Docked right, or in a Grid Auto column, it
   reports sensible bounds and paints nothing — unexplained, see ADR 0014. Toolbar controls go in
   the main StackPanel.

@@ -68,6 +68,16 @@ internal sealed class ForeignAppPane
             RedirectStandardInput = true,
             CreateNoWindow = true,
         };
+        // An adopted pane names a window that already exists, so PaneHost must not launch
+        // anything. The handle is not persisted as a handle — see CaptureRestoreDescriptor.
+        var adopting = restore.Extras.TryGetValue("adopt_window", out var adoptText) &&
+                       long.TryParse(adoptText, out var adoptValue) && adoptValue != 0;
+        if (adopting)
+        {
+            start.ArgumentList.Add("--adopt");
+            start.ArgumentList.Add(adoptText!);
+        }
+
         start.ArgumentList.Add("--program");
         start.ArgumentList.Add(restore.Program);
         start.ArgumentList.Add("--strategy");

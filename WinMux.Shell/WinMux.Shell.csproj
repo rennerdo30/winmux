@@ -10,6 +10,7 @@
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\assets\winmux.ico</ApplicationIcon>
     <NoWarn>CA1416</NoWarn>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
@@ -28,6 +29,11 @@
     <ProjectReference Include="..\WinMux.Terminal\WinMux.Terminal.csproj" />
     <ProjectReference Include="..\WinMux.PaneHost\WinMux.PaneHost.csproj"
                       ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The window icon. The same file the executable carries, so they cannot disagree. -->
+    <AvaloniaResource Include="..\assets\winmux.ico" Link="Assets/winmux.ico" />
   </ItemGroup>
 
   <ItemGroup>

@@ -175,6 +175,25 @@ public sealed class LayoutTree
         return null;
     }
 
+    /// <summary>
+    /// Swap one pane for another, in place.
+    ///
+    /// The layout does not move: the new pane takes the old one's exact position, its share of its
+    /// split and its place in any tab group. This is how an empty pane becomes something, and how a
+    /// pane whose contents died is replaced without disturbing the arrangement around it.
+    /// </summary>
+    /// <returns>False when <paramref name="target"/> is not in this tree.</returns>
+    public bool ReplacePane(PaneId target, Pane replacement)
+    {
+        ArgumentNullException.ThrowIfNull(replacement);
+        if (Find(target) is not { } leaf) return false;
+
+        Replace(leaf, new LeafNode(replacement));
+        if (_focused == target) _focused = replacement.Id;
+        EnsureFocusVisible();
+        return true;
+    }
+
     /// <summary>Replace a node with another in its parent, or as the root.</summary>
     private void Replace(LayoutNode existing, LayoutNode replacement)
     {

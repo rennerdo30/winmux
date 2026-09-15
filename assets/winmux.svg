@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="WinMux">
+  <title>WinMux</title>
+
+  <!--
+    The mark is the product: a window split into panes, with one pane focused.
+
+    Drawn on a 256 grid with an 16-unit margin, and every edge on a whole or half unit so the
+    small sizes stay crisp. Windows 11 rounds its own app tiles, so the outer frame is rounded
+    and the panes inside repeat the radius at a smaller scale.
+
+    The accent pane is the terminal — the one with a prompt in it — because that is what WinMux
+    is for. The other two panes are quiet, which is also what they look like on screen when they
+    hold somebody else's application.
+  -->
+
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2F3444"/>
+      <stop offset="1" stop-color="#20242F"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4FA8FF"/>
+      <stop offset="1" stop-color="#2D7FE0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- The window. -->
+  <rect x="16" y="16" width="224" height="224" rx="44" fill="url(#frame)"/>
+  <rect x="16.5" y="16.5" width="223" height="223" rx="43.5" fill="none"
+        stroke="#4A5165" stroke-width="1"/>
+
+  <!-- Left pane: the focused terminal, with a prompt. -->
+  <rect x="44" y="60" width="78" height="136" rx="12" fill="url(#accent)"/>
+  <path d="M62 104 L76 116 L62 128" fill="none" stroke="#10243A" stroke-width="9"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="84" y="121" width="22" height="9" rx="4.5" fill="#10243A"/>
+
+  <!-- Right column: two stacked panes, quiet. -->
+  <rect x="134" y="60" width="78" height="62" rx="12" fill="#39404F"/>
+  <rect x="134" y="134" width="78" height="62" rx="12" fill="#39404F"/>
+
+  <!-- The divider gutters, drawn as the light between panes rather than lines on top of them. -->
+  <rect x="126" y="60" width="4" height="136" rx="2" fill="#151922"/>
+  <rect x="134" y="126" width="78" height="4" rx="2" fill="#151922"/>
+</svg>

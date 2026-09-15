@@ -41,6 +41,7 @@ internal sealed class AppPickerWindow : Window
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Palette.DialogBrush;
+        Chrome.AppIcon.Apply(this);
 
         _search = new TextBox
         {

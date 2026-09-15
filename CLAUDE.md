@@ -5,7 +5,7 @@ then **`HANDOFF.md`** for where the work actually stands right now.
 This file is the architecture contract: the decisions that are made, the ones that are open,
 and the traps that will eat days if ignored.
 
-**State: Phase 5 complete, plus the Phase 6 GUI work below.** `WinMux.exe` runs persistent ConPTY/VT terminal panes, foreign
+**State: Phase 5 complete; Phase 6 (the GUI) well under way.** `WinMux.exe` runs persistent ConPTY/VT terminal panes, foreign
 applications selected through a shipped quirks database and isolated in one top-level PaneHost
 per pane, and a built-in file browser — all three as **pane providers** behind the public
 `WinMux.Panes` contract, so a fourth kind needs no Core or layout change
@@ -15,6 +15,9 @@ modes, automatic refusal fallback, and live switching ship. The platform layer i
 shell declares **zero P/Invoke** ([ADR 0013](docs/adr/0013-phase-5-platform-layer.md)). Tab groups
 nest anywhere in the tree, each with its own strip on any edge, and every layout operation is a
 toolbar button as well as a key ([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md)).
+**Profiles** put any installed application in a pane, found through the Start Menu; an empty pane
+offers them, along with the windows already open, which it can adopt
+([ADR 0015](docs/adr/0015-profiles-app-catalog-and-empty-panes.md)).
 Phase 0:
 ADRs [0001](docs/adr/0001-out-of-process-pane-hosts.md),
 [0002](docs/adr/0002-terminal-stack.md), [0003](docs/adr/0003-foreign-app-compatibility.md),
@@ -27,8 +30,8 @@ ADRs [0005](docs/adr/0005-layout-engine.md), [0006](docs/adr/0006-session-file-f
 [ADR 0011](docs/adr/0011-phase-3-foreign-app-runtime.md).
 
 **Not done yet:** physical mixed-scale multi-monitor verification, provider discovery/packaging,
-tab/pane reordering, foreign-window focus reconciliation, terminal selection and scrollback
-navigation.
+tab/pane reordering, dragging a running window into a pane, foreign-window focus reconciliation,
+terminal selection and scrollback navigation.
 
 ---
 
@@ -95,6 +98,7 @@ WinMux.PaneHost/         the out-of-process pane host executable (see section 5)
 WinMux.Shell/            Avalonia app: chrome, rendering, input, overlays                          [EXISTS]
 WinMux.Cli/              `winmux` — the command line surface (section 6)                             [EXISTS]
 WinMux.Tests/                                                                                        [EXISTS]
+assets/                  winmux.svg (the source of the mark) and the .ico built from it        [EXISTS]
 docs/adr/                one short file per architectural decision
 ```
 

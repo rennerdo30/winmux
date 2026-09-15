@@ -150,6 +150,10 @@ internal static class ShellToolbar
             }
 
             items.Add(new Separator());
+            var empty = new MenuItem { Header = "Empty pane" };
+            empty.Click += (_, _) => dispatch(ShellActionNames.NewEmptyPane);
+            items.Add(empty);
+
             var manage = new MenuItem { Header = "Add or edit profiles…" };
             manage.Click += (_, _) => dispatch(ShellActionNames.ShowSettings);
             items.Add(manage);
