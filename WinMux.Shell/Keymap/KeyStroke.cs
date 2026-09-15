@@ -59,6 +59,60 @@ public readonly record struct KeyStroke(Key Key, KeyModifiers Modifiers = KeyMod
 
     public KeyStroke Normalized() => new(Key, Modifiers & SupportedModifiers);
 
+    /// <summary>
+    /// The gesture written the way a user reads it, and the way <see cref="Parse"/> accepts it.
+    ///
+    /// The inverse of parsing, and it lives here because the symbol and alias tables do. Anything
+    /// that shows a shortcut — the palette, the status bar, a keymap editor — needs this, and a
+    /// second table somewhere else would drift from this one.
+    ///
+    /// <c>Parse(x.Display()) == x</c> for every stroke Parse can produce; that round-trip is the
+    /// test worth having.
+    /// </summary>
+    public string Display()
+    {
+        var normalized = Normalized();
+
+        // A shift-symbol is one token, not "Shift+5": the binding was written "%", the keycap says
+        // "%", and expanding it would be a different gesture to read.
+        foreach (var (symbol, stroke) in SymbolKeys)
+        {
+            if (stroke == normalized) return symbol;
+        }
+
+        var parts = new List<string>(5);
+        if (normalized.Modifiers.HasFlag(KeyModifiers.Control)) parts.Add("Ctrl");
+        if (normalized.Modifiers.HasFlag(KeyModifiers.Alt)) parts.Add("Alt");
+        if (normalized.Modifiers.HasFlag(KeyModifiers.Shift)) parts.Add("Shift");
+        if (normalized.Modifiers.HasFlag(KeyModifiers.Meta)) parts.Add("Win");
+        parts.Add(KeyName(normalized.Key));
+        return string.Join("+", parts);
+    }
+
+    /// <summary>
+    /// Which spelling to show for the keys that have more than one. <see cref="KeyAliases"/> maps
+    /// several spellings onto the same key, so it cannot answer this without depending on
+    /// dictionary order; every name here parses back to the key it names.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<Key, string> KeyDisplayNames =
+        new Dictionary<Key, string>
+        {
+            [Key.Escape] = "Esc",
+            [Key.Enter] = "Enter",
+            [Key.Space] = "Space",
+            [Key.PageUp] = "PageUp",
+            [Key.PageDown] = "PageDown",
+            [Key.Back] = "Backspace",
+            [Key.Delete] = "Delete",
+            [Key.Insert] = "Insert",
+        };
+
+    private static string KeyName(Key key)
+    {
+        if (key is >= Key.D0 and <= Key.D9) return ((char)('0' + (key - Key.D0))).ToString();
+        return KeyDisplayNames.TryGetValue(key, out var name) ? name : key.ToString();
+    }
+
     public static KeyStroke Parse(string gesture)
     {
         if (!TryParse(gesture, out var stroke, out var error))

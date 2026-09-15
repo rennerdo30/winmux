@@ -20,7 +20,7 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-15: 424 passed, 0 warnings.** Version 0.6.0.
+**Verified 2026-09-15: 453 passed, 0 warnings.** Version 0.6.0.
 **Nothing has been pushed since `68103d5`** (Phase 3), which is where `origin/main` still sits.
 Everything after it — Phases 4, 5 and all of the Phase 6 work — exists only on this machine.
 (A count of commits is deliberately not written here: it would be wrong the moment this file is
@@ -55,18 +55,34 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
   ramp one step small throughout, the settings page became rounded cards instead of a label-and-
   combo grid, and the toolbar moved into the title bar. ADR 0016. Most of that session went on a
   bug that was not in the app: see *Do not re-do → Build and tooling*.
+- **The command palette became one** — it was created fresh on every dispatch (five presses, five
+  stacked windows), kept its system title bar, opened wherever Windows put it, did not close on
+  blur, and listed raw action identifiers with no shortcuts. Now a single instance, borderless and
+  positioned over its window, with sentence labels and the binding on each row.
+  `KeyStroke.Display()` is the new inverse of `Parse`.
 
 ## The next action
 
-**Use it for an hour and see what breaks.** Enough changed today that the next real finding will
-come from use, not from code reading. Two things in particular have never been seen on screen by
-the author: a foreign app inside a tab group (does Explorer still paint its own content, and does a
-tab strip beside it survive?), and the empty-pane launcher adopting a running window.
+**Design the pane layer.** A critique of the shell on 2026-09-15 landed on one thing: the chrome is
+about a tenth of the pixels and is now close to right, while the pane layer — the other nine tenths
+— has had no design pass at all. Concretely, and in order:
 
-Then, in rough order of what the product is missing:
-tab and pane **reordering**, **foreign-window focus reconciliation**, dragging a window into a
-pane, and provider discovery and packaging. Terminal search over the scrollback is the obvious
-follow-on now that the history is reachable.
+1. **Panes look like tiles.** `_canvas` gets `Margin(8,4,8,8)`; `TerminalPaneControl` insets its
+   text by 8px (and computes its column/row count from the inset bounds, and offsets `PositionAt`
+   and the scrollbar to match) and fills a `RoundedRect` at radius 8 instead of a square.
+2. **Focus is visible.** The current ring is drawn only `if (IsKeyboardFocusWithin)`, so it is
+   absent exactly when a dialog, the palette or a foreign pane has focus — which is when the
+   question "which pane will this close?" actually gets asked. Replace it with a 2px
+   `AccentBrush` border per focused pane drawn **in the gutter** (`rect.Inflate(2)`, added to
+   `_canvas` before the pane views) so it never overlaps a native pane window.
+3. **Terminal colour.** `TerminalPaneControl.Render` builds one `FormattedText` per row with a
+   single hardcoded `ForegroundBrush`, so every SGR colour and bold attribute the engine parses is
+   thrown away — any coloured prompt renders monochrome. This is priority 3 failing, not polish.
+   Split runs by attribute; take the palette from the system rather than the hardcoded Nord values.
+
+Then: the restore notice is a modal on the success path and should be a status-bar line with a
+banner only for panes that failed; the status bar itself should carry the captured cwd and the save
+state, which are the two facts that would show the product works and are currently invisible.
 
 ## Blocked / needs a human
 
@@ -137,6 +153,16 @@ follow-on now that the history is reachable.
   at the size it believes it has, and everything past that width falls outside the real window.
 - Do not rasterise an SVG with cairosvg, rlPyCairo or svglib+renderPM — all need a cairo Windows
   does not ship, or fail on rounded rectangles. Headless Chrome works (`assets/build-icon.py`).
+
+**Known wrong, not yet fixed** (found 2026-09-15, all verified in the code)
+- `TerminalPaneControl` drops every terminal colour and attribute, and hardcodes a Nord palette
+  while the chrome follows the system.
+- Both terminals start with their prompt about a third of the way down the pane: the engine is
+  built at a fixed 120x30 and the first real `ResizeFromBounds` lands after the shell has painted.
+- `TabStripView` sets `FontSize = 12.5` and uses `Text = "✓"` as a menu icon; `EmptyPaneProvider`
+  uses 17 and 11. All three break rules this repo states (section 6 of CLAUDE.md, and Icons.cs).
+- `ShellToolbar`'s bar is `Margin(8,6)` around 32px buttons inside a 40px caption row, so hover
+  fills are clipped top and bottom.
 
 **Judgement**
 - Do not intercept unshifted PageUp in a terminal; it belongs to the program in the pane, which is

@@ -56,7 +56,17 @@ internal sealed class MainWindow : Window
     private readonly ForeignAppPaneProvider _foreignProvider;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ActionDispatcher _actions = new();
+    private readonly KeyBindingTable _bindings;
     private readonly KeymapRouter _keymap;
+
+    /// <summary>
+    /// The one command palette, or null when none is open.
+    ///
+    /// Held here rather than created per invocation because the palette used to be newed up on
+    /// every dispatch: pressing the key ten times gave ten palettes, stacked, each with its own
+    /// query and its own idea of what was selected.
+    /// </summary>
+    private CommandPaletteWindow? _palette;
     private readonly SessionController _session;
     private readonly DispatcherTimer _cwdCaptureTimer;
 
@@ -103,7 +113,8 @@ internal sealed class MainWindow : Window
             UpdateStatus();
         });
         RegisterActions();
-        _keymap = new KeymapRouter(new KeyBindingTable(keymapConfiguration), _actions);
+        _bindings = new KeyBindingTable(keymapConfiguration);
+        _keymap = new KeymapRouter(_bindings, _actions);
 
         Title = string.IsNullOrWhiteSpace(title) ? "WinMux" : title;
         Chrome.AppIcon.Apply(this);
@@ -646,8 +657,21 @@ internal sealed class MainWindow : Window
 
     private void ShowPalette()
     {
-        var palette = new CommandPaletteWindow(_actions.RegisteredActions, action => DispatchNamedAction(action));
-        palette.Show(this);
+        // Asking for the palette while it is open means "I want the palette", not "I want another
+        // palette". Raise the one that exists.
+        if (_palette is { } open)
+        {
+            open.Activate();
+            return;
+        }
+
+        var palette = new CommandPaletteWindow(
+            _actions.RegisteredActions,
+            action => DispatchNamedAction(action),
+            _bindings);
+        palette.Closed += (_, _) => _palette = null;
+        _palette = palette;
+        palette.ShowOver(this);
     }
 
     private void SendPrefix()
