@@ -35,7 +35,9 @@ internal static class ShellToolbar
         {
             Orientation = Orientation.Horizontal,
             Spacing = 2,
-            Margin = new Thickness(8, 6),
+            // No vertical margin: 32px buttons inside a 40px caption row have 8px of slack, and
+            // adding 6 top and bottom made the row 44 and clipped the hover fill at both ends.
+            Margin = new Thickness(8, 0),
             VerticalAlignment = VerticalAlignment.Center,
         };
 

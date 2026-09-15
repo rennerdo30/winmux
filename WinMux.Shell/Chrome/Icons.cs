@@ -109,6 +109,11 @@ internal static class Icons
                 "L 2.1,8.4 L 3.2,7.1 L 2.9,5.4 L 4.3,4.8 L 5,3.2 L 6.7,3.6 Z"),
         });
 
+    /// <summary>A tick, for the selected item in a menu.</summary>
+    public static Control Check() => Draw(
+        12,
+        new Polyline { Points = { new Point(3.5, 8), new Point(6.5, 11), new Point(12.5, 4.5) } });
+
     /// <summary>Three dots, for a menu.</summary>
     public static Control More() => Draw(
         Dot(4.5), Dot(8), Dot(11.5));

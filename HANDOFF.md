@@ -20,7 +20,7 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-15: 453 passed, 0 warnings.** Version 0.6.0.
+**Verified 2026-09-15: 487 passed, 0 warnings.** Version 0.6.0.
 **Nothing has been pushed since `68103d5`** (Phase 3), which is where `origin/main` still sits.
 Everything after it — Phases 4, 5 and all of the Phase 6 work — exists only on this machine.
 (A count of commits is deliberately not written here: it would be wrong the moment this file is
@@ -60,29 +60,31 @@ Package it: `publish.cmd` → `dist/WinMux-0.6.0-win-x64/` and a zip.
   blur, and listed raw action identifiers with no shortcuts. Now a single instance, borderless and
   positioned over its window, with sentence labels and the binding on each row.
   `KeyStroke.Display()` is the new inverse of `Parse`.
+- **The pane layer got its first design pass** — panes are inset, rounded tiles on a margined
+  canvas; the focused one wears a 2px accent ring drawn in the gutter, so it is visible even while
+  a dialog or a foreign pane holds focus. Terminal output is rendered in colour for the first time:
+  `TerminalRunSplitter` cuts each row into runs of like style and `TerminalPalette` resolves them
+  through Campbell, replacing one hardcoded Nord brush per row that silently discarded every SGR
+  attribute the engine had already parsed. The restore modal became a status line, and the status
+  bar became three segments carrying the captured cwd with its provenance and the session's save
+  state — the two facts that show the product works, previously nowhere in the interface.
 
 ## The next action
 
-**Design the pane layer.** A critique of the shell on 2026-09-15 landed on one thing: the chrome is
-about a tenth of the pixels and is now close to right, while the pane layer — the other nine tenths
-— has had no design pass at all. Concretely, and in order:
+**Use it for an hour.** Everything the 2026-09-15 critique named as wrong has been fixed and seen on
+screen; what is left is feature work, and the next real finding will come from use.
 
-1. **Panes look like tiles.** `_canvas` gets `Margin(8,4,8,8)`; `TerminalPaneControl` insets its
-   text by 8px (and computes its column/row count from the inset bounds, and offsets `PositionAt`
-   and the scrollbar to match) and fills a `RoundedRect` at radius 8 instead of a square.
-2. **Focus is visible.** The current ring is drawn only `if (IsKeyboardFocusWithin)`, so it is
-   absent exactly when a dialog, the palette or a foreign pane has focus — which is when the
-   question "which pane will this close?" actually gets asked. Replace it with a 2px
-   `AccentBrush` border per focused pane drawn **in the gutter** (`rect.Inflate(2)`, added to
-   `_canvas` before the pane views) so it never overlaps a native pane window.
-3. **Terminal colour.** `TerminalPaneControl.Render` builds one `FormattedText` per row with a
-   single hardcoded `ForegroundBrush`, so every SGR colour and bold attribute the engine parses is
-   thrown away — any coloured prompt renders monochrome. This is priority 3 failing, not polish.
-   Split runs by attribute; take the palette from the system rather than the hardcoded Nord values.
+When picking that feature work up, in rough order of what the product is missing:
+**tab and pane reordering** (a 2026 tab strip that cannot be dragged reads as broken),
+**dragging a running window into a pane**, **foreign-window focus reconciliation**, scrollback
+search, and provider discovery and packaging. Snap layouts are a separate, known cost of drawing our
+own caption ([ADR 0016](docs/adr/0016-windows-11-chrome.md)) and need a new `IHostWindowService`
+capability to recover.
 
-Then: the restore notice is a modal on the success path and should be a status-bar line with a
-banner only for panes that failed; the status bar itself should carry the captured cwd and the save
-state, which are the two facts that would show the product works and are currently invisible.
+Two smaller things worth doing early, both from the same critique and both still open:
+the toolbar is uniform icon+label with a divider after every group where Explorer's command bar has
+neither, and `LayoutMetrics` is already parameterised so a Normal/Compact density setting is a
+settings card rather than an architecture change.
 
 ## Blocked / needs a human
 
@@ -154,17 +156,15 @@ state, which are the two facts that would show the product works and are current
 - Do not rasterise an SVG with cairosvg, rlPyCairo or svglib+renderPM — all need a cairo Windows
   does not ship, or fail on rounded rectangles. Headless Chrome works (`assets/build-icon.py`).
 
-**Known wrong, not yet fixed** (found 2026-09-15, all verified in the code)
-- `TerminalPaneControl` drops every terminal colour and attribute, and hardcodes a Nord palette
-  while the chrome follows the system.
-- Both terminals start with their prompt about a third of the way down the pane: the engine is
-  built at a fixed 120x30 and the first real `ResizeFromBounds` lands after the shell has painted.
-- `TabStripView` sets `FontSize = 12.5` and uses `Text = "✓"` as a menu icon; `EmptyPaneProvider`
-  uses 17 and 11. All three break rules this repo states (section 6 of CLAUDE.md, and Icons.cs).
-- `ShellToolbar`'s bar is `Margin(8,6)` around 32px buttons inside a 40px caption row, so hover
-  fills are clipped top and bottom.
-
 **Judgement**
+- Do not render a terminal row as one `FormattedText` with one brush. It looks correct on an
+  uncoloured prompt and silently throws away every colour and attribute the engine parsed; a run
+  per cell is the other wrong answer, at 12,000 text layouts a second on a wide row.
+- Do not draw a focused-pane indicator inside the pane, and do not gate it on
+  `IsKeyboardFocusWithin`: a native pane paints over anything inside its rectangle, and that flag is
+  false exactly when a dialog or the palette has focus, which is when the question is being asked.
+- Do not interrupt for success. The restore modal made the first act of every session dismissing a
+  paragraph nobody reads, which is how people learn to click OK unread.
 - Do not intercept unshifted PageUp in a terminal; it belongs to the program in the pane, which is
   why scrollback uses Shift+PageUp. Anything the user types must also snap the view back to the
   live screen, or typing into history looks like the terminal has frozen.

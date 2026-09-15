@@ -18,13 +18,32 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     private const double CellWidth = 8.45;
     private const double CellHeight = 18;
 
-    private static readonly Typeface TerminalTypeface = new("Cascadia Mono, Consolas, monospace");
-    private static readonly IBrush ForegroundBrush = new SolidColorBrush(Color.FromRgb(0xd8, 0xde, 0xe9));
-    private static readonly IBrush BackgroundBrush = new SolidColorBrush(Color.FromRgb(0x10, 0x12, 0x18));
-    private static readonly IBrush CursorBrush = new SolidColorBrush(Color.FromArgb(0x90, 0x88, 0xc0, 0xd0));
-    private static readonly IBrush FocusBrush = new SolidColorBrush(Color.FromRgb(0x5e, 0x81, 0xac));
-    private static readonly IBrush SelectionBrush = new SolidColorBrush(Color.FromArgb(0x66, 0x82, 0xaa, 0xff));
-    private static readonly IBrush ScrollbarBrush = new SolidColorBrush(Color.FromArgb(0x55, 0xd8, 0xde, 0xe9));
+    private static readonly FontFamily TerminalFont = new("Cascadia Mono, Consolas, monospace");
+    private static readonly Typeface TerminalTypeface = new(TerminalFont);
+    private static readonly Typeface BoldTypeface = new(TerminalFont, FontStyle.Normal, FontWeight.Bold);
+    private static readonly Typeface ItalicTypeface = new(TerminalFont, FontStyle.Italic);
+    private static readonly Typeface BoldItalicTypeface = new(TerminalFont, FontStyle.Italic, FontWeight.Bold);
+
+    private static readonly IBrush BackgroundBrush = new SolidColorBrush(TerminalPalette.DefaultBackground);
+    private static readonly IBrush CursorBrush = new SolidColorBrush(Color.FromArgb(0x90, 0xCC, 0xCC, 0xCC));
+    private static readonly IBrush SelectionBrush = new SolidColorBrush(Color.FromArgb(0x66, 0x3B, 0x78, 0xFF));
+    private static readonly IBrush ScrollbarBrush = new SolidColorBrush(Color.FromArgb(0x55, 0xCC, 0xCC, 0xCC));
+
+    /// <summary>
+    /// Space between the pane's edge and its text, in pixels.
+    ///
+    /// Windows Terminal's default, and the loudest single tell that something is a raw control:
+    /// text starting at x=0 touches the window edge in a way no shipped application's does. It is
+    /// taken out of the usable area, so the column and row counts are computed from the inset
+    /// bounds and every draw and hit test is offset by it.
+    /// </summary>
+    private const double Inset = 8;
+
+    /// <summary>The pane's own corner rounding. Windows 11 rounds surfaces at 8.</summary>
+    private const double CornerRadius = 8;
+
+    /// <summary>Brushes for colours the VT stream asks for, kept so a rainbow prompt is not an allocation storm.</summary>
+    private static readonly Dictionary<uint, IBrush> BrushCache = [];
 
     /// <summary>Rows per wheel notch. Three is what every terminal on this machine uses.</summary>
     private const int WheelRows = 3;
@@ -104,8 +123,12 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     public override void Render(DrawingContext context)
     {
         base.Render(context);
+
+        // Rounded, so the pane reads as a tile rather than as the whole window being black. The
+        // corners let the canvas behind show through, which is the same thing the divider gutters
+        // already rely on.
         var renderBounds = new Rect(Bounds.Size);
-        context.FillRectangle(BackgroundBrush, renderBounds, 0);
+        context.DrawRectangle(BackgroundBrush, null, new RoundedRect(renderBounds, CornerRadius));
 
         // The cursor belongs to the live screen. Drawing it while the user is reading history
         // would put it on an unrelated row and imply typing would land there.
@@ -114,67 +137,109 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         {
             context.FillRectangle(
                 CursorBrush,
-                new Rect(cursor.Column * CellWidth, cursor.Row * CellHeight, CellWidth, CellHeight),
+                new Rect(Inset + cursor.Column * CellWidth, Inset + cursor.Row * CellHeight, CellWidth, CellHeight),
                 0);
         }
 
         var columns = _engine.Columns;
-        var visibleRows = Math.Min(_engine.Rows, Math.Max(0, (int)(Bounds.Height / CellHeight)));
+        var visibleRows = Math.Min(_engine.Rows, Math.Max(0, (int)((Bounds.Height - 2 * Inset) / CellHeight)));
         var firstRow = _viewport.TopRow(_engine.TotalRows, _engine.Rows);
 
-        // Selection goes down before the glyphs so the text stays readable through it.
-        for (var row = 0; row < visibleRows; row++)
-        {
-            if (_viewport.RowSpan(firstRow + row, columns) is not { } span) continue;
-            context.FillRectangle(
-                SelectionBrush,
-                new Rect(span.Start * CellWidth, row * CellHeight,
-                    (span.End - span.Start) * CellWidth, CellHeight),
-                0);
-        }
-
         var cells = new TerminalCell[columns];
-        var line = new StringBuilder(columns);
 
         for (var row = 0; row < visibleRows; row++)
         {
             Array.Clear(cells);
             var info = _engine.CopyRow(firstRow + row, cells);
-            line.Clear();
-            for (var column = 0; column < Math.Min(info.Length, columns); column++)
+            var y = Inset + row * CellHeight;
+
+            // Cell backgrounds and the glyphs on top of them, run by run. One FormattedText for
+            // the whole row is what discarded every colour the engine had already parsed.
+            foreach (var run in TerminalRunSplitter.Split(cells, Math.Min(info.Length, columns)))
             {
-                var cell = cells[column];
-                if (cell.IsWideTrailing)
-                {
-                    continue;
-                }
+                var inverse = (run.Attributes & TerminalCellAttributes.Inverse) != 0;
+                var foreground = TerminalPalette.Resolve(inverse ? run.Background : run.Foreground, inverse);
+                var background = TerminalPalette.Resolve(inverse ? run.Foreground : run.Background, !inverse);
 
-                if (cell.IsBlank || (cell.Character == '\0' && cell.ExtendedGlyph is null))
-                {
-                    line.Append(' ');
-                }
-                else
-                {
-                    cell.AppendGlyph(line);
-                }
+                var x = Inset + run.Column * CellWidth;
+                var width = run.Columns * CellWidth;
+
+                if (background != TerminalPalette.DefaultBackground)
+                    context.FillRectangle(BrushFor(background), new Rect(x, y, width, CellHeight), 0);
+
+                if ((run.Attributes & TerminalCellAttributes.Invisible) != 0) continue;
+                if ((run.Attributes & TerminalCellAttributes.Faint) != 0)
+                    foreground = TerminalPalette.Faint(foreground, background);
+
+                var text = new FormattedText(
+                    run.Text,
+                    CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight,
+                    TypefaceFor(run.Attributes),
+                    FontSize,
+                    BrushFor(foreground));
+                context.DrawText(text, new Point(x, y));
+
+                DrawDecorations(context, run, foreground, x, y, width);
             }
+        }
 
-            var text = new FormattedText(
-                line.ToString(),
-                CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight,
-                TerminalTypeface,
-                FontSize,
-                ForegroundBrush);
-            context.DrawText(text, new Point(0, row * CellHeight));
+        // Selection goes on top, translucent, so the text stays readable through it. It was drawn
+        // underneath when every glyph was opaque and the background never was.
+        for (var row = 0; row < visibleRows; row++)
+        {
+            if (_viewport.RowSpan(firstRow + row, columns) is not { } span) continue;
+            context.FillRectangle(
+                SelectionBrush,
+                new Rect(Inset + span.Start * CellWidth, Inset + row * CellHeight,
+                    (span.End - span.Start) * CellWidth, CellHeight),
+                0);
         }
 
         DrawScrollbar(context, visibleRows);
+    }
 
-        if (IsKeyboardFocusWithin)
+    /// <summary>Underlines, strikethrough and overline, which are lines rather than font choices.</summary>
+    private static void DrawDecorations(
+        DrawingContext context,
+        TerminalRun run,
+        Color color,
+        double x,
+        double y,
+        double width)
+    {
+        const TerminalCellAttributes AnyUnderline =
+            TerminalCellAttributes.Underline |
+            TerminalCellAttributes.DoubleUnderline |
+            TerminalCellAttributes.CurlyUnderline;
+
+        if ((run.Attributes & (AnyUnderline | TerminalCellAttributes.Strikethrough |
+                               TerminalCellAttributes.Overline)) == 0)
         {
-            context.DrawRectangle(new Pen(FocusBrush), renderBounds.Deflate(0.5), 0);
+            return;
         }
+
+        var pen = new Pen(BrushFor(color));
+
+        if ((run.Attributes & AnyUnderline) != 0)
+        {
+            var baseline = y + CellHeight - 2.5;
+            context.DrawLine(pen, new Point(x, baseline), new Point(x + width, baseline));
+
+            // A curly underline is what a compiler uses to mean "wrong"; approximating it with a
+            // second straight line would say something different.
+            if ((run.Attributes & TerminalCellAttributes.DoubleUnderline) != 0)
+                context.DrawLine(pen, new Point(x, baseline + 2), new Point(x + width, baseline + 2));
+        }
+
+        if ((run.Attributes & TerminalCellAttributes.Strikethrough) != 0)
+        {
+            var middle = y + CellHeight / 2;
+            context.DrawLine(pen, new Point(x, middle), new Point(x + width, middle));
+        }
+
+        if ((run.Attributes & TerminalCellAttributes.Overline) != 0)
+            context.DrawLine(pen, new Point(x, y + 0.5), new Point(x + width, y + 0.5));
     }
 
     /// <summary>
@@ -188,7 +253,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         var total = _engine.TotalRows;
         if (total <= visibleRows || visibleRows <= 0) return;
 
-        var height = Bounds.Height;
+        var height = Bounds.Height - 2 * Inset;
         var thumbHeight = Math.Max(24, height * visibleRows / total);
         var travel = height - thumbHeight;
         var top = _viewport.TopRow(total, _engine.Rows);
@@ -197,17 +262,45 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
         context.FillRectangle(
             ScrollbarBrush,
-            new Rect(Bounds.Width - ScrollbarWidth - 2, y, ScrollbarWidth, thumbHeight),
+            new Rect(Bounds.Width - Inset - ScrollbarWidth, Inset + y, ScrollbarWidth, thumbHeight),
             (float)(ScrollbarWidth / 2));
+    }
+
+    /// <summary>
+    /// A brush for a colour, reused.
+    ///
+    /// Render runs on the UI thread only, so no lock is needed; the cache is bounded in practice
+    /// by how many distinct colours a terminal actually emits.
+    /// </summary>
+    private static IBrush BrushFor(Color color)
+    {
+        var key = (uint)((color.A << 24) | (color.R << 16) | (color.G << 8) | color.B);
+        if (BrushCache.TryGetValue(key, out var brush)) return brush;
+        brush = new SolidColorBrush(color);
+        BrushCache[key] = brush;
+        return brush;
+    }
+
+    private static Typeface TypefaceFor(TerminalCellAttributes attributes)
+    {
+        var bold = (attributes & TerminalCellAttributes.Bold) != 0;
+        var italic = (attributes & TerminalCellAttributes.Italic) != 0;
+        return (bold, italic) switch
+        {
+            (true, true) => BoldItalicTypeface,
+            (true, false) => BoldTypeface,
+            (false, true) => ItalicTypeface,
+            _ => TerminalTypeface,
+        };
     }
 
     /// <summary>The absolute cell under a point, clamped so a drag outside the control still works.</summary>
     private TerminalPosition PositionAt(Point point)
     {
         var columns = Math.Max(1, _engine.Columns);
-        var column = Math.Clamp((int)Math.Round(point.X / CellWidth), 0, columns);
+        var column = Math.Clamp((int)Math.Round((point.X - Inset) / CellWidth), 0, columns);
         var row = _viewport.TopRow(_engine.TotalRows, _engine.Rows) +
-                  Math.Clamp((int)(point.Y / CellHeight), 0, Math.Max(0, _engine.Rows - 1));
+                  Math.Clamp((int)((point.Y - Inset) / CellHeight), 0, Math.Max(0, _engine.Rows - 1));
         return new TerminalPosition(Math.Clamp(row, 0, Math.Max(0, _engine.TotalRows - 1)), column);
     }
 
@@ -504,14 +597,21 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             return;
         }
 
-        var columns = Math.Max(2, (int)(Bounds.Width / CellWidth));
-        var rows = Math.Max(1, (int)(Bounds.Height / CellHeight));
+        var columns = Math.Max(2, (int)((Bounds.Width - 2 * Inset) / CellWidth));
+        var rows = Math.Max(1, (int)((Bounds.Height - 2 * Inset) / CellHeight));
         if (columns == _engine.Columns && rows == _engine.Rows)
         {
             return;
         }
 
-        _engine.Resize(columns, rows, reflow: false);
+        // Reflow on resize, not just on a user drag.
+        //
+        // The engine is constructed at a guessed 120x30 because the provider starts the pane before
+        // the view is in the tree and there is no size to ask for yet. The first real layout then
+        // grows the grid, and growing it without reflow left the content anchored to the bottom —
+        // which is why every terminal opened with its prompt a third of the way down the pane and
+        // blank space above it.
+        _engine.Resize(columns, rows, reflow: true);
         lock (_gate)
         {
             _session?.Resize(columns, rows);

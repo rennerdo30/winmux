@@ -85,11 +85,15 @@ internal sealed class App : Application
                 {
                     if (Restored)
                     {
-                        await new NoticeWindow(
-                            "WinMux session restored",
-                            "The saved windows, panes, programs, arguments, environment overrides, and working directories were restored. " +
-                            "Processes were started again; running jobs and in-memory TUI state cannot be resumed.")
-                            .ShowDialog(windows[0]);
+                        // Not a dialog. Restoring is the normal path and it worked, and Windows
+                        // does not interrupt for success — it interrupts for decisions. A modal
+                        // here made the first action of every session "dismiss a paragraph about
+                        // TOML fields", which is exactly how people learn to click OK unread, and
+                        // then miss the one notice that matters.
+                        var panes = windows.Sum(w => w.PaneCount);
+                        windows[0].ShowMessage(
+                            $"Session restored · {panes} pane{(panes == 1 ? "" : "s")} · programs were restarted, "
+                            + "so anything that was running has to be started again");
                     }
 
                     await windows[0].ShowCwdIntegrationAsync(onlyIfUnseen: true);

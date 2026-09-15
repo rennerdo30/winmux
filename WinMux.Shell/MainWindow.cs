@@ -44,13 +44,62 @@ internal sealed class MainWindow : Window
     /// with no handle and no cursor change, so nothing said a pane could be resized at all.
     /// </summary>
     private readonly List<Control> _dividerHandles = [];
-    private readonly TextBlock _status = new()
+
+    /// <summary>
+    /// The ring around the focused pane, or null when nothing is focused.
+    ///
+    /// It lives here rather than inside the pane because it has to be drawn *in the gutter*: a pane
+    /// hosting a native window paints over anything Avalonia draws inside that pane's rectangle
+    /// (CLAUDE.md section 6), so a border drawn by the pane would be invisible for exactly the
+    /// panes hardest to identify. Inflating into the divider gap keeps every pixel of it outside
+    /// every pane.
+    ///
+    /// It also replaces a ring the terminal drew only when <c>IsKeyboardFocusWithin</c> — which is
+    /// false whenever a dialog, the palette or a foreign pane has focus, so the mark vanished in
+    /// precisely the situations where "which pane does this act on?" is worth asking.
+    /// </summary>
+    private Control? _focusRing;
+    /// <summary>The focused pane and its captured working directory.</summary>
+    private readonly TextBlock _statusLocation = new()
     {
-        Margin = new Thickness(Palette.GapMedium, 5),
         FontSize = Palette.CaptionSize,
         Foreground = Palette.MutedTextBrush,
+        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
+
+    /// <summary>The session file and whether it is saved.</summary>
+    private readonly TextBlock _statusSession = new()
+    {
+        FontSize = Palette.CaptionSize,
+        Foreground = Palette.FaintTextBrush,
+        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        Margin = new Thickness(Palette.GapLarge, 0),
+    };
+
+    /// <summary>The prefix, as a chip that lights up while the prefix is armed.</summary>
+    private readonly TextBlock _statusPrefix = new()
+    {
+        FontSize = Palette.CaptionSize,
+        Foreground = Palette.MutedTextBrush,
+        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+    };
+
+    private Border _statusPrefixChip = null!;
+
+    /// <summary>The last thing that happened, which clears itself rather than lingering all session.</summary>
+    private readonly TextBlock _statusMessage = new()
+    {
+        FontSize = Palette.CaptionSize,
+        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        IsVisible = false,
+    };
+
+    private readonly DispatcherTimer _messageTimer = new() { Interval = TimeSpan.FromSeconds(8) };
+    private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private StatusMessageKind _messageKind = StatusMessageKind.Info;
     private readonly Dictionary<PaneId, IPaneRuntime> _runtimes = [];
     private readonly PaneProviderRegistry _providers;
     private readonly ForeignAppPaneProvider _foreignProvider;
@@ -154,7 +203,8 @@ internal sealed class MainWindow : Window
             Background = Palette.SurfaceBrush,
             BorderBrush = Palette.EdgeBrush,
             BorderThickness = new Thickness(0, 1, 0, 0),
-            Child = _status,
+            Padding = new Thickness(Palette.GapMedium, 4),
+            Child = BuildStatusBar(),
         };
         // Chrome lives where panes never do (CLAUDE.md section 6): a native window hosted in a pane
         // paints above anything Avalonia draws, so the status bar gets its own dock region.
@@ -168,7 +218,11 @@ internal sealed class MainWindow : Window
         // edge of the screen and cannot be clicked.
         dock.Bind(MarginProperty, this.GetObservable(OffScreenMarginProperty));
 
-        // The canvas shows through the divider gutters, so it is the line between panes.
+        // The canvas shows through the divider gutters, so it is the line between panes. The margin
+        // is what makes the outermost panes tiles rather than a filled window: without it a pane
+        // runs to the window edge on three sides and to the toolbar on the fourth, and the rounded
+        // corners it now draws have nothing to sit against.
+        _canvas.Margin = new Thickness(Palette.GapSmall, 4, Palette.GapSmall, Palette.GapSmall);
         _canvas.Background = Palette.WindowBrush;
         _canvas.PropertyChanged += (_, e) => { if (e.Property == BoundsProperty) Relayout(); };
 
@@ -344,6 +398,7 @@ internal sealed class MainWindow : Window
         _tabStrips.Clear();
         foreach (var handle in _dividerHandles) _canvas.Children.Remove(handle);
         _dividerHandles.Clear();
+        UpdateFocusRing(arrangement);
 
         foreach (var divider in arrangement.Dividers)
         {
@@ -373,6 +428,45 @@ internal sealed class MainWindow : Window
             _canvas.Children.Add(view);
             _tabStrips.Add(view);
         }
+    }
+
+    /// <summary>
+    /// Mark the focused pane, in the gutter around it.
+    ///
+    /// Two pixels, inflated outward, so the ring occupies the divider gap and the canvas margin and
+    /// never a single pixel of any pane. <c>DividerThickness</c> is 6, so two adjacent rings still
+    /// leave two pixels of gutter between them.
+    /// </summary>
+    private void UpdateFocusRing(Arrangement arrangement)
+    {
+        if (_focusRing is not null)
+        {
+            _canvas.Children.Remove(_focusRing);
+            _focusRing = null;
+        }
+
+        if (!arrangement.IsVisible(_tree.Focused)) return;
+        var rect = arrangement[_tree.Focused];
+        if (rect.Width <= 0 || rect.Height <= 0) return;
+
+        const int Thickness = 2;
+        var ring = new Border
+        {
+            BorderBrush = Palette.AccentBrush,
+            BorderThickness = new Thickness(Thickness),
+            CornerRadius = new CornerRadius(10),
+            IsHitTestVisible = false,
+        };
+
+        Canvas.SetLeft(ring, rect.X - Thickness);
+        Canvas.SetTop(ring, rect.Y - Thickness);
+        ring.Width = rect.Width + Thickness * 2;
+        ring.Height = rect.Height + Thickness * 2;
+
+        // Before the pane views in z-order, so a native pane window still covers nothing of it and
+        // an Avalonia pane does not paint over it either.
+        _canvas.Children.Insert(0, ring);
+        _focusRing = ring;
     }
 
     /// <summary>
@@ -561,16 +655,90 @@ internal sealed class MainWindow : Window
             : rectangles.Max(rect => rect.Bottom) - rectangles.Min(rect => rect.Top);
     }
 
+    /// <summary>
+    /// Three segments rather than one debug string: where you are, whether it is saved, and what
+    /// the prefix will do. See <see cref="StatusBarModel"/> for why those three.
+    /// </summary>
+    private Control BuildStatusBar()
+    {
+        _statusPrefixChip = new Border
+        {
+            CornerRadius = Palette.ControlRadius,
+            Padding = new Thickness(Palette.GapSmall, 2),
+            Child = _statusPrefix,
+        };
+
+        var grid = new Grid
+        {
+            ColumnDefinitions =
+            [
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto),
+            ],
+        };
+
+        var left = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = Palette.GapMedium,
+            Children = { _statusLocation, _statusMessage },
+        };
+
+        Grid.SetColumn(left, 0);
+        Grid.SetColumn(_statusSession, 1);
+        Grid.SetColumn(_statusPrefixChip, 2);
+        grid.Children.Add(left);
+        grid.Children.Add(_statusSession);
+        grid.Children.Add(_statusPrefixChip);
+
+        // A message that never clears is indistinguishable from the current state.
+        _messageTimer.Tick += (_, _) =>
+        {
+            _messageTimer.Stop();
+            _message = "";
+            UpdateStatus();
+        };
+
+        // "saved 4s ago" has to keep counting, or it is a timestamp pretending to be a status.
+        _statusTimer.Tick += (_, _) => UpdateStatus();
+        _statusTimer.Start();
+
+        return grid;
+    }
+
     private void UpdateStatus()
     {
         var focused = _tree.GetPane(_tree.Focused);
-        var prefix = _keymap.IsPrefixArmed ? "  [PREFIX]" : "";
-        var hint = _keymap.IsPrefixArmed
-            ? "  %/\" split    ←↑↓→ focus    ⇧←↑↓→ resize    x close    c tab    n/p cycle    : actions"
-            : "  Ctrl+B then a key";
-        _status.Text =
-            $"{_tree.Panes.Count()} panes   focus: {focused?.Title ?? "-"}{prefix}{hint}" +
-            (_message.Length > 0 ? "   |   " + _message : "");
+        var text = StatusBarModel.Build(
+            focused?.Title,
+            focused?.Restore.Cwd,
+            _session.SessionPath,
+            _session.LastSavedAt,
+            saving: false,
+            prefixGesture: "Ctrl+B",
+            armed: _keymap.IsPrefixArmed,
+            now: DateTimeOffset.UtcNow);
+
+        _statusLocation.Text = text.Location;
+        _statusSession.Text = text.Session;
+        _statusPrefix.Text = text.Prefix;
+
+        // Armed is a mode. A mode with no visible state is how a stray keystroke closes a pane.
+        _statusPrefixChip.Background = _keymap.IsPrefixArmed ? Palette.AccentBrush : Brushes.Transparent;
+        _statusPrefix.Foreground = _keymap.IsPrefixArmed ? Palette.TextBrush : Palette.MutedTextBrush;
+
+        _statusMessage.Text = _message;
+        _statusMessage.IsVisible = _message.Length > 0;
+        _statusMessage.Foreground = _messageKind == StatusMessageKind.Error
+            ? Palette.DangerBrush
+            : Palette.MutedTextBrush;
+
+        if (_message.Length > 0)
+        {
+            _messageTimer.Stop();
+            _messageTimer.Start();
+        }
     }
 
     // ---------------- keys ----------------
@@ -1281,9 +1449,13 @@ internal sealed class MainWindow : Window
         }
     }
 
-    internal void ShowMessage(string message)
+    /// <summary>How many panes this window holds, for the restore notice.</summary>
+    internal int PaneCount => _tree.Panes.Count();
+
+    internal void ShowMessage(string message, StatusMessageKind kind = StatusMessageKind.Info)
     {
         _message = message;
+        _messageKind = kind;
         UpdateStatus();
     }
 

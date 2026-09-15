@@ -33,6 +33,14 @@ internal sealed class SessionController : IDisposable
 
     public string SessionPath { get; private set; }
 
+    /// <summary>
+    /// When the session was last written, or null if it has not been yet.
+    ///
+    /// Exposed because persistence is priority 1 and was entirely invisible in the interface: there
+    /// was no way for anyone to tell whether the thing this product exists to do had happened.
+    /// </summary>
+    public DateTimeOffset? LastSavedAt { get; private set; }
+
     /// <summary>How many top-level windows this session currently owns.</summary>
     public int WindowCount => _windows.Count;
 
@@ -210,8 +218,8 @@ internal sealed class SessionController : IDisposable
 
     private void OnSaveCompleted(SessionSaveResult result)
     {
-        if (!result.Succeeded)
-            Dispatcher.UIThread.Post(() => Broadcast("could not auto-save session: " + result.Error?.Message));
+        if (result.Succeeded) LastSavedAt = DateTimeOffset.UtcNow;
+        else Dispatcher.UIThread.Post(() => Broadcast("could not auto-save session: " + result.Error?.Message));
     }
 
     private void Broadcast(string message)

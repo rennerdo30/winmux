@@ -124,13 +124,13 @@ internal static class TabStripView
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = vertical ? 118 : 170,
-            FontSize = 12.5,
+            FontSize = Palette.BodySize,
         };
 
         var close = new Button
         {
-            Content = Icons.Close(9),
-            Margin = new Thickness(7, 0, -3, 0),
+            Content = Icons.Close(10),
+            Margin = new Thickness(6, 0, -2, 0),
             VerticalAlignment = VerticalAlignment.Center,
             [ToolTip.TipProperty] = "Close this tab",
         };
@@ -238,8 +238,9 @@ internal static class TabStripView
         string header)
     {
         var item = Item(header, () => commands.MoveStrip(strip.Stack, placement));
-        if (strip.Placement == placement)
-            item.Icon = new TextBlock { Text = "✓", Foreground = Palette.AccentBrush };
+        // Geometry, not a font glyph: a machine without the font renders a tick as a hollow box,
+        // which in a menu of four placements says the wrong one is selected (Icons.cs).
+        if (strip.Placement == placement) item.Icon = Icons.Check();
         return item;
     }
 

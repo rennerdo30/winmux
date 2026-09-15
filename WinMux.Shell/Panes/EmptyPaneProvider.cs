@@ -56,7 +56,7 @@ internal sealed class EmptyPaneRuntime : IPaneRuntime
         var heading = new TextBlock
         {
             Text = "Empty pane",
-            FontSize = 17,
+            FontSize = Palette.SubtitleSize,
             FontWeight = FontWeight.SemiBold,
             Foreground = Palette.TextBrush,
         };
@@ -146,7 +146,7 @@ internal sealed class EmptyPaneRuntime : IPaneRuntime
                     new TextBlock
                     {
                         Text = kind,
-                        FontSize = 11,
+                        FontSize = Palette.CaptionSize,
                         Foreground = Palette.FaintTextBrush,
                         VerticalAlignment = VerticalAlignment.Center,
                         [DockPanel.DockProperty] = Dock.Right,
