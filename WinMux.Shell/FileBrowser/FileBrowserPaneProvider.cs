@@ -26,6 +26,8 @@ internal sealed class FileBrowserPaneProvider(
 
     public PaneKind Kind => PaneKind.FileBrowser;
 
+    public string DisplayName => "File browser";
+
     public ValueTask<IPaneRuntime> CreateAsync(PaneProviderContext context, CancellationToken token = default) =>
         BuildAsync(context, token);
 

@@ -27,6 +27,9 @@ internal sealed class ForeignAppPaneProvider(Func<WindowHandle> ownerWindow, IHo
 
     public PaneKind Kind => PaneKind.ForeignApp;
 
+    /// <summary>Needs a program or a window chosen first; the launcher has its own buttons for that.</summary>
+    public bool IsOfferedDirectly => false;
+
     public ValueTask<IPaneRuntime> CreateAsync(PaneProviderContext context, CancellationToken token = default) =>
         BuildAsync(context, token);
 

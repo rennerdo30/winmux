@@ -24,6 +24,12 @@ public sealed class ClockPaneProvider : IPaneProvider
 {
     public PaneKind Kind { get; } = PaneKind.Create("com.example.clock");
 
+    /// <summary>
+    /// What an empty pane's launcher calls this. Without it the list would show the identifier,
+    /// "com.example.clock", which is correct and not a name anybody chose to read.
+    /// </summary>
+    public string DisplayName => "Clock";
+
     public ValueTask<IPaneRuntime> CreateAsync(
         PaneProviderContext context,
         CancellationToken cancellationToken = default) =>

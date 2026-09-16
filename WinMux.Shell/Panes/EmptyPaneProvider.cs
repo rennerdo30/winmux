@@ -14,11 +14,15 @@ namespace WinMux.Shell.Panes;
 /// <param name="ChooseApplication">Pick an application from the catalogue, then open it here.</param>
 /// <param name="AttachWindow">Pick a window that is already open, then take it into this pane.</param>
 /// <param name="OpenFileBrowser">Put WinMux's own file browser here.</param>
+/// <param name="OpenPaneKind">Put a registered pane kind here — anything a provider supplies.</param>
+/// <param name="Connect">Set up a connection of this kind, then open it here.</param>
 internal sealed record EmptyPaneCommands(
     Action<PaneId, LaunchProfile> OpenProfile,
     Action<PaneId> ChooseApplication,
     Action<PaneId> AttachWindow,
-    Action<PaneId> OpenFileBrowser);
+    Action<PaneId> OpenFileBrowser,
+    Action<PaneId, PaneKind> OpenPaneKind,
+    Action<PaneId, ProfileKind> Connect);
 
 /// <summary>
 /// A pane with nothing in it, offering everything that could go in it.
@@ -33,12 +37,16 @@ internal sealed record EmptyPaneCommands(
 internal sealed class EmptyPaneProvider(
     EmptyPaneCommands commands,
     Func<IReadOnlyList<LaunchProfile>> profiles,
-    WinMux.Platform.IAppIconSource icons) : IPaneProvider
+    WinMux.Platform.IAppIconSource icons,
+    Func<IReadOnlyList<(PaneKind Kind, string Name)>> paneKinds) : IPaneProvider
 {
     public PaneKind Kind => PaneKind.Empty;
 
+    /// <summary>An empty pane cannot offer to become another empty pane.</summary>
+    public bool IsOfferedDirectly => false;
+
     public ValueTask<IPaneRuntime> CreateAsync(PaneProviderContext context, CancellationToken token = default) =>
-        ValueTask.FromResult<IPaneRuntime>(new EmptyPaneRuntime(context, commands, profiles, icons));
+        ValueTask.FromResult<IPaneRuntime>(new EmptyPaneRuntime(context, commands, profiles, icons, paneKinds));
 
     public ValueTask<IPaneRuntime> RestoreAsync(PaneProviderContext context, CancellationToken token = default) =>
         CreateAsync(context, token);
@@ -53,7 +61,8 @@ internal sealed class EmptyPaneRuntime : IPaneRuntime
         PaneProviderContext context,
         EmptyPaneCommands commands,
         Func<IReadOnlyList<LaunchProfile>> profiles,
-        WinMux.Platform.IAppIconSource icons)
+        WinMux.Platform.IAppIconSource icons,
+        Func<IReadOnlyList<(PaneKind Kind, string Name)>> paneKinds)
     {
         _pane = new Pane(context.PaneId, PaneKind.Empty, context.Title, context.Descriptor);
 
@@ -101,20 +110,48 @@ internal sealed class EmptyPaneRuntime : IPaneRuntime
             }
         }
 
-        // WinMux's own pane kinds belong in this list too. The file browser is built in and has a
-        // toolbar button, but it is not a profile, so the one screen whose whole job is "choose what
-        // goes here" was the one place you could not choose it.
-        list.Children.Add(SectionHeading("Built in"));
-        list.Children.Add(Entry(
-            "File browser",
-            "browse files in this pane",
-            Icons.Folder(),
-            () => commands.OpenFileBrowser(_pane.Id)));
+        // Every registered pane kind that offers itself, not a hardcoded one. ADR 0012 says adding a
+        // pane kind must not touch Core, the tree, persistence or the CLI; it should not have to
+        // touch this screen either, and an external provider nobody can choose is the section 5a
+        // failure in its purest form -- the sample clock provider shipped and was unreachable here.
+        var kinds = paneKinds();
+        if (kinds.Count > 0)
+        {
+            list.Children.Add(SectionHeading("Built in"));
+            foreach (var (kind, name) in kinds)
+            {
+                var target = kind;
+                // Only show the identifier when it is not just the name again — a provider that
+                // names itself "Clock" does not need "Clock" written underneath it.
+                var detail = kind == PaneKind.FileBrowser
+                    ? "browse files in this pane"
+                    : string.Equals(name, kind.Value, StringComparison.OrdinalIgnoreCase)
+                        ? "provider pane"
+                        : kind.Value;
 
-        var extras = new StackPanel
+                list.Children.Add(Entry(
+                    name,
+                    detail,
+                    Icons.Folder(),
+                    () => commands.OpenPaneKind(_pane.Id, target)));
+            }
+        }
+
+        // One row per protocol rather than a single "Connect to a server…". That phrasing named
+        // nothing: it gave no way to know that Remote Desktop was behind it, which is the same
+        // failure as hiding the capability entirely — you cannot choose what you cannot see.
+        list.Children.Add(SectionHeading("Connect to"));
+        foreach (var (kind, name, detail, icon) in ConnectionChoices())
+        {
+            var target = kind;
+            list.Children.Add(Entry(name, detail, icon, () => commands.Connect(_pane.Id, target)));
+        }
+
+        // Wraps rather than laying out in one row: two buttons of this width exceed the column, and
+        // the second was simply cut off at the edge.
+        var extras = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = Palette.GapSmall,
             Margin = new Thickness(0, Palette.GapMedium, 0, 0),
         };
         extras.Children.Add(Secondary("Choose an application…", () => commands.ChooseApplication(_pane.Id)));
@@ -139,6 +176,20 @@ internal sealed class EmptyPaneRuntime : IPaneRuntime
             CornerRadius = Palette.SurfaceRadius,
             Child = new ScrollViewer { Content = content },
         };
+    }
+
+    /// <summary>
+    /// The connections that can be set up from here, each named as the thing it is.
+    ///
+    /// Descriptions say what you get, not what the protocol is called: somebody who wants "that
+    /// machine's desktop" should not have to know that the answer is spelled RDP.
+    /// </summary>
+    private static IEnumerable<(ProfileKind Kind, string Name, string Detail, Control Icon)> ConnectionChoices()
+    {
+        yield return (ProfileKind.Ssh, "SSH", "a terminal on another machine", Icons.Terminal());
+        yield return (ProfileKind.Rdp, "Remote Desktop", "that machine's desktop, in this pane", Icons.TabGroup());
+        yield return (ProfileKind.Sftp, "SFTP", "browse another machine's files over SSH", Icons.Folder());
+        yield return (ProfileKind.Ftp, "FTP", "browse another machine's files over FTP", Icons.Folder());
     }
 
     private static string Section(ProfileKind kind) => kind switch
@@ -295,6 +346,10 @@ internal sealed class EmptyPaneRuntime : IPaneRuntime
             Content = label,
             Padding = new Thickness(12, 7),
             CornerRadius = Palette.ControlRadius,
+
+            // The spacing lives here rather than on the panel: a WrapPanel has no Spacing, and the
+            // gap has to survive a row break as well as sit between neighbours.
+            Margin = new Thickness(0, 0, Palette.GapSmall, Palette.GapSmall),
         };
         button.Click += (_, _) => invoke();
         return button;

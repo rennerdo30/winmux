@@ -63,6 +63,25 @@ public interface IPaneRuntime : IAsyncDisposable
 public interface IPaneProvider
 {
     PaneKind Kind { get; }
+
+    /// <summary>
+    /// What to call this in a menu, for the places that offer a pane kind to a user.
+    ///
+    /// Defaulted to the kind identifier so that existing providers keep compiling and still appear
+    /// — an external pane kind that nobody can find is the failure CLAUDE.md section 5a is about,
+    /// and "com.example.clock" in a list beats absence from it. Providers that want to read well
+    /// override it.
+    /// </summary>
+    string DisplayName => Kind.Value;
+
+    /// <summary>
+    /// Whether a user may choose this kind directly, from an empty pane's launcher.
+    ///
+    /// False for the kinds that are reached another way: an empty pane cannot contain itself, a
+    /// terminal comes from a profile so that it knows which shell to run, and a foreign application
+    /// needs a window or a program chosen first.
+    /// </summary>
+    bool IsOfferedDirectly => true;
     ValueTask<IPaneRuntime> CreateAsync(
         PaneProviderContext context,
         CancellationToken cancellationToken = default);

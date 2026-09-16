@@ -162,9 +162,12 @@ internal sealed class MainWindow : Window
                         // Inherit the focused pane's directory, so "file browser here" opens where
                         // you already were rather than wherever WinMux happened to start.
                         NewFileBrowserPane(_tree.GetPane(_tree.Focused)?.Restore.Cwd.Path),
-                        "opened the file browser"))),
+                        "opened the file browser")),
+                    (pane, kind) => Run(OpenPaneKindInAsync(pane, kind)),
+                    (pane, kind) => Run(ConnectInPaneAsync(pane, kind))),
                 () => Settings.ShellProfiles.All,
-                PlatformServices.AppIcons),
+                PlatformServices.AppIcons,
+                OfferablePaneKinds),
             _foreignProvider,
         ]);
         LoadExternalProviders();
@@ -1364,6 +1367,72 @@ internal sealed class MainWindow : Window
         _message = message;
         Relayout();
         _runtimes.GetValueOrDefault(replacement.Id)?.Focus();
+    }
+
+    /// <summary>
+    /// The pane kinds an empty pane may offer directly: every registered provider that says it can
+    /// be chosen, which is how an external provider reaches the launcher without this file knowing
+    /// it exists (ADR 0012).
+    /// </summary>
+    private IReadOnlyList<(PaneKind Kind, string Name)> OfferablePaneKinds() =>
+        _providers.Providers
+            .Where(provider => provider.IsOfferedDirectly)
+            .Select(provider => (provider.Kind, provider.DisplayName))
+            .OrderBy(entry => entry.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+
+    /// <summary>Put a bare pane kind into a pane — a provider's own kind, with no profile behind it.</summary>
+    private Task OpenPaneKindInAsync(PaneId target, PaneKind kind)
+    {
+        if (kind == PaneKind.FileBrowser)
+        {
+            return ReplacePaneAsync(
+                target,
+                NewFileBrowserPane(_tree.GetPane(_tree.Focused)?.Restore.Cwd.Path),
+                "opened the file browser");
+        }
+
+        var pane = new Pane(PaneId.New(), kind, kind.Value, new RestoreDescriptor
+        {
+            Kind = kind,
+            Title = kind.Value,
+        });
+
+        return ReplacePaneAsync(target, pane, "opened " + kind.Value);
+    }
+
+    /// <summary>
+    /// Set up a connection and open it here, without a detour through settings.
+    ///
+    /// The launcher listed saved connections and offered no way to make one, so a user with none had
+    /// no route to SSH, Remote Desktop, SFTP or FTP from the screen whose job is to offer what a
+    /// pane can hold. The profile is saved as well as opened, because a connection worth making once
+    /// is almost always worth having in the list.
+    /// </summary>
+    private async Task ConnectInPaneAsync(PaneId target, Core.Settings.ProfileKind kind)
+    {
+        var editor = new ProfileEditorWindow(new Core.Settings.LaunchProfile
+        {
+            Id = string.Empty,
+            Name = string.Empty,
+            Program = string.Empty,
+
+            // Already on the kind the user pressed, so the dialog opens showing the fields that
+            // protocol needs rather than asking them to find it in a list first.
+            Kind = kind,
+        });
+
+        await editor.ShowDialog(this);
+        if (editor.Result is not { } profile) return;
+
+        // Add reports a save failure rather than throwing; the connection still opens either way,
+        // because refusing to honour what the user just set up would be the worse half.
+        if (Settings.ShellProfiles.Add(profile) is { } problem) _message = problem;
+
+        await ReplacePaneAsync(
+            target,
+            ProfilePaneFactory.Create(profile, _tree.GetPane(_tree.Focused)?.Restore.Cwd),
+            "opened " + profile.Name);
     }
 
     private async Task ChooseApplicationForAsync(PaneId target)

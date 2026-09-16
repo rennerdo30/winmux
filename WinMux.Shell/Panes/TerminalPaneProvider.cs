@@ -13,6 +13,9 @@ internal sealed class TerminalPaneProvider : IPaneProvider
 {
     public PaneKind Kind => PaneKind.Terminal;
 
+    /// <summary>A terminal comes from a profile, which is what says <em>which</em> shell to run.</summary>
+    public bool IsOfferedDirectly => false;
+
     public ValueTask<IPaneRuntime> CreateAsync(PaneProviderContext context, CancellationToken token = default) =>
         BuildAsync(context, token);
 
