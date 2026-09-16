@@ -48,6 +48,11 @@ package that comes out of `publish.ps1` is one worth handing to somebody.
 
 ### Fixed
 
+- **Every line in a terminal pane could end up underlined.** `ESC[4:0m` — underline *off* in the
+  colon sub-parameter form that modern terminals use — was read by the VT engine as a plain
+  `ESC[4m`, turning underline *on* and never clearing it. WinMux now repairs the byte stream before
+  the engine sees it. The engine is third-party with no reachable repository, so there was nowhere
+  to send the patch; see [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md).
 - **The release package could not start WinMux.** The CLI overwrote the shell's executable, so the
   file the README told people to double-click was the console CLI. Both the publish script's own
   file check and the updater's archive check asked whether `WinMux.exe` existed, and the CLI

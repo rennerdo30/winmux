@@ -16,6 +16,13 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
     private readonly EmulationTerminal terminal;
     private readonly OscWorkingDirectoryParser workingDirectoryParser = new();
 
+    /// <summary>
+    /// Repairs colon-form SGR underline parameters, which the engine reads as their plain form and
+    /// so turns underline on when asked to turn it off. Stateful, because a CSI sequence can be
+    /// split across two writes; guarded by <see cref="sync"/> along with everything else here.
+    /// </summary>
+    private readonly SgrColonNormalizer sgrNormalizer = new();
+
     public TerminalEmulationEngine(int columns, int rows, int scrollbackCapacity = 5_000)
     {
         ValidateDimensions(columns, rows);
@@ -95,8 +102,11 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
     {
         lock (sync)
         {
+            // The working-directory parser reads the original bytes: it looks for OSC 7 and OSC 9;9,
+            // which the normalizer does not touch, and giving it the rewritten copy would only make
+            // the two able to disagree.
             workingDirectoryParser.Write(bytes, OnWorkingDirectoryChanged);
-            terminal.Write(bytes);
+            terminal.Write(sgrNormalizer.Normalize(bytes));
         }
     }
 

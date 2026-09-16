@@ -20,10 +20,10 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-16: 727 passed, 0 warnings.** Four more are *skipped* by design — the live
+**Verified 2026-09-16: 760 passed, 0 warnings.** Four more are *skipped* by design — the live
 SFTP/FTP tests, which need a server and say so rather than passing quietly (ADR 0020). Version 0.7.0.
-Everything through `dd9bc38` is **pushed**; the release preparation described below is newer than
-`origin/main`.
+Everything through `d5a0631` is **pushed** and CI is green there; the underline fix described below
+is newer than `origin/main`.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-0.7.0-win-x64/` and a zip.
@@ -84,6 +84,13 @@ needs to know happened, and where the reasoning lives.
   like any other, the password goes to Credential Manager and never to the session file, and SFTP
   can use a key instead. **Verified against a real server** (SFTPGo portable, both protocols) and
   then through the UI: session file, credential dialog, listing, folder created on the server.
+- **Every line in a terminal pane was underlined**, reported from a screenshot. `ESC[4:0m` is
+  underline *off* in the colon sub-parameter form, and `Terminal.Emulation` reads it as a bare
+  `ESC[4m` — underline *on*, never cleared. Claude Code emits that form. There was nowhere to send
+  a patch, which is exactly the exposure
+  [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md) exists to describe; see its
+  2026-09-16 addendum. `SgrColonNormalizer` repairs the byte stream in the adapter before the
+  engine sees it.
 - **The release package could not start WinMux, and never could.** `winmux.exe` (the CLI) and
   `WinMux.exe` (the shell) are one filename on Windows; the CLI published second and overwrote the
   shell, so every package shipped a console application under the name the README says to
@@ -101,7 +108,7 @@ needs to know happened, and where the reasoning lives.
 
 ## The next action
 
-**Cut 0.7.0.** The package is ready and was rebuilt from clean and started from the zip; what is
+**Cut 0.7.0.** (One fix landed after the release preparation: see the underline bug below. It is in.) The package is ready and was rebuilt from clean and started from the zip; what is
 left is one command, which is yours because it publishes:
 
 ```

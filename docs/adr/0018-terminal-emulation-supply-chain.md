@@ -120,3 +120,40 @@ benchmark against `Iciclecreek.Avalonia.Terminal` — if it is close, the whole 
 - The version stays 0.x until this is settled, which is what `Directory.Build.props` already says.
 - CLAUDE.md's "source repository is not public" was right and is now specific: the repository is
   *declared and unreachable*, which is a different and slightly worse thing than absent.
+
+---
+
+## Addendum, 2026-09-16: the cost stopped being hypothetical
+
+A user reported a pane where **every line was underlined**, including plain `cmd` output that had
+asked for nothing. The cause is in the engine.
+
+`ESC[4:0m` is underline *off* — the colon sub-parameter form, which is how modern terminals spell
+underline styles (`4:1` single, `4:2` double, `4:3` curly). `Terminal.Emulation` reads the
+sub-parameter as if it were absent, so `4:0` arrives as a bare `ESC[4m` and turns underline **on**
+when it was asked to turn it off. Nothing clears it afterwards, so every line drawn from then on is
+underlined. Claude Code emits the colon form, which is how it was found.
+
+Confirmed in both 0.3.3 and 0.3.4, and pinned by `UnderlineSubParameterTests`.
+
+**There was nowhere to send a patch.** That is the entire point of this ADR, and it arrived as a
+real bug rather than an argument: the declared repository still 404s, so the options were to fix it
+from outside or ship it broken. `SgrColonNormalizer` in `WinMux.Terminal` now rewrites `4:N` into
+the plain form before the engine sees the bytes — `4:0` becomes `24`, every other style becomes `4`.
+It is stateful, because ConPTY splits writes wherever it likes and `ESC[4` and `:0m` routinely
+arrive in different reads, and it touches nothing but parameters beginning `4:`; an underline colour
+like `58:2::255:0:0` passes through byte for byte.
+
+Two things this changes about the decision above:
+
+- **Option 4 gained weight and option 3 lost it.** An unreachable author cannot take a bug report,
+  so "ask them to publish the source" is not merely unanswered — it is the option whose value
+  depends on someone who has not responded to anything. Meanwhile the seam did its job: the fix
+  landed in the adapter, in about a hundred lines, without the shell knowing.
+- **This is unlikely to be the only one.** A parser that ignores colon sub-parameters in SGR 4 will
+  do the same elsewhere, and each instance will be found the same way — by a user, in a screenshot.
+  The workaround does not generalise; the next one needs its own.
+
+The recommendation is unchanged in shape but sharper in urgency: **benchmark
+`Iciclecreek.Avalonia.Terminal` against ADR 0002's numbers before v1.** The question is no longer
+only "can the source be read" but "who fixes the next one".
