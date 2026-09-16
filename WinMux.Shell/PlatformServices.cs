@@ -43,4 +43,7 @@ internal static class PlatformServices
 
     /// <summary>Deleting a file the way the user can undo it.</summary>
     public static IFileTrash Trash { get; } = new Win32FileTrash();
+
+    /// <summary>The picture an application shows for itself, for the pickers that list them.</summary>
+    public static IAppIconSource AppIcons { get; } = new Win32AppIconSource();
 }

@@ -48,10 +48,23 @@
           "Newtonsoft.Json": "13.0.3"
         }
       },
+      "Microsoft.Win32.SystemEvents": {
+        "type": "Transitive",
+        "resolved": "9.0.0",
+        "contentHash": "z8FfGIaoeALdD+KF44A2uP8PZIQQtDGiXsOLuN8nohbKhkyKt7zGaZb+fKiCxTuBqG22Q7myIAioSWaIcOOrOw=="
+      },
       "Newtonsoft.Json": {
         "type": "Transitive",
         "resolved": "13.0.3",
         "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ=="
+      },
+      "System.Drawing.Common": {
+        "type": "Transitive",
+        "resolved": "9.0.0",
+        "contentHash": "uoozjI3+dlgKh2onFJcz8aNLh6TRCPlLSh8Dbuljc8CdvqXrxHOVysJlrHvlsOCqceqGBR1wrMPxlnzzhynktw==",
+        "dependencies": {
+          "Microsoft.Win32.SystemEvents": "9.0.0"
+        }
       },
       "Tomlyn": {
         "type": "Transitive",
@@ -113,6 +126,7 @@
       "winmux.platform.win32": {
         "type": "Project",
         "dependencies": {
+          "System.Drawing.Common": "[9.0.0, )",
           "WinMux.Core": "[0.7.0, )",
           "WinMux.Platform": "[0.7.0, )"
         }

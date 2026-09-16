@@ -189,6 +189,11 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.2"
         }
       },
+      "Microsoft.Win32.SystemEvents": {
+        "type": "Transitive",
+        "resolved": "9.0.0",
+        "contentHash": "z8FfGIaoeALdD+KF44A2uP8PZIQQtDGiXsOLuN8nohbKhkyKt7zGaZb+fKiCxTuBqG22Q7myIAioSWaIcOOrOw=="
+      },
       "Microsoft.Windows.Console.ConPTY": {
         "type": "Transitive",
         "resolved": "1.24.260710001",
@@ -231,6 +236,14 @@
         "resolved": "3.119.4",
         "contentHash": "XOpbx/4CReO2wYsq2s6rbvdauc6dntG4Zv499sHGTJ87bwZaFXszFkwql3+FIZMc8kUPeaj3Mx2ezIJmo8a1Kg=="
       },
+      "System.Drawing.Common": {
+        "type": "Transitive",
+        "resolved": "9.0.0",
+        "contentHash": "uoozjI3+dlgKh2onFJcz8aNLh6TRCPlLSh8Dbuljc8CdvqXrxHOVysJlrHvlsOCqceqGBR1wrMPxlnzzhynktw==",
+        "dependencies": {
+          "Microsoft.Win32.SystemEvents": "9.0.0"
+        }
+      },
       "Terminal.Emulation": {
         "type": "Transitive",
         "resolved": "0.3.3",
@@ -268,6 +281,7 @@
       "winmux.platform.win32": {
         "type": "Project",
         "dependencies": {
+          "System.Drawing.Common": "[9.0.0, )",
           "WinMux.Core": "[0.7.0, )",
           "WinMux.Platform": "[0.7.0, )"
         }

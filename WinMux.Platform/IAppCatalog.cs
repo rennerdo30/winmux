@@ -5,13 +5,21 @@ namespace WinMux.Platform;
 /// <param name="Program">The executable to launch. Always resolved; never a shortcut.</param>
 /// <param name="Arguments">Arguments the shortcut carried, if any.</param>
 /// <param name="WorkingDirectory">The shortcut's working directory, or empty.</param>
-/// <param name="Source">Where it was found, so the UI can group and the user can trust it.</param>
+/// <param name="Source">Where it was found, so the user can trust it.</param>
+/// <param name="Category">
+/// The group the system files it under, for a picker that shows more than an alphabet.
+///
+/// On Windows this is the Start Menu folder the shortcut sits in — "Accessories", "Git",
+/// "Microsoft Office" — which is the grouping the machine's owner or its installers already chose.
+/// Empty for anything directly under Programs, which is most of the well-known applications.
+/// </param>
 public readonly record struct InstalledApp(
     string Name,
     string Program,
     string Arguments,
     string WorkingDirectory,
-    string Source);
+    string Source,
+    string Category = "");
 
 /// <summary>
 /// The applications this machine has, so a user can put one in a pane without knowing where its

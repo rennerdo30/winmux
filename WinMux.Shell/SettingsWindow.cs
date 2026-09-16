@@ -288,7 +288,7 @@ internal sealed class SettingsWindow : Window
 
     private async Task AddFromCatalogAsync()
     {
-        var picker = new AppPickerWindow(PlatformServices.Apps);
+        var picker = new AppPickerWindow(PlatformServices.Apps, PlatformServices.AppIcons);
         await picker.ShowDialog(this);
         if (picker.Result is not { } app) return;
 

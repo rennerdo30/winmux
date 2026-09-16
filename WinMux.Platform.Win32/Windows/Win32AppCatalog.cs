@@ -48,6 +48,8 @@ public sealed class Win32AppCatalog : IAppCatalog
                 var app = ReadShortcut(shortcut, name, source);
                 if (app is not { } resolved) continue;
 
+                resolved = resolved with { Category = CategoryOf(root, shortcut) };
+
                 // Keyed by target so the same program reached from both Start Menus appears once.
                 var key = resolved.Program + "|" + resolved.Arguments;
                 if (!found.ContainsKey(key)) found[key] = resolved;
@@ -110,6 +112,26 @@ public sealed class Win32AppCatalog : IAppCatalog
 
     private static bool ShouldSkip(string name) =>
         SkipWords.Any(word => name.Contains(word, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// The Start Menu folder a shortcut sits in, which is the grouping Windows itself shows.
+    ///
+    /// Only the first level below Programs: installers nest several deep -- "Git\Git Bash", say --
+    /// and a picker grouped by full path would have one heading per application, which is no
+    /// grouping at all. Anything directly under Programs has no category, and that is most of the
+    /// applications people actually reach for.
+    /// </summary>
+    private static string CategoryOf(string root, string shortcutPath)
+    {
+        var directory = Path.GetDirectoryName(shortcutPath);
+        if (directory is null) return string.Empty;
+
+        var relative = Path.GetRelativePath(root, directory);
+        if (relative is "." or "") return string.Empty;
+
+        var first = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+        return first is "." or ".." ? string.Empty : first;
+    }
 
     private static InstalledApp? ReadShortcut(string shortcutPath, string name, string source)
     {

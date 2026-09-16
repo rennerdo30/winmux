@@ -11,6 +11,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      Turning an HICON into PNG bytes. Microsoft's own package, Windows-only since .NET 7, which is
+      exactly what this project is. It stays on this side of the platform boundary: WinMux.Platform
+      hands the shell a byte[], so no drawing type crosses (ADR 0013).
+    -->
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\WinMux.Core\WinMux.Core.csproj" />
     <ProjectReference Include="..\WinMux.Platform\WinMux.Platform.csproj" />
   </ItemGroup>

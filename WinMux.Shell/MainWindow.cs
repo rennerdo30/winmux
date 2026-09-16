@@ -1361,7 +1361,7 @@ internal sealed class MainWindow : Window
 
     private async Task ChooseApplicationForAsync(PaneId target)
     {
-        var picker = new AppPickerWindow(PlatformServices.Apps);
+        var picker = new AppPickerWindow(PlatformServices.Apps, PlatformServices.AppIcons);
         await picker.ShowDialog(this);
         if (picker.Result is not { } app) return;
 
