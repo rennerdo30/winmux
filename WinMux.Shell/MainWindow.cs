@@ -156,8 +156,15 @@ internal sealed class MainWindow : Window
                     (pane, profile) => Run(ReplacePaneAsync(pane, ProfilePaneFactory.Create(profile,
                         _tree.GetPane(_tree.Focused)?.Restore.Cwd), "opened " + profile.Name)),
                     pane => Run(ChooseApplicationForAsync(pane)),
-                    pane => Run(AttachWindowToAsync(pane))),
-                () => Settings.ShellProfiles.All),
+                    pane => Run(AttachWindowToAsync(pane)),
+                    pane => Run(ReplacePaneAsync(
+                        pane,
+                        // Inherit the focused pane's directory, so "file browser here" opens where
+                        // you already were rather than wherever WinMux happened to start.
+                        NewFileBrowserPane(_tree.GetPane(_tree.Focused)?.Restore.Cwd.Path),
+                        "opened the file browser"))),
+                () => Settings.ShellProfiles.All,
+                PlatformServices.AppIcons),
             _foreignProvider,
         ]);
         LoadExternalProviders();
