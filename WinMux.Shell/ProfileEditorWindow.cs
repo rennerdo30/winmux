@@ -65,6 +65,8 @@ internal sealed class ProfileEditorWindow : Window
                 ("Application", ProfileKind.Application),
                 ("SSH connection", ProfileKind.Ssh),
                 ("Remote Desktop connection", ProfileKind.Rdp),
+                ("SFTP connection (file browser)", ProfileKind.Sftp),
+                ("FTP connection (file browser)", ProfileKind.Ftp),
             ],
             profile.Kind);
         _kind.SelectionChanged += (_, _) => UpdateKindVisibility();
@@ -100,8 +102,13 @@ internal sealed class ProfileEditorWindow : Window
         _connectionOnly.Children.Add(Row("Identity file", _identity));
         _connectionOnly.Children.Add(new TextBlock
         {
-            Text = "No password is stored. Both clients use Windows Credential Manager, which is "
-                 + "where a saved password belongs.",
+            // "Both clients" was written when there were two kinds. There are four, and two of them
+            // are WinMux's own code rather than a Windows client, so the sentence has to say what
+            // is actually true of all of them.
+            Text = "No password is kept in any file WinMux owns. SSH uses your agent and keys, "
+                 + "Remote Desktop uses its own client, and SFTP and FTP ask once and offer to save "
+                 + "the password in Windows Credential Manager. 'Start in' is the folder a "
+                 + "connection opens in — a remote path such as /srv/www for SFTP and FTP.",
             TextWrapping = TextWrapping.Wrap,
             FontSize = Palette.CaptionSize,
             Foreground = Palette.MutedTextBrush,

@@ -259,6 +259,13 @@ internal sealed class SettingsWindow : Window
         };
 
         row.Children.Add(Small("Add application…", () => _ = AddFromCatalogAsync()));
+
+        // Connections had no button of their own. They were reachable — "Add manually…", then a kind
+        // dropdown — but nothing on this page said the word, so the only way to discover that WinMux
+        // does Remote Desktop at all was to open a dialog named after something else and read a list.
+        // CLAUDE.md section 5a: a capability nobody can find is a note to the author.
+        row.Children.Add(Small("Add connection…", () => _ = AddConnectionAsync()));
+
         row.Children.Add(Small("Add manually…", () => _ = AddManuallyAsync()));
         row.Children.Add(Small("Edit…", () => _ = EditSelectedAsync()));
         row.Children.Add(Small("Remove", RemoveSelected));
@@ -301,6 +308,21 @@ internal sealed class SettingsWindow : Window
 
     private Task AddManuallyAsync() => EditAsync(
         new LaunchProfile { Id = string.Empty, Name = string.Empty, Program = string.Empty },
+        replacing: null);
+
+    /// <summary>
+    /// The same editor, opened already on a connection so the fields that matter are the ones
+    /// showing. SSH is the default because it is the one people reach for most; the kind dropdown
+    /// switches to Remote Desktop, SFTP or FTP without leaving the dialog.
+    /// </summary>
+    private Task AddConnectionAsync() => EditAsync(
+        new LaunchProfile
+        {
+            Id = string.Empty,
+            Name = string.Empty,
+            Program = string.Empty,
+            Kind = ProfileKind.Ssh,
+        },
         replacing: null);
 
     private Task EditSelectedAsync() =>

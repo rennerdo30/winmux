@@ -622,7 +622,7 @@ internal sealed class MainWindow : Window
         // Add beside the stack's active tab so the new one lands in this stack rather than
         // wherever focus happens to be — the user clicked a specific "+".
         var beside = stack.Active.Leaves().First().Pane.Id;
-        return AddTabAsync(NewTerminalPane(), "new tab", beside);
+        return AddTabAsync(Pane.Empty(), "new tab", beside);
     }
 
     private void SetTabPlacement(StackNode stack, TabStripPlacement placement)
@@ -1423,7 +1423,17 @@ internal sealed class MainWindow : Window
                 : WindowHandle.None)
             .Where(handle => !handle.IsNone);
 
-    private Task AddTabAsync() => AddTabAsync(NewTerminalPane(), "new tab");
+    /// <summary>
+    /// A new tab is an **empty** pane, not a terminal.
+    ///
+    /// CLAUDE.md section 5a: an empty pane is a first-class state, and "make a pane, then decide" is
+    /// a supported workflow rather than a gap. A new tab that silently became cmd made that state
+    /// unreachable from the one control everybody presses, and assumed the answer to a question the
+    /// user had not been asked. The empty pane offers profiles, the application catalogue and the
+    /// windows already open, so a terminal is still one click away — and `Ctrl+B 1`–`5` open a
+    /// specific shell directly for anyone who knows what they want.
+    /// </summary>
+    private Task AddTabAsync() => AddTabAsync(Pane.Empty(), "new tab");
 
     private Task AddTabAsync(TerminalProfile profile) =>
         AddTabAsync(NewTerminalPane(profile), "new " + profile.Name + " tab");
