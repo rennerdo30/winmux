@@ -20,7 +20,7 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-16: 776 passed, 0 warnings.** Four more are *skipped* by design — the live
+**Verified 2026-09-16: 799 passed, 0 warnings.** Four more are *skipped* by design — the live
 SFTP/FTP tests, which need a server and say so rather than passing quietly (ADR 0020). Version 0.7.0.
 Everything through `d5a0631` is **pushed** and CI is green there; the underline fix described below
 is newer than `origin/main`.
@@ -132,6 +132,13 @@ The connection work asked for on 2026-09-16 — RDP, SSH, FTP, SCP, SMB, NFS —
 SSH and RDP delegate to the Windows clients, SMB and NFS to Windows itself (ADR 0019), SFTP and FTP
 are implemented (ADR 0020), and SCP is deliberately absent because it cannot list a directory.
 
+**Pane providers are under test now.** `Avalonia.Headless` runs them in-process, and
+`PaneProviderConstructionTests` builds every provider and reads back what its view says. That gap
+produced most of 2026-09-16's bugs — a pane that could not be created at all, an address bar broken
+since Phase 4, a launcher missing half the product — because nothing in the suite had ever
+constructed a provider. The guard was verified by reintroducing the shipped bug and watching it go
+red.
+
 The obvious next piece is **copying between two filesystems** — dragging from an SFTP pane onto a
 local one. Every operation today is within one filesystem; the interface already has the streams
 this would need.
@@ -214,6 +221,19 @@ that a future session recognises them as answers rather than rediscovering them 
 - Do not reuse the horizontal tab-strip thickness for a vertical strip (28px of titles is a column
   of ellipses); `LayoutMetrics` carries both.
 - Do not put palette or modal chrome over the pane canvas; native windows paint above it.
+
+**Testing the UI**
+- Do not add an overload pair `RunAsync(Action)` / `RunAsync(Func<Task>)` to a test helper. An
+  `async () => { … }` lambda binds to the `Action` one as `async void`, and every exception inside
+  it — including a failed assertion — is discarded.
+- Do not assume `HeadlessUnitTestSession.Dispatch`'s void overload awaits the body. It does not: a
+  synchronous throw surfaces, and anything after the first `await` is dropped. `Headless.RunAsync`
+  returns a value so it binds to the overload that awaits, and `HeadlessHarnessTests` pins it.
+  Between those two faults the headless suite passed unconditionally for a while, with
+  `Assert.Fail` as the first statement of a test.
+- Do not trust a new guard until it has failed. The pane-construction tests were only believable
+  once the `KeyGesture.Parse("Del")` bug was put back and two of them went red with the exact error
+  the user had reported.
 
 **Build and tooling**
 - Do not commit the `packages.lock.json` changes that a publish produces. `dotnet publish -r win-x64`

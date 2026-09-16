@@ -13,6 +13,19 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <!--
+      Headless Avalonia, so a pane provider can be constructed in a test. Nothing did, and it
+      showed: a KeyGesture.Parse that throws made the file-browser pane impossible to create at all
+      and shipped anyway; the address bar read a control from a background thread and had been
+      broken since Phase 4; the empty pane's launcher lost half the product. All of it compiled,
+      and all of it was found by a person looking at the screen.
+
+      Avalonia.Headless rather than Avalonia.Headless.XUnit, because the xunit integration package
+      depends on xunit v3 and this project is on v2; the session is driven directly instead, which
+      is what that integration does anyway. Pinned to the same 12.1.2 as Avalonia itself, since a
+      mismatch here fails at run time rather than at build.
+    -->
+    <PackageReference Include="Avalonia.Headless" Version="12.1.2" />
+    <!--
       Dynamic skip. xunit 2.x has no Assert.Skip (that is v3), and a test that silently passes when
       its server is absent would be a green tick proving nothing. Used only by RemoteLiveTests.
     -->
