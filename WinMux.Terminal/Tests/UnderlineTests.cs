@@ -295,3 +295,56 @@ public sealed class SgrNormalizerTests
         Assert.Equal("isible", text);
     }
 }
+
+/// <summary>
+/// The SGR codes that turn attributes *off*, each checked for not turning underline on.
+///
+/// The colon form was one cause and not the only one: the pane was still underlined afterwards.
+/// SGR 21 is the prime suspect — ECMA-48 defines it as "doubly underlined", but a large amount of
+/// software emits it to mean "bold off", which is what SGR 22 actually does. A terminal that takes
+/// the standard literally will underline every run that ends a bold span that way.
+/// </summary>
+public sealed class SgrOffCodeTests
+{
+    private static TerminalCell After(string sgr)
+    {
+        var engine = new TerminalEmulationEngine(20, 4, 10);
+        engine.Write(System.Text.Encoding.UTF8.GetBytes("\e[1mbold" + sgr + "x"));
+        var row = new TerminalCell[engine.Columns];
+        engine.CopyRow(engine.ScrollbackCount, row);
+        return row[4];
+    }
+
+    private static bool AnyUnderline(TerminalCell cell) =>
+        (cell.Attributes & (TerminalCellAttributes.Underline |
+                            TerminalCellAttributes.DoubleUnderline |
+                            TerminalCellAttributes.CurlyUnderline)) != 0;
+
+    [Theory]
+    [InlineData("\e[22m", "22 (normal intensity)")]
+    [InlineData("\e[23m", "23 (italic off)")]
+    [InlineData("\e[24m", "24 (underline off)")]
+    [InlineData("\e[25m", "25 (blink off)")]
+    [InlineData("\e[27m", "27 (inverse off)")]
+    [InlineData("\e[29m", "29 (strikethrough off)")]
+    [InlineData("\e[55m", "55 (overline off)")]
+    [InlineData("\e[0m", "0 (reset)")]
+    public void Turning_something_off_does_not_turn_underline_on(string sgr, string what)
+    {
+        Assert.False(AnyUnderline(After(sgr)), $"SGR {what} must not underline");
+    }
+
+    [Fact]
+    public void Sgr_21_is_a_double_underline_here_and_that_is_left_alone()
+    {
+        // SGR 21 is genuinely ambiguous. ECMA-48 defines it as "doubly underlined"; a lot of
+        // software emits it meaning "bold off", which is really SGR 22. The engine follows the
+        // standard, as xterm and VTE do, so this records the behaviour rather than arguing with it.
+        //
+        // It is written down because it was briefly suspected of causing the all-underlined pane.
+        // It was not: a capture of the real session showed no SGR 21 -- or any SGR -- at all. The
+        // cause was ESC[>4m, a private sequence read as SGR 4. Changing 21 would have been a guess
+        // dressed as a fix, and would have broken a correct reading for anyone who relies on it.
+        Assert.True(AnyUnderline(After("\e[21m")));
+    }
+}

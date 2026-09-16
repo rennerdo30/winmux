@@ -20,7 +20,7 @@ support mouse selection with copy. The window wears its own Windows 11 caption: 
 ramp rather than a size below it.
 
 Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-16: 760 passed, 0 warnings.** Four more are *skipped* by design — the live
+**Verified 2026-09-16: 776 passed, 0 warnings.** Four more are *skipped* by design — the live
 SFTP/FTP tests, which need a server and say so rather than passing quietly (ADR 0020). Version 0.7.0.
 Everything through `d5a0631` is **pushed** and CI is green there; the underline fix described below
 is newer than `origin/main`.
@@ -84,13 +84,19 @@ needs to know happened, and where the reasoning lives.
   like any other, the password goes to Credential Manager and never to the session file, and SFTP
   can use a key instead. **Verified against a real server** (SFTPGo portable, both protocols) and
   then through the UI: session file, credential dialog, listing, folder created on the server.
-- **Every line in a terminal pane was underlined**, reported from a screenshot. `ESC[4:0m` is
-  underline *off* in the colon sub-parameter form, and `Terminal.Emulation` reads it as a bare
-  `ESC[4m` — underline *on*, never cleared. Claude Code emits that form. There was nowhere to send
-  a patch, which is exactly the exposure
-  [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md) exists to describe; see its
-  2026-09-16 addendum. `SgrColonNormalizer` repairs the byte stream in the adapter before the
-  engine sees it.
+- **Switching tab did not move the keyboard with it.** `CycleTab` relaid out and focused nothing
+  at all, so `Ctrl+B n` left the next keystroke going to the tab you had just left; `FocusPane`
+  focused *before* the relayout, and focusing a control that has not been arranged does nothing,
+  silently. Both now go through `FocusActivePaneAfterLayout`, which relayouts first and posts the
+  focus at `Input` priority — the same shape as the file-browser list fix, for the same reason.
+- **Every line in a terminal pane was underlined**, reported from a screenshot. The cause was
+  `ESC[>4m` — a *private* CSI sequence (xterm's modifyOtherKeys) that `Terminal.Emulation` reads as
+  `ESC[4m`, underline on, with nothing afterwards to clear it. A second, real defect found on the
+  way — `ESC[4:0m`, underline *off*, read as underline on — is fixed as well.
+  `SgrColonNormalizer` repairs both in the adapter. There was nowhere to send a patch, which is
+  exactly the exposure [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md) describes; see
+  its 2026-09-16 addendum, including how the first fix was declared done while the bug was still
+  on screen.
 - **The release package could not start WinMux, and never could.** `winmux.exe` (the CLI) and
   `WinMux.exe` (the shell) are one filename on Windows; the CLI published second and overwrote the
   shell, so every package shipped a console application under the name the README says to

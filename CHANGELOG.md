@@ -48,17 +48,24 @@ package that comes out of `publish.ps1` is one worth handing to somebody.
 
 ### Fixed
 
-- **Every line in a terminal pane could end up underlined.** `ESC[4:0m` — underline *off* in the
-  colon sub-parameter form that modern terminals use — was read by the VT engine as a plain
-  `ESC[4m`, turning underline *on* and never clearing it. WinMux now repairs the byte stream before
-  the engine sees it. The engine is third-party with no reachable repository, so there was nowhere
-  to send the patch; see [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md).
+- **Every line in a terminal pane could end up underlined**, including plain shell output. The VT
+  engine read `ESC[>4m` — a *private* sequence that sets a keyboard protocol and means nothing
+  about styling — as `ESC[4m`, underline on, with nothing ever to clear it. Programs that send it
+  while starting up, Claude Code among them, left the whole pane and everything printed afterwards
+  underlined. A second defect in the same area, `ESC[4:0m` (underline off) being read as underline
+  on, is fixed too. WinMux repairs the byte stream before the engine sees it; the engine is
+  third-party with no reachable repository, so there was nowhere to send the patch. See
+  [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md).
 - **The release package could not start WinMux.** The CLI overwrote the shell's executable, so the
   file the README told people to double-click was the console CLI. Both the publish script's own
   file check and the updater's archive check asked whether `WinMux.exe` existed, and the CLI
   satisfied both — two verifications, one blind spot, because neither looked at *what* the file
   was. `publish.ps1` now checks the PE subsystem and that the two executables are not the same
   file. No release had been published, so this never reached anyone.
+- **Switching tab left the keyboard behind.** Selecting another tab moved what was shown but not
+  where typing went, so the first thing typed after a switch went to the tab you had left. Cycling
+  with `Ctrl+B n` focused nothing at all; clicking a tab focused it before it had been laid out,
+  which does nothing.
 - **Typing a path into the file browser's address bar did nothing.** It read the text box from a
   background thread, which Avalonia refuses. Broken since the file browser shipped.
 - **Copy-then-paste from the keyboard did nothing.** Rebuilding the list destroyed the focused row,

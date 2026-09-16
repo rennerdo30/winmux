@@ -97,8 +97,10 @@ internal sealed class SgrColonNormalizer
 
                     if (value is >= CsiFinalLow and <= CsiFinalHigh)
                     {
-                        if (value == SelectGraphicRendition) EmitRewritten();
-                        else Flush();
+                        if (value != SelectGraphicRendition) Flush();
+                        else if (HasPrivatePrefix()) Drop();
+                        else EmitRewritten();
+
                         _state = State.Text;
                     }
                     else if (_sequence.Count > MaximumSequence)
@@ -182,6 +184,28 @@ internal sealed class SgrColonNormalizer
 
         for (var index = 0; index < count; index++) Emit(parameters[start + index]);
     }
+
+    /// <summary>
+    /// Whether the collected CSI carries a private-parameter prefix: <c>&lt;</c>, <c>=</c>,
+    /// <c>&gt;</c> or <c>?</c>, the bytes 0x3C–0x3F.
+    ///
+    /// There is no such thing as a private SGR. `ESC[&gt;4m` is xterm's "set modifyOtherKeys" and
+    /// means nothing about colour — but read without its prefix it is `ESC[4m`, underline on, and a
+    /// program that sends it once at startup and styles nothing afterwards leaves the whole screen
+    /// underlined with nothing to undo it. That is the bug that was reported.
+    /// </summary>
+    private bool HasPrivatePrefix() => _sequence.Count > 2 && _sequence[2] is >= 0x3C and <= 0x3F;
+
+    /// <summary>
+    /// Discard the sequence rather than pass it on.
+    ///
+    /// Dropping is right here, not merely convenient: these are keyboard-protocol and query
+    /// sequences the engine has no use for — WinMux handles input itself — and the only thing it
+    /// currently does with them is misread them as styling. Private sequences with any *other*
+    /// final byte still go through untouched, because `ESC[?25l` and `ESC[?2004h` are cursor
+    /// visibility and bracketed paste, which the engine does need.
+    /// </summary>
+    private void Drop() => _sequence.Clear();
 
     private void Flush()
     {

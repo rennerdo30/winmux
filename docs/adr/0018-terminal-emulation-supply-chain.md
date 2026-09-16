@@ -126,23 +126,44 @@ benchmark against `Iciclecreek.Avalonia.Terminal` — if it is close, the whole 
 ## Addendum, 2026-09-16: the cost stopped being hypothetical
 
 A user reported a pane where **every line was underlined**, including plain `cmd` output that had
-asked for nothing. The cause is in the engine.
+asked for nothing. Two separate engine defects came out of it, and the one that mattered was not the
+one that looked obvious.
 
-`ESC[4:0m` is underline *off* — the colon sub-parameter form, which is how modern terminals spell
-underline styles (`4:1` single, `4:2` double, `4:3` curly). `Terminal.Emulation` reads the
-sub-parameter as if it were absent, so `4:0` arrives as a bare `ESC[4m` and turns underline **on**
-when it was asked to turn it off. Nothing clears it afterwards, so every line drawn from then on is
-underlined. Claude Code emits the colon form, which is how it was found.
+**The cause: `ESC[>4m`.** The `>` makes it a *private* CSI sequence — xterm's "set modifyOtherKeys",
+a keyboard-protocol setting with nothing to do with colour. `Terminal.Emulation` ignores the prefix
+and reads the rest as `ESC[4m`: underline on. Claude Code sends it once while starting up and then
+styles almost nothing, so no SGR 24 or reset ever follows, and every line printed from then on — in
+that program and in the shell after it exits — is underlined. `ESC[?4m` and `ESC[<4m` do the same.
 
-Confirmed in both 0.3.3 and 0.3.4, and pinned by `UnderlineSubParameterTests`.
+**Also found, and real, but not this bug: `ESC[4:0m`.** Underline *off* in the colon sub-parameter
+form (`4:1` single, `4:2` double, `4:3` curly). The engine reads the sub-parameter as if absent, so
+`4:0` turns underline on when asked to turn it off.
+
+Both confirmed in 0.3.3 and 0.3.4, and pinned by `PrivateModeSgrTests` and
+`UnderlineSubParameterTests`.
+
+**How the real cause was found, after the wrong one had been fixed with confidence.** The colon-form
+theory was plausible, testable and true, so it was fixed and declared done — and the pane was still
+underlined, because that sequence was never in the stream. What settled it was capturing the bytes a
+real `claude --resume` emits through a real ConPTY: the capture contained **no SGR at all**, only
+cursor positioning and the private-mode handshake. A third theory, SGR 21, was also tested and
+rejected the same way; the engine's reading of it follows ECMA-48 and xterm, and changing it would
+have been a guess dressed as a fix.
+
+The lesson is the one CLAUDE.md section 7 already states and this session relearned: *measure the
+input before theorising about the output.* A ten-minute capture harness would have gone straight to
+the answer.
 
 **There was nowhere to send a patch.** That is the entire point of this ADR, and it arrived as a
 real bug rather than an argument: the declared repository still 404s, so the options were to fix it
-from outside or ship it broken. `SgrColonNormalizer` in `WinMux.Terminal` now rewrites `4:N` into
-the plain form before the engine sees the bytes — `4:0` becomes `24`, every other style becomes `4`.
-It is stateful, because ConPTY splits writes wherever it likes and `ESC[4` and `:0m` routinely
-arrive in different reads, and it touches nothing but parameters beginning `4:`; an underline colour
-like `58:2::255:0:0` passes through byte for byte.
+from outside or ship it broken. `SgrColonNormalizer` in `WinMux.Terminal` now repairs the byte
+stream before the engine sees it: a CSI with a private prefix that ends in `m` is dropped outright —
+there is no such thing as a private SGR, and the engine has no use for modifyOtherKeys because
+WinMux handles input itself — and `4:N` is rewritten into the plain form, `4:0` to `24` and every
+other style to `4`. It is stateful, because ConPTY splits writes wherever it likes and `ESC[4` and
+`:0m` routinely arrive in different reads. Private sequences with any other final byte still pass
+through untouched: `ESC[?25l` and `ESC[?2004h` are cursor visibility and bracketed paste, which the
+engine does need.
 
 Two things this changes about the decision above:
 

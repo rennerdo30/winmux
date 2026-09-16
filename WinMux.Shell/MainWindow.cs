@@ -586,8 +586,28 @@ internal sealed class MainWindow : Window
     private void FocusPane(PaneId pane)
     {
         _tree.Focus(pane);
-        _runtimes.GetValueOrDefault(pane)?.Focus();
         Relayout();
+        FocusActivePaneAfterLayout();
+    }
+
+    /// <summary>
+    /// Give the keyboard to whichever pane the tree now considers focused, once it has been laid out.
+    ///
+    /// Two things here, and both were bugs. **After** the relayout, because selecting a tab makes a
+    /// pane visible that was not, and focusing a control that has not been arranged does nothing at
+    /// all — silently. And **posted**, because `Relayout` sets the geometry but Avalonia has not run
+    /// its layout pass by the time it returns; at `Input` priority this runs after that pass, when
+    /// there is something to focus.
+    ///
+    /// Switching to a tab holding a single terminal used to leave the keyboard pointing at the pane
+    /// that was there before, so the first thing typed went somewhere else entirely.
+    /// </summary>
+    private void FocusActivePaneAfterLayout()
+    {
+        var target = _tree.Focused;
+        Dispatcher.UIThread.Post(
+            () => _runtimes.GetValueOrDefault(target)?.Focus(),
+            DispatcherPriority.Input);
     }
 
     /// <summary>Closing a tab is closing its pane, and goes through the same path.</summary>
@@ -1459,19 +1479,21 @@ internal sealed class MainWindow : Window
 
     private void CycleTab(int delta)
     {
-        _message = _tree.CycleTab(delta) ? "" : "this pane is not in a tab group";
+        var moved = _tree.CycleTab(delta);
+        _message = moved ? "" : "this pane is not in a tab group";
         Relayout();
+
+        // Changing tab did not give the keyboard to the pane that came forward — it did not focus
+        // anything at all — so `Ctrl+B n` left the next keystroke going to the tab you had left.
+        if (moved) FocusActivePaneAfterLayout();
     }
 
     private void MoveFocus(FocusDirection direction)
     {
-        if (!_tree.MoveFocus(direction)) { _message = "no pane " + direction.ToString().ToLowerInvariant(); }
-        else
-        {
-            _message = "";
-            _runtimes.GetValueOrDefault(_tree.Focused)?.Focus();
-        }
+        var moved = _tree.MoveFocus(direction);
+        _message = moved ? "" : "no pane " + direction.ToString().ToLowerInvariant();
         Relayout();
+        if (moved) FocusActivePaneAfterLayout();
     }
 
     private void ResizeFocused(FocusDirection direction)
