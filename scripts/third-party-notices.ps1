@@ -42,6 +42,10 @@ $packageAliases = @{
     'av_libglesv2'  = 'avalonia.angle.windows.natives'
     'libSkiaSharp'  = 'skiasharp.nativeassets.win32'
     'libHarfBuzzSharp' = 'harfbuzzsharp.nativeassets.win32'
+
+    # Ships inside System.Drawing.Common rather than a package of its own, so the prefix search
+    # finds nothing and the entry would carry a copyright line with no licence under it.
+    'System.Private.Windows.Core' = 'system.drawing.common'
 }
 
 function Find-PackageDirectory {
