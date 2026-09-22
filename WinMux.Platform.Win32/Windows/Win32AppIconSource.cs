@@ -58,7 +58,7 @@ public sealed class Win32AppIconSource : IAppIconSource
             // one scaled up never is.
             foreach (var list in PreferredLists(size))
             {
-                if (TryFromImageList(programPath, list, out var png)) return png;
+                if (TryFromImageList(programPath, list, 0, 0, out var png)) return png;
             }
 
             return FromAssociatedIcon(programPath);
@@ -71,19 +71,27 @@ public sealed class Win32AppIconSource : IAppIconSource
         }
     }
 
-    private static IEnumerable<int> PreferredLists(int size) =>
+    internal static IEnumerable<int> PreferredLists(int size) =>
         size > 48
             ? [NativeMethods.ShilJumbo, NativeMethods.ShilExtraLarge, NativeMethods.ShilLarge]
             : [NativeMethods.ShilExtraLarge, NativeMethods.ShilJumbo, NativeMethods.ShilLarge];
 
-    private static bool TryFromImageList(string path, int list, out byte[]? png)
+    /// <param name="path">The file to ask about, or a made-up name when using file attributes.</param>
+    /// <param name="list">Which system image list, and so which size, to take the icon from.</param>
+    /// <param name="fileAttributes">Passed through to <c>SHGetFileInfo</c>; see <paramref name="extraFlags"/>.</param>
+    /// <param name="extraFlags">
+    /// <c>SHGFI_USEFILEATTRIBUTES</c> makes the shell answer from the name and the attributes alone,
+    /// without touching the file — which is what lets a remote file have a type icon at all.
+    /// </param>
+    /// <param name="png">The icon, when there was one.</param>
+    internal static bool TryFromImageList(string path, int list, uint fileAttributes, uint extraFlags, out byte[]? png)
     {
         png = null;
 
         var info = default(NativeMethods.ShFileInfo);
         var result = NativeMethods.SHGetFileInfo(
-            path, 0, ref info, (uint)Marshal.SizeOf<NativeMethods.ShFileInfo>(),
-            NativeMethods.ShgfiSysIconIndex);
+            path, fileAttributes, ref info, (uint)Marshal.SizeOf<NativeMethods.ShFileInfo>(),
+            NativeMethods.ShgfiSysIconIndex | extraFlags);
 
         if (result == nint.Zero) return false;
 
@@ -117,6 +125,20 @@ public sealed class Win32AppIconSource : IAppIconSource
         }
     }
 
+    /// <summary>
+    /// The shell's name for a type, asked by name and attributes alone (<c>SHGFI_TYPENAME</c> with
+    /// <c>SHGFI_USEFILEATTRIBUTES</c>), so it needs no file on disk.
+    /// </summary>
+    internal static string? TypeName(string path, uint fileAttributes)
+    {
+        var info = default(NativeMethods.ShFileInfo);
+        var result = NativeMethods.SHGetFileInfo(
+            path, fileAttributes, ref info, (uint)Marshal.SizeOf<NativeMethods.ShFileInfo>(),
+            NativeMethods.ShgfiTypeName | NativeMethods.ShgfiUseFileAttributes);
+
+        return result == nint.Zero || string.IsNullOrWhiteSpace(info.TypeName) ? null : info.TypeName;
+    }
+
     private static byte[]? FromAssociatedIcon(string path)
     {
         if (!File.Exists(path)) return null;
@@ -145,6 +167,8 @@ public sealed class Win32AppIconSource : IAppIconSource
     private static class NativeMethods
     {
         internal const uint ShgfiSysIconIndex = 0x4000;
+        internal const uint ShgfiTypeName = 0x400;
+        internal const uint ShgfiUseFileAttributes = 0x10;
         internal const int IldTransparent = 0x1;
 
         // Shell image list sizes: 0 large (32), 2 extra large (48), 4 jumbo (256).

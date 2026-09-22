@@ -69,14 +69,18 @@ Two differences you will notice, both of them the protocol's doing rather than a
 - **There is no Recycle Bin on a server.** `Delete` says so and refuses; `Shift+Delete` deletes, and
   asks first. WinMux does not invent a hidden trash folder, because that is a promise it could not
   keep the moment anyone touched the server by other means.
-- **Between a server and your disk, copy and paste just work.** Put a local pane beside the server's,
-  select, `Ctrl+C` (or `Ctrl+X` to move), click the other pane, `Ctrl+V`. Folders go with everything
+- **Between a server and your disk, copy and paste — or drag and drop — just work.** Put a local
+  pane beside the server's and drag, or select, `Ctrl+C` (or `Ctrl+X` to move), click the other pane,
+  `Ctrl+V`. Files from Explorer can be dropped straight onto the server's pane. Folders go with everything
   in them, progress shows in the status line, and the same no-overwrite rule applies. A move removes
   the original only once the copy has finished without error; if the connection drops halfway, the
   original is untouched and the half-written file is removed rather than left looking complete.
 - **Copying is a download and an upload.** Neither protocol has a server-side copy, so duplicating a
   large file on the server costs its size twice over the wire. There is no way around that from a
   client.
+
+**If the server turns you away**, the pane says so in one line with a **Try again** button, which
+asks for the password again — the saved one is the likeliest reason it failed.
 
 **SFTP can use a key.** Put the private key file in the profile's identity field and there is no
 password to type or store. Otherwise WinMux asks once and offers to keep it in Windows Credential

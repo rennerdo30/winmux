@@ -184,6 +184,9 @@ knows the difference. SCP gets no kind of its own: it cannot list a directory. R
 through `RemotePath`, never `System.IO.Path`, which answers for Windows and would put a backslash in
 a POSIX path. A paste between two *different* filesystems streams through `FileBrowserTransfer`
 (ADR 0020's 2026-09-23 addendum); the clipboard carries the source filesystem, never a bare path.
+Drag and drop is the same transfer with a different trigger, and every pane says what it is a view
+of — local, share or server — because a pane in a split shows no title
+([ADR 0021](docs/adr/0021-file-browser-details-and-drag-and-drop.md)).
 
 A `Stack` may appear anywhere a node may, including inside another `Stack`
 ([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md)). Its tab strip is **reserved
@@ -442,6 +445,9 @@ target is Win32, so it lives behind `IAppCatalog` in `WinMux.Platform` and is im
   toolbar in it beside the app icon. Snap layouts come back through `ISnapLayoutService`, which
   claims the maximise button rectangle — and with it that button’s clicks and hover, which the
   system then drives. See the 2026-09-15 addendum to ADR 0016 before touching either.
+- **Headless UI tests need `[assembly: AvaloniaTestApplication]`**, and `WinMux.Shell.Tests` went
+  without it until 2026-09-23: every headless test ran with no theme and so no control templates, and
+  a `ListBox` held items without ever showing a row. A test that looks for a row is the check.
 - **A screenshot is evidence only from a DPI-aware process.** Chrome that lays out correctly and
   appears to paint nothing is, on this machine, more likely a virtualised capture than an Avalonia
   bug — a whole session was spent on that once. Render to a `RenderTargetBitmap` in-process to tell

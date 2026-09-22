@@ -290,6 +290,37 @@ public sealed class FileBrowserOperationTests : IDisposable
     }
 
     [Fact]
+    public void Several_selected_items_are_deleted_together()
+    {
+        var a = WriteFile("a.txt", "a");
+        var b = WriteFile("b.txt", "b");
+        var keep = WriteFile("keep.txt", "k");
+        var model = CreateModel();
+
+        model.SelectMany([a, b]);
+        Assert.True(model.DeleteSelected(permanent: true), model.StatusMessage);
+
+        Assert.False(File.Exists(a));
+        Assert.False(File.Exists(b));
+        Assert.True(File.Exists(keep));
+        Assert.Contains("2 items", model.StatusMessage!);
+    }
+
+    [Fact]
+    public void A_refresh_keeps_every_selected_item_that_is_still_there()
+    {
+        var a = WriteFile("a.txt", "a");
+        var b = WriteFile("b.txt", "b");
+        var model = CreateModel();
+        model.SelectMany([a, b]);
+
+        File.Delete(b);
+        model.Refresh();
+
+        Assert.Equal(a, Assert.Single(model.SelectedItems).Path);
+    }
+
+    [Fact]
     public void Operating_on_nothing_asks_for_a_selection_rather_than_failing()
     {
         var model = CreateModel();

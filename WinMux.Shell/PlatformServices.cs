@@ -46,4 +46,7 @@ internal static class PlatformServices
 
     /// <summary>The picture an application shows for itself, for the pickers that list them.</summary>
     public static IAppIconSource AppIcons { get; } = new Win32AppIconSource();
+
+    /// <summary>File and folder icons for the file browser, local or remote.</summary>
+    public static IFileIconSource FileIcons { get; } = new Win32FileIconSource();
 }

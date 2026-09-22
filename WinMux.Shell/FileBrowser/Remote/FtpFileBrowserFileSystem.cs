@@ -59,10 +59,15 @@ internal sealed class FtpFileBrowserFileSystem : IFileBrowserFileSystem, IDispos
         {
             if (entry.Name is "." or "..") continue;
 
+            var isDirectory = entry.Type is FtpObjectType.Directory;
             yield return new FileBrowserNavigationItem(
                 entry.Name,
                 RemotePath.Combine(directory, entry.Name),
-                IsDirectory: entry.Type is FtpObjectType.Directory);
+                isDirectory,
+                // FluentFTP reports -1 and DateTime.MinValue for what the listing format did not
+                // include; a blank column is honest, a zero or year-1 date is not.
+                Size: isDirectory || entry.Size < 0 ? null : entry.Size,
+                Modified: entry.Modified == DateTime.MinValue ? null : new DateTimeOffset(entry.Modified));
         }
     }
 

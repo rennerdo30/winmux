@@ -7,6 +7,26 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## Unreleased
+
+### Added
+
+- **Drag and drop in the file browser**, between any two panes whatever their filesystems — local,
+  network share, SFTP, FTP — and from Explorer into any pane. A local pane's files can be dragged out
+  to Explorer. Drop on a folder to put things inside it; Ctrl copies, Shift moves
+  ([ADR 0021](docs/adr/0021-file-browser-details-and-drag-and-drop.md)).
+- **Multiple selection** with Ctrl and Shift click; cut, copy, paste, delete and drag act on all of it.
+- **Real icons and details**: Windows' own file and folder icons, and Name / Date modified / Type /
+  Size columns, sortable by clicking a heading. Remote files get the same icons and types.
+- **Every file-browser pane says where it is**: This PC, Network share, or the server and account,
+  with plain FTP marked as unencrypted.
+- **Try again** on a server pane that could not connect, asking for the password again.
+
+### Fixed
+
+- A refused password showed as three run-on sentences with no way forward but closing the pane.
+- The headless test app was never installed, so every headless test ran without control templates.
+
 ## 0.7.1 — 2026-09-23
 
 ### Added

@@ -46,7 +46,8 @@ pane. Anything you type returns the view to the live screen.
 
 ## In a file-browser pane
 
-These need no prefix; they act on the selected entry in the pane that has focus.
+These need no prefix; they act on the selection in the pane that has focus. `Ctrl`+click and
+`Shift`+click select several entries, and everything below except rename acts on all of them.
 
 | Key | Does |
 |---|---|
@@ -65,6 +66,17 @@ Right-click gives the same list with the shortcuts beside it. Copy in one pane a
 the clipboard is shared between file-browser panes, which is most of the reason to have two. It works
 between *different* filesystems too — cut on an SFTP server, paste into a local folder, or the other
 way round — and the pane you moved something out of updates by itself.
+
+**Drag and drop works between any two panes**, whatever each is showing — a local folder, a
+network share, an SFTP or FTP server. Within one filesystem a drag moves, across two it copies; hold
+`Ctrl` to force a copy or `Shift` to force a move, as in Explorer. Drop on a folder to put things
+inside it. Files dragged in from Explorer or the desktop can be dropped on any pane, a server
+included, and files in a *local* pane can be dragged out to Explorer. Files on a server cannot be
+dragged straight to Explorer — drop them on a local pane instead.
+
+Each pane says what it is showing — **This PC**, **Network share**, or the server and account
+(`SFTP · alice@build.example.com`) — and lists **name, date modified, type and size**. Click a
+heading to sort by it, and click again to reverse.
 
 Nothing here overwrites. Pasting onto a name that exists produces `report (2).txt`, and so does
 renaming onto one, so a collision never costs you the original file.

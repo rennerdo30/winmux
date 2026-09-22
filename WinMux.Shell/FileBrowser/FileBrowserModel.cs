@@ -3,6 +3,15 @@ using WinMux.Core.Model;
 
 namespace WinMux.Shell.FileBrowser;
 
+/// <summary>The detail columns a listing can be ordered by.</summary>
+internal enum FileBrowserSortColumn
+{
+    Name,
+    Modified,
+    Type,
+    Size,
+}
+
 /// <summary>
 /// Platform-neutral navigation and persistence state for a built-in file-browser pane.
 /// Presentation, commands, and provider lifecycle are intentionally outside this slice.
@@ -11,6 +20,69 @@ internal sealed class FileBrowserModel
 {
     internal const string CurrentDirectoryExtra = "current_directory";
     internal const string SelectedPathExtra = "selected_path";
+    internal const string SortExtra = "sort";
+
+    /// <summary>The column the listing is ordered by. Folders come first whichever it is, as in Explorer.</summary>
+    public FileBrowserSortColumn SortColumn { get; private set; } = FileBrowserSortColumn.Name;
+
+    public bool SortDescending { get; private set; }
+
+    /// <summary>
+    /// Order by <paramref name="column"/>: the same column again reverses it. A new column starts the
+    /// way Explorer starts it — names A to Z, dates and sizes newest and largest first, because that
+    /// is what someone clicking "Date modified" is looking for.
+    /// </summary>
+    public void SortBy(FileBrowserSortColumn column)
+    {
+        if (column == SortColumn)
+        {
+            SortDescending = !SortDescending;
+        }
+        else
+        {
+            SortColumn = column;
+            SortDescending = column is FileBrowserSortColumn.Modified or FileBrowserSortColumn.Size;
+        }
+
+        _entries = Sorted(_entries);
+        PersistState();
+    }
+
+    private IReadOnlyList<FileBrowserNavigationItem> Sorted(IEnumerable<FileBrowserNavigationItem> entries)
+    {
+        var folders = entries.OrderByDescending(entry => entry.IsDirectory);
+        var ordered = SortColumn switch
+        {
+            FileBrowserSortColumn.Modified => SortDescending
+                ? folders.ThenByDescending(entry => entry.Modified)
+                : folders.ThenBy(entry => entry.Modified),
+            FileBrowserSortColumn.Size => SortDescending
+                ? folders.ThenByDescending(entry => entry.Size)
+                : folders.ThenBy(entry => entry.Size),
+            // By extension: the type *name* is the platform's to give, and the extension orders the
+            // same files together, which is what a type sort is for.
+            FileBrowserSortColumn.Type => SortDescending
+                ? folders.ThenByDescending(entry => entry.IsDirectory ? "" : System.IO.Path.GetExtension(entry.Name), StringComparer.OrdinalIgnoreCase)
+                : folders.ThenBy(entry => entry.IsDirectory ? "" : System.IO.Path.GetExtension(entry.Name), StringComparer.OrdinalIgnoreCase),
+            _ => SortDescending
+                ? folders.ThenByDescending(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+                : folders.ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase),
+        };
+
+        // Ties by name, then exactly, so the order never depends on what the filesystem returned first.
+        return ordered
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(entry => entry.Name, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Path, _fileSystem.PathComparer)
+            .ToArray();
+    }
+
+    private void ReadSort(string text)
+    {
+        var parts = text.Split(':');
+        if (Enum.TryParse<FileBrowserSortColumn>(parts[0], ignoreCase: true, out var column)) SortColumn = column;
+        SortDescending = parts.Length > 1 && parts[1].Equals("desc", StringComparison.OrdinalIgnoreCase);
+    }
 
     private readonly Pane _pane;
     private readonly IFileBrowserFileSystem _fileSystem;
@@ -21,7 +93,20 @@ internal sealed class FileBrowserModel
 
     public string CurrentDirectory { get; private set; } = string.Empty;
     public IReadOnlyList<FileBrowserNavigationItem> Entries => _entries;
-    public FileBrowserNavigationItem? SelectedItem { get; private set; }
+    private IReadOnlyList<FileBrowserNavigationItem> _selection = [];
+
+    /// <summary>Everything selected, in the order it was selected. Empty when nothing is.</summary>
+    public IReadOnlyList<FileBrowserNavigationItem> SelectedItems => _selection;
+
+    /// <summary>
+    /// The first of <see cref="SelectedItems"/>: what rename acts on, what is saved with the session,
+    /// and what the terminal hand-off opens.
+    /// </summary>
+    public FileBrowserNavigationItem? SelectedItem
+    {
+        get => _selection.Count > 0 ? _selection[0] : null;
+        private set => _selection = value is null ? [] : [value];
+    }
     public string? SelectedPath => SelectedItem?.Path;
     public string? StatusMessage { get; private set; }
 
@@ -133,6 +218,24 @@ internal sealed class FileBrowserModel
         return true;
     }
 
+    /// <summary>
+    /// Select several entries at once — the list's own multiple selection. Paths not in the current
+    /// listing are ignored rather than reported: the list only offers what the model gave it, and a
+    /// row that vanished mid-click has already been dealt with by the refresh that removed it.
+    /// </summary>
+    public void SelectMany(IEnumerable<string> paths)
+    {
+        SetSelection(paths
+            .Select(path => _entries.FirstOrDefault(entry => _fileSystem.PathComparer.Equals(entry.Path, path)))
+            .OfType<FileBrowserNavigationItem>()
+            .Distinct()
+            .ToArray());
+        StatusMessage = null;
+        PersistState();
+    }
+
+    private void SetSelection(IReadOnlyList<FileBrowserNavigationItem> items) => _selection = items;
+
     /// <param name="reportLostSelection">
     /// False when the refresh follows a change another pane made — a move out of this directory is
     /// expected to take the selection with it, and warning about it reads as if something went wrong.
@@ -142,12 +245,13 @@ internal sealed class FileBrowserModel
         if (TryReadDirectory(CurrentDirectory, cancellationToken, out var normalized, out var entries, out var error))
         {
             var previousSelection = SelectedPath;
+            var previous = _selection;
             CurrentDirectory = normalized;
             _entries = entries;
-            SelectedItem = previousSelection is null
-                ? null
-                : entries.FirstOrDefault(entry =>
-                    _fileSystem.PathComparer.Equals(entry.Path, previousSelection));
+            SetSelection(previous
+                .Select(old => entries.FirstOrDefault(entry => _fileSystem.PathComparer.Equals(entry.Path, old.Path)))
+                .OfType<FileBrowserNavigationItem>()
+                .ToArray());
             StatusMessage = reportLostSelection && previousSelection is not null && SelectedItem is null
                 ? $"The selected item '{previousSelection}' is no longer available."
                 : null;
@@ -238,7 +342,8 @@ internal sealed class FileBrowserModel
 
     public bool DeleteSelected(bool permanent, CancellationToken cancellationToken = default)
     {
-        if (SelectedItem is not { } item)
+        var items = _selection;
+        if (items.Count == 0)
         {
             StatusMessage = "Select something to delete first.";
             return false;
@@ -257,21 +362,41 @@ internal sealed class FileBrowserModel
             return false;
         }
 
+        var what = Describe(items);
+        var deleted = 0;
         return Perform(
             () =>
             {
-                _fileSystem.Delete(item.Path, item.IsDirectory, permanent);
+                foreach (var item in items)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        _fileSystem.Delete(item.Path, item.IsDirectory, permanent);
+                        deleted++;
+                    }
+                    catch (Exception ex) when (IsFileSystemFailure(ex) && deleted > 0)
+                    {
+                        // Some went. Say which did not, rather than reporting the batch as failed
+                        // when most of it happened.
+                        throw new IOException(
+                            $"{deleted} of {items.Count} were deleted; '{item.Name}' was not: {ex.Message}", ex);
+                    }
+                }
+
                 return null;
             },
             cancellationToken,
-            _ => permanent ? $"Deleted '{item.Name}' permanently." : $"Moved '{item.Name}' to the Recycle Bin.",
-            $"Cannot delete '{item.Name}'.");
+            _ => permanent ? $"Deleted {what} permanently." : $"Moved {what} to the Recycle Bin.",
+            $"Cannot delete {what}.",
+            refreshOnFailure: true);
     }
 
     /// <summary>Put the selection on the clipboard. <paramref name="isMove"/> true is a cut.</summary>
     public bool HoldSelected(bool isMove)
     {
-        if (SelectedItem is not { } item)
+        var items = _selection;
+        if (items.Count == 0)
         {
             StatusMessage = "Select something first.";
             return false;
@@ -283,10 +408,16 @@ internal sealed class FileBrowserModel
             return false;
         }
 
-        _clipboard.Set(item.Path, item.IsDirectory, isMove, _fileSystem);
-        StatusMessage = $"{(isMove ? "Cut" : "Copied")} '{item.Name}'.";
+        _clipboard.Set(EntriesOf(items), isMove, _fileSystem);
+        StatusMessage = $"{(isMove ? "Cut" : "Copied")} {Describe(items)}.";
         return true;
     }
+
+    /// <summary>The selection as transferable entries, for the clipboard or a drag.</summary>
+    public IReadOnlyList<FileBrowserClipboardEntry> SelectedEntries => EntriesOf(_selection);
+
+    /// <summary>The filesystem this pane browses, so a drag can say where its paths live.</summary>
+    internal IFileBrowserFileSystem FileSystem => _fileSystem;
 
     public bool Paste(CancellationToken cancellationToken = default, IProgress<string>? progress = null)
     {
@@ -296,126 +427,203 @@ internal sealed class FileBrowserModel
             return false;
         }
 
-        if (!Guard(out var refusal))
-        {
-            StatusMessage = refusal;
-            return false;
-        }
-
-        var source = _clipboard.Path!;
-        var isDirectory = _clipboard.IsDirectory;
+        var entries = _clipboard.Entries;
         var isMove = _clipboard.IsMove;
         var from = _clipboard.FileSystem ?? _fileSystem;
-        var name = NameOf(source);
 
-        if (!ReferenceEquals(from, _fileSystem))
-        {
-            return PasteAcross(from, source, name, isDirectory, isMove, cancellationToken, progress);
-        }
+        var outcome = TransferCore(from, entries, CurrentDirectory, isMove, cancellationToken, progress);
 
-        // Moving a directory inside itself destroys it, and the OS error for it is unhelpful.
-        // Checked here so the message names the actual problem.
-        if (isDirectory && IsSelfOrDescendant(source, CurrentDirectory))
-        {
-            StatusMessage = $"Cannot paste '{name}' into itself.";
-            return false;
-        }
-
-        if (isMove && _fileSystem.PathComparer.Equals(_fileSystem.GetParentDirectory(source) ?? "", CurrentDirectory))
-        {
-            _clipboard.Clear();
-            StatusMessage = $"'{name}' is already here.";
-            return true;
-        }
-
-        return Perform(
-            () =>
-            {
-                var target = Unique(CurrentDirectory, name, isDirectory);
-                if (isMove)
-                {
-                    _fileSystem.Move(source, target, isDirectory);
-                }
-                else
-                {
-                    _fileSystem.Copy(source, target, isDirectory, cancellationToken);
-                }
-
-                if (isMove)
-                {
-                    _clipboard.Clear();
-                    FileBrowserChanges.Announce(this, _fileSystem, _fileSystem.GetParentDirectory(source));
-                }
-
-                return target;
-            },
-            cancellationToken,
-            pasted => $"{(isMove ? "Moved" : "Copied")} '{NameOf(pasted)}' here.",
-            $"Cannot paste '{name}'.");
+        // A cut is spent by what arrived. Keeping the rest means trying again finishes the job
+        // rather than repeating the part that worked; a copy stays on the clipboard to be pasted
+        // again, as everywhere else.
+        if (isMove && outcome.Attempted) _clipboard.Keep(outcome.Remaining);
+        return outcome.Succeeded;
     }
 
     /// <summary>
-    /// Paste something from a different filesystem — an SFTP file into a local folder, say.
-    ///
-    /// The bytes are streamed through <see cref="FileBrowserTransfer"/>. A move is a complete copy
-    /// followed by removing the original, and the original is only touched once the copy has
-    /// finished without error: a move interrupted halfway must leave the source whole, even if that
-    /// means a partial copy at the destination.
+    /// Copy or move <paramref name="entries"/> from <paramref name="from"/> into
+    /// <paramref name="targetDirectory"/> here — a drop. Null means the directory being shown.
     /// </summary>
-    private bool PasteAcross(
+    public bool Transfer(
         IFileBrowserFileSystem from,
-        string source,
-        string name,
-        bool isDirectory,
+        IReadOnlyList<FileBrowserClipboardEntry> entries,
+        string? targetDirectory,
+        bool isMove,
+        CancellationToken cancellationToken = default,
+        IProgress<string>? progress = null) =>
+        TransferCore(from, entries, targetDirectory ?? CurrentDirectory, isMove, cancellationToken, progress).Succeeded;
+
+    private readonly record struct TransferOutcome(
+        bool Succeeded, bool Attempted, IReadOnlyList<FileBrowserClipboardEntry> Remaining);
+
+    /// <summary>
+    /// The one implementation behind paste and drop.
+    ///
+    /// Within one filesystem the filesystem moves or copies for itself. Across two, the bytes are
+    /// streamed through <see cref="FileBrowserTransfer"/>, and a move is a complete copy followed by
+    /// removing the original — only once the copy finished without error, so a move interrupted
+    /// halfway leaves the source whole.
+    ///
+    /// Each entry stands alone: one that fails is reported and the rest still go, the way Explorer
+    /// carries on past a file it cannot copy. Cancelling stops the batch.
+    /// </summary>
+    private TransferOutcome TransferCore(
+        IFileBrowserFileSystem from,
+        IReadOnlyList<FileBrowserClipboardEntry> entries,
+        string targetDirectory,
         bool isMove,
         CancellationToken cancellationToken,
         IProgress<string>? progress)
     {
-        // The source's own name may not be a legal name here: "a:b" is a fine file on a Unix server
-        // and not on Windows. Say so before any bytes move rather than letting the OS explain.
-        if (!ValidName(name, out var refusal))
+        if (!Guard(out var refusal))
         {
-            StatusMessage = $"Cannot paste '{name}' here. {refusal}";
-            return false;
+            StatusMessage = refusal;
+            return new(false, false, entries);
         }
 
+        var across = !ReferenceEquals(from, _fileSystem);
+        var produced = new List<string>();
+        var remaining = new List<FileBrowserClipboardEntry>();
+        var problems = new List<string>();
+        var notes = new List<string>();
+        var movedFrom = new HashSet<string>(from.PathComparer);
+        var alreadyHere = 0;
         var files = 0;
-        string? cleanup = null;
-        var pasted = Perform(
-            () =>
-            {
-                var target = Unique(CurrentDirectory, name, isDirectory);
-                files = FileBrowserTransfer.Copy(from, source, _fileSystem, target, isDirectory, cancellationToken, progress);
+        var cancelled = false;
 
-                if (isMove)
+        foreach (var entry in entries)
+        {
+            var name = NameOf(entry.Path);
+
+            if (cancelled)
+            {
+                remaining.Add(entry);
+                continue;
+            }
+
+            if (across && !ValidName(name, out var invalid))
+            {
+                // "a:b" is a fine name on a Unix server and not on Windows. Said before any bytes
+                // move rather than left to the OS.
+                problems.Add($"Cannot paste '{name}' here. {invalid}");
+                remaining.Add(entry);
+                continue;
+            }
+
+            if (!across && entry.IsDirectory && IsSelfOrDescendant(entry.Path, targetDirectory))
+            {
+                // Moving a directory inside itself destroys it, and the OS error for it is unhelpful.
+                problems.Add($"Cannot paste '{name}' into itself.");
+                remaining.Add(entry);
+                continue;
+            }
+
+            if (!across && isMove &&
+                _fileSystem.PathComparer.Equals(_fileSystem.GetParentDirectory(entry.Path) ?? "", targetDirectory))
+            {
+                alreadyHere++;
+                continue;
+            }
+
+            try
+            {
+                var target = Unique(targetDirectory, name, entry.IsDirectory);
+                if (!across)
                 {
-                    _clipboard.Clear();
-                    cleanup = RemoveMovedOriginal(from, source, isDirectory);
-                    if (cleanup is null) FileBrowserChanges.Announce(this, from, from.GetParentDirectory(source));
+                    if (isMove) _fileSystem.Move(entry.Path, target, entry.IsDirectory);
+                    else _fileSystem.Copy(entry.Path, target, entry.IsDirectory, cancellationToken);
+                    files += entry.IsDirectory ? 0 : 1;
+                }
+                else
+                {
+                    files += FileBrowserTransfer.Copy(
+                        from, entry.Path, _fileSystem, target, entry.IsDirectory, cancellationToken, progress);
+
+                    if (isMove && RemoveMovedOriginal(from, entry.Path, entry.IsDirectory) is { } note)
+                    {
+                        // The copy succeeded and is what matters most; the user still needs to know
+                        // the original is where it was, or they will believe it gone.
+                        notes.Add(note);
+                    }
                 }
 
-                return target;
-            },
-            cancellationToken,
-            target => (isMove ? $"Moved '{NameOf(target)}' here" : $"Copied '{NameOf(target)}' here") +
-                      (isDirectory ? $" ({files} file(s))." : "."),
-            $"Cannot paste '{name}'.");
-
-        if (pasted && cleanup is not null)
-        {
-            // The copy succeeded and is what matters most; the user still needs to know the original
-            // is where it was, or they will believe it gone.
-            StatusMessage = $"{StatusMessage} {cleanup}";
+                produced.Add(target);
+                if (isMove && from.GetParentDirectory(entry.Path) is { } parent) movedFrom.Add(parent);
+                if (entries.Count > 1)
+                {
+                    progress?.Report($"{(isMove ? "Moved" : "Copied")} {produced.Count} of {entries.Count}…");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled = true;
+                remaining.Add(entry);
+            }
+            catch (Exception ex) when (IsFileSystemFailure(ex) || ex is ObjectDisposedException)
+            {
+                problems.Add($"Cannot paste '{name}'. {ex.Message}");
+                remaining.Add(entry);
+            }
         }
 
-        return pasted;
+        // Always re-read: even a batch that failed partway changed the directory.
+        Refresh(CancellationToken.None, reportLostSelection: false);
+        var intoView = _fileSystem.PathComparer.Equals(targetDirectory, CurrentDirectory);
+        if (produced.Count > 0 && intoView)
+        {
+            SetSelection(produced
+                .Select(path => _entries.FirstOrDefault(e => _fileSystem.PathComparer.Equals(e.Path, path)))
+                .OfType<FileBrowserNavigationItem>()
+                .ToArray());
+        }
+
+        PersistState();
+
+        var verb = isMove ? "Moved" : "Copied";
+        var where = intoView ? "here" : $"into '{NameOf(targetDirectory)}'";
+        var parts = new List<string>();
+        if (produced.Count == 1 && entries.Count == 1)
+        {
+            parts.Add($"{verb} '{NameOf(produced[0])}' {where}" +
+                      (across && entries[0].IsDirectory ? $" ({files} file(s))." : "."));
+        }
+        else if (produced.Count > 0)
+        {
+            // "2 of 3" only when something is missing; a complete batch just says how many. The file
+            // count is worth adding only when folders made it differ from the item count.
+            var count = produced.Count == entries.Count
+                ? $"{produced.Count} items"
+                : $"{produced.Count} of {entries.Count} items";
+            parts.Add($"{verb} {count} {where}" +
+                      (across && files != produced.Count ? $" ({files} file(s))." : "."));
+        }
+
+        if (alreadyHere > 0)
+        {
+            parts.Add(entries.Count == 1
+                ? $"'{NameOf(entries[0].Path)}' is already here."
+                : $"{alreadyHere} already here.");
+        }
+
+        if (cancelled) parts.Add("The rest was not pasted: it was cancelled.");
+        parts.AddRange(problems);
+        parts.AddRange(notes);
+        StatusMessage = string.Join(" ", parts);
+
+        if (produced.Count > 0)
+        {
+            FileBrowserChanges.Announce(this, _fileSystem, targetDirectory);
+            foreach (var parent in movedFrom) FileBrowserChanges.Announce(this, from, parent);
+        }
+
+        return new(!cancelled && problems.Count == 0, true, remaining);
     }
 
     /// <summary>
     /// The second half of a move between filesystems. Returns a sentence for the status line when
     /// the original could not be removed, and null when it was.
     /// </summary>
-    private static string? RemoveMovedOriginal(IFileBrowserFileSystem from, string source, bool isDirectory)
+    private string? RemoveMovedOriginal(IFileBrowserFileSystem from, string source, bool isDirectory)
     {
         try
         {
@@ -427,9 +635,15 @@ internal sealed class FileBrowserModel
         }
         catch (Exception ex) when (IsFileSystemFailure(ex) || ex is ObjectDisposedException)
         {
-            return $"The original could not be removed, so it is still there: {ex.Message}";
+            return $"The original '{NameOf(source)}' could not be removed, so it is still there: {ex.Message}";
         }
     }
+
+    private static FileBrowserClipboardEntry[] EntriesOf(IReadOnlyList<FileBrowserNavigationItem> items) =>
+        items.Select(item => new FileBrowserClipboardEntry(item.Path, item.IsDirectory)).ToArray();
+
+    private static string Describe(IReadOnlyList<FileBrowserNavigationItem> items) =>
+        items.Count == 1 ? $"'{items[0].Name}'" : $"{items.Count} items";
 
     /// <summary>
     /// Run a modifying operation, then reload the directory so the result is visible, selecting
@@ -439,7 +653,8 @@ internal sealed class FileBrowserModel
         Func<string?> operation,
         CancellationToken cancellationToken,
         Func<string?, string> success,
-        string failurePrefix)
+        string failurePrefix,
+        bool refreshOnFailure = false)
     {
         string? produced;
         try
@@ -455,6 +670,8 @@ internal sealed class FileBrowserModel
         }
         catch (Exception ex) when (IsFileSystemFailure(ex))
         {
+            // A batch that failed partway has still changed the directory.
+            if (refreshOnFailure) Refresh(CancellationToken.None, reportLostSelection: false);
             StatusMessage = $"{failurePrefix} {ex.Message}";
             return false;
         }
@@ -573,6 +790,8 @@ internal sealed class FileBrowserModel
     private void Restore()
     {
         var extras = _pane.Restore.Extras;
+        if (extras.TryGetValue(SortExtra, out var sort)) ReadSort(sort);
+
         var requestedDirectory = extras.TryGetValue(CurrentDirectoryExtra, out var savedDirectory) &&
                                  !string.IsNullOrWhiteSpace(savedDirectory)
             ? savedDirectory
@@ -661,11 +880,8 @@ internal sealed class FileBrowserModel
                     cancellationToken.ThrowIfCancellationRequested();
                     return entry;
                 })
-                .OrderByDescending(entry => entry.IsDirectory)
-                .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(entry => entry.Name, StringComparer.Ordinal)
-                .ThenBy(entry => entry.Path, _fileSystem.PathComparer)
                 .ToArray();
+            entries = Sorted(entries);
             error = string.Empty;
             return true;
         }
@@ -687,6 +903,7 @@ internal sealed class FileBrowserModel
             // in the visible fallback directory.
             [CurrentDirectoryExtra] = _unavailableRestoreDirectory ?? CurrentDirectory,
             [SelectedPathExtra] = SelectedPath ?? string.Empty,
+            [SortExtra] = $"{SortColumn.ToString().ToLowerInvariant()}:{(SortDescending ? "desc" : "asc")}",
         };
 
         _pane.Restore = _pane.Restore with { Extras = extras };

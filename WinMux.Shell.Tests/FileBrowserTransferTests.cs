@@ -269,6 +269,85 @@ public sealed class FileBrowserTransferTests : IDisposable
         Assert.False(local.IsShowing(change.FileSystem, change.Directory), "a local pane is not showing a server directory");
     }
 
+    [Fact]
+    public void Several_items_selected_together_all_arrive_across()
+    {
+        _remote.AddFile("/data/a.txt", "alpha");
+        _remote.AddFile("/data/b.txt", "beta");
+        _remote.AddFile("/data/sub/c.txt", "gamma");
+        var remote = RemoteModel("/data");
+        var local = LocalModel();
+
+        remote.SelectMany(["/data/a.txt", "/data/b.txt", "/data/sub"]);
+        Assert.Equal(3, remote.SelectedItems.Count);
+        Assert.True(remote.HoldSelected(isMove: false));
+        Assert.True(local.Paste(), local.StatusMessage);
+
+        Assert.Equal("alpha", File.ReadAllText(Path.Combine(_root, "a.txt")));
+        Assert.Equal("beta", File.ReadAllText(Path.Combine(_root, "b.txt")));
+        Assert.Equal("gamma", File.ReadAllText(Path.Combine(_root, "sub", "c.txt")));
+        Assert.Equal(3, local.SelectedItems.Count);
+        Assert.StartsWith("Copied 3 items here", local.StatusMessage!);
+    }
+
+    [Fact]
+    public void A_batch_that_fails_partway_keeps_only_the_rest_on_the_clipboard()
+    {
+        // Two small files arrive, the big one fails. Trying again must not move the first two twice.
+        _remote.AddFile("/data/small-1.txt", "one");
+        _remote.AddFile("/data/big.bin", new string('x', 300_000));
+        _remote.AddFile("/data/small-2.txt", "two");
+        _remote.FailReadAfterBytes = 100_000;
+        var remote = RemoteModel("/data");
+        var local = LocalModel();
+
+        remote.SelectMany(["/data/small-1.txt", "/data/big.bin", "/data/small-2.txt"]);
+        Assert.True(remote.HoldSelected(isMove: true));
+        Assert.False(local.Paste());
+
+        Assert.True(File.Exists(Path.Combine(_root, "small-1.txt")));
+        Assert.True(File.Exists(Path.Combine(_root, "small-2.txt")));
+        Assert.False(File.Exists(Path.Combine(_root, "big.bin")));
+        Assert.True(_remote.Exists("/data/big.bin"), "the one that failed stays where it was");
+        Assert.False(_remote.Exists("/data/small-1.txt"));
+
+        var left = Assert.Single(_clipboard.Entries);
+        Assert.Equal("/data/big.bin", left.Path);
+        Assert.Contains("2 of 3", local.StatusMessage!);
+        Assert.Contains("Cannot paste 'big.bin'", local.StatusMessage!);
+    }
+
+    [Fact]
+    public void A_drop_onto_a_folder_puts_the_items_inside_it()
+    {
+        _remote.AddFile("/data/dropped.txt", "payload");
+        var sub = Directory.CreateDirectory(Path.Combine(_root, "inbox")).FullName;
+        var local = LocalModel();
+
+        Assert.True(local.Transfer(
+            _remote,
+            [new FileBrowserClipboardEntry("/data/dropped.txt", false)],
+            sub,
+            isMove: false), local.StatusMessage);
+
+        Assert.Equal("payload", File.ReadAllText(Path.Combine(sub, "dropped.txt")));
+        Assert.False(File.Exists(Path.Combine(_root, "dropped.txt")));
+        Assert.Contains("into 'inbox'", local.StatusMessage!);
+    }
+
+    [Fact]
+    public void A_drop_from_the_same_filesystem_moves_by_rename()
+    {
+        _remote.AddFile("/a/f.txt", "same");
+        _remote.AddDirectory("/b");
+        var right = RemoteModel("/b");
+
+        Assert.True(right.Transfer(_remote, [new FileBrowserClipboardEntry("/a/f.txt", false)], null, isMove: true));
+
+        Assert.Equal(1, _remote.Moves);
+        Assert.False(_remote.Exists("/a/f.txt"));
+    }
+
     // ---- helpers ---------------------------------------------------------------------
 
     private FileBrowserModel LocalModel() => new(Pane(_root), _root, _local, _clipboard);

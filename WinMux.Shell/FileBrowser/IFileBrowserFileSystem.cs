@@ -106,12 +106,14 @@ internal sealed class SystemFileBrowserFileSystem : IFileBrowserFileSystem
 
         foreach (var child in directory.EnumerateDirectories())
         {
-            yield return new FileBrowserNavigationItem(child.Name, child.FullName, IsDirectory: true);
+            yield return new FileBrowserNavigationItem(
+                child.Name, child.FullName, IsDirectory: true, Modified: child.LastWriteTime);
         }
 
         foreach (var child in directory.EnumerateFiles())
         {
-            yield return new FileBrowserNavigationItem(child.Name, child.FullName, IsDirectory: false);
+            yield return new FileBrowserNavigationItem(
+                child.Name, child.FullName, IsDirectory: false, Size: child.Length, Modified: child.LastWriteTime);
         }
     }
 

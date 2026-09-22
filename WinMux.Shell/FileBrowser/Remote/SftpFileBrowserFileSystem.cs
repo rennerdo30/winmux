@@ -68,11 +68,15 @@ internal sealed class SftpFileBrowserFileSystem : IFileBrowserFileSystem, IDispo
             // Up button, so showing them would be two ways to do one thing, one of them confusing.
             if (entry.Name is "." or "..") continue;
 
+            // A symlink to a directory is browsable, so follow it rather than reporting the link.
+            var isDirectory = entry.IsDirectory || (entry.IsSymbolicLink && LeadsToDirectory(entry));
             yield return new FileBrowserNavigationItem(
                 entry.Name,
                 RemotePath.Combine(directory, entry.Name),
-                // A symlink to a directory is browsable, so follow it rather than reporting the link.
-                IsDirectory: entry.IsDirectory || (entry.IsSymbolicLink && LeadsToDirectory(entry)));
+                isDirectory,
+                Size: isDirectory ? null : entry.Length,
+                // The server reports UTC; shown in local time like everything else in the column.
+                Modified: new DateTimeOffset(DateTime.SpecifyKind(entry.LastWriteTimeUtc, DateTimeKind.Utc)));
         }
     }
 

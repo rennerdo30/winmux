@@ -4,50 +4,50 @@
 
 ## Where we are
 
-**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.0 is released.**
-What is left needs a person, a second monitor or a decision — see *Waiting on you*.
+**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.1 is released; the
+file-browser work below is not in a release yet.** What is left needs a person, a second
+monitor or a decision — see *Waiting on you*.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
 `WinMux.Panes`; the shell declares zero `DllImport` (ADR 0013); tab groups nest anywhere (ADR 0014);
 any installed app can be a profile (ADR 0015); the window wears its own Windows 11 caption (ADR 0016).
-The file browser speaks SFTP and FTP (ADR 0020) and now **copies and moves between filesystems** —
-server to disk, disk to server, server to server — with the same no-overwrite rule as everything else.
+The file browser speaks SFTP and FTP (ADR 0020), copies between filesystems, and now does
+**drag and drop, multiple selection, real icons, detail columns, and says where each pane is**
+([ADR 0021](docs/adr/0021-file-browser-details-and-drag-and-drop.md)).
 
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-23: 813 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
-skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set; with a server they pass too (819, 0 skipped
-— checked the same day against SFTPGo 2.7.6 portable; how to run it is in `RemoteLiveTests`).
-`v0.7.1` (cross-filesystem copy and the fixes found with it) was tagged and pushed on 2026-09-23;
-`release.yml` builds it. `v0.7.0` was the first release (2026-09-16).
+**Verified 2026-09-23: 837 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
+skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set; they passed the same day against SFTPGo 2.7.6
+portable (how to run it is in `RemoteLiveTests`). `v0.7.1` was tagged 2026-09-23, `v0.7.0` 2026-09-16.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
 
 ## What just happened
 
-**2026-09-23 — copying between filesystems** ([ADR 0020 addendum](docs/adr/0020-sftp-and-ftp.md#addendum-2026-09-23--copying-between-filesystems)).
-The clipboard now remembers which filesystem a path belongs to; a paste across two streams the bytes
-through `FileBrowserTransfer`. A move removes the original only after a complete copy; a half-written
-file is removed. Other panes showing a changed directory refresh themselves (`FileBrowserChanges`).
-Seen working on screen against a real SFTP server in both directions. Found on the way, and fixed:
-clicking empty space in a file-browser pane never focused it (Fluent's `ListBox` is not focusable, so
-`_list.Focus()` did nothing — including when the shell moved focus there by key); a cancelled
-operation never said so; closing a remote pane could block the UI thread on a busy connection.
+**2026-09-23 (afternoon) — the file browser, from a user's questions** ([ADR 0021](docs/adr/0021-file-browser-details-and-drag-and-drop.md)).
+Asked: can I drag and drop, why no icons, why no details, which pane is local and which a server?
+All four answered. Drag and drop works between any two panes whatever their filesystems, from
+Explorer into any pane, and from a local pane out to Explorer (not remote → Explorer; the ADR says
+why). Multiple selection. Windows' own icons and type names through a new `IFileIconSource`. Name /
+Date modified / Type / Size, sortable. A location badge on every pane, and a connection banner with
+**Try again** instead of three run-on sentences. Every direction was driven on screen against a real
+SFTP server, including a drag out of a real Explorer window.
 
-**2026-09-16** — CI, docs site, in-app updater, SSH/RDP/SFTP/FTP profiles, file operations, the
-0.7.0 release. `git log` and `CHANGELOG.md` have the detail.
+Found on the way: **the headless test app had never been installed** — no
+`[assembly: AvaloniaTestApplication]` — so every headless test had run without control templates.
+
+**2026-09-23 (morning) — copying between filesystems** (ADR 0020 addendum), released as 0.7.1.
 
 ## The next action
 
-**Use it for an hour, and write down what annoyed you.** Every feature on the list is in and has been
-seen working; the remaining bugs are the kind only use finds. Today's session proved it again — the
-focus bug above had survived every test and was found in two minutes of clicking.
+**Use it for an hour, and write down what annoyed you.** Today proved it twice more: a focus bug that
+survived every test, and a pane that never said what it was showing, both found by looking.
 
-If engineering time is wanted before that, the candidates are taste calls, not gaps — decide they are
-wanted first: **drag and drop** between file-browser panes (paste works; dragging does not exist);
-**multi-select** in the browser (the clipboard holds one entry because the list selects one);
-and the two from the 2026-09-15 critique — a toolbar without a divider after every group, and a
-Normal/Compact density setting (`LayoutMetrics` is already parameterised).
+If a release is wanted first: bump `<Version>` in `Directory.Build.props`, rename the changelog's
+*Unreleased* heading, tag, push. The candidates after that are taste calls — decide they are wanted
+before building them: a toolbar without a divider after every group, and a Normal/Compact density
+setting (`LayoutMetrics` is already parameterised).
 
 ## Waiting on you
 
@@ -119,6 +119,12 @@ that a future session recognises them as answers rather than rediscovering them 
 - Do not put palette or modal chrome over the pane canvas; native windows paint above it.
 
 **Testing the UI**
+- Do not trust a headless test that never looks for a row. Until 2026-09-23 the test assembly had no
+  `[assembly: AvaloniaTestApplication]`, so there was no theme and no templates, and a `ListBox` held
+  its items while realising none — invisible to every test that only read the model back.
+- Do not type into a dialog the moment the process starts. Wait until `AppActivate` finds the window,
+  pause, activate again, then type — otherwise the keystrokes go before focus does and a correct
+  password reads as "refused", which looks exactly like a product bug.
 - Do not point a headless test at the shared temp folder when *where the pointer lands* matters. The
   rest of the suite fills it while running, and the test passed alone and failed in the suite.
 - Do not script clicks at absolute screen coordinates across a relaunch — WinMux restores its window

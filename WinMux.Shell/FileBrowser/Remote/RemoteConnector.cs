@@ -19,17 +19,21 @@ internal sealed class RemoteConnector(ICredentialStore credentials)
     /// Connect to <paramref name="target"/>, prompting if necessary.
     /// </summary>
     /// <param name="owner">The window to own the prompt. Without one, only a saved credential works.</param>
+    /// <param name="askAgain">
+    /// True after the server refused what was tried: skip the saved password, which is the one it
+    /// refused, and ask. Ticking "remember" in the prompt then replaces it.
+    /// </param>
     /// <returns>The filesystem, or null when the user cancelled or nothing could be obtained.</returns>
-    public async Task<IFileBrowserFileSystem?> ConnectAsync(RemoteFileBrowserTarget target, Window? owner)
+    public async Task<IFileBrowserFileSystem?> ConnectAsync(RemoteFileBrowserTarget target, Window? owner, bool askAgain = false)
     {
         ArgumentNullException.ThrowIfNull(target);
 
-        if (Saved(target) is { } saved)
+        if (!askAgain && Saved(target) is { } saved)
         {
             return RemoteFileSystemFactory.Create(target, saved);
         }
 
-        if (target.UsesKey)
+        if (target.UsesKey && !askAgain)
         {
             // A key connection with nothing saved means an unencrypted key, which is the common case
             // for one generated for a machine. Asking for a password here would be asking for

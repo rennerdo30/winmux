@@ -2,6 +2,11 @@ using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Themes.Fluent;
 
+// Without this the headless session starts a bare Application: no theme, so no control templates,
+// and a ListBox that holds items but never shows a row. Every headless test ran that way until a drop
+// onto a folder row could not find the row (2026-09-23).
+[assembly: Avalonia.Headless.AvaloniaTestApplication(typeof(WinMux.Shell.Tests.HeadlessTestApp))]
+
 namespace WinMux.Shell.Tests;
 
 /// <summary>

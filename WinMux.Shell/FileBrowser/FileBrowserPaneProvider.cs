@@ -42,28 +42,27 @@ internal sealed class FileBrowserPaneProvider(
         // point — the model, the clipboard, every operation — is identical either way, which is the
         // entire reason IFileBrowserFileSystem is an interface.
         IFileBrowserFileSystem? filesystem = null;
-        string? connectionNote = null;
+        Func<bool, Task<IFileBrowserFileSystem?>>? connect = null;
+        var target = Remote.RemoteFileBrowserTarget.From(context.Descriptor);
 
-        if (Remote.RemoteFileBrowserTarget.From(context.Descriptor) is { } target)
+        if (target is not null)
         {
             var connector = new Remote.RemoteConnector(PlatformServices.Credentials);
-            filesystem = await connector.ConnectAsync(target, _owner());
-            connectionNote = filesystem is null
-                ? $"Not connected to {target.Display}. Close and reopen the pane to try again."
-                : null;
+            connect = askAgain => connector.ConnectAsync(target, _owner(), askAgain);
+            filesystem = await connect(false);
         }
 
         // A remote pane falls back to the remote root, not to a Windows path. "E:\Development" means
         // nothing on an SFTP server, and the model would report it as unavailable forever.
-        var fallback = filesystem is null ? _fallbackDirectory() : Remote.RemotePath.Root;
+        var fallback = target is null ? _fallbackDirectory() : Remote.RemotePath.Root;
 
-        var runtime = new FileBrowserPaneRuntime(pane, fallback, filesystem, connectionNote);
+        var runtime = new FileBrowserPaneRuntime(pane, fallback, filesystem, target, connect);
         await runtime.InitializeAsync(token);
         return runtime;
     }
 }
 
-internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRuntime
+internal sealed partial class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRuntime
 {
     private readonly Pane _pane;
     private readonly string _fallbackDirectory;
@@ -85,19 +84,27 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
     private bool _rendering;
     private int _disposed;
 
-    private readonly IFileBrowserFileSystem? _fileSystem;
-    private readonly string? _connectionNote;
+    /// <summary>The filesystem, replaced when a remote pane reconnects. Null means the local disk.</summary>
+    private IFileBrowserFileSystem? _fileSystem;
+
+    /// <summary>The server this pane is a view of, or null for a local pane.</summary>
+    private readonly Remote.RemoteFileBrowserTarget? _target;
+
+    /// <summary>Connect again — asking for the password when the argument is true.</summary>
+    private readonly Func<bool, Task<IFileBrowserFileSystem?>>? _connect;
 
     public FileBrowserPaneRuntime(
         Pane pane,
         string fallbackDirectory,
         IFileBrowserFileSystem? fileSystem = null,
-        string? connectionNote = null)
+        Remote.RemoteFileBrowserTarget? target = null,
+        Func<bool, Task<IFileBrowserFileSystem?>>? connect = null)
     {
         _pane = pane;
         _fallbackDirectory = fallbackDirectory;
         _fileSystem = fileSystem;
-        _connectionNote = connectionNote;
+        _target = target;
+        _connect = connect;
         BuildView();
     }
 
@@ -112,21 +119,75 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
     public async Task InitializeAsync(CancellationToken token)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _lifetime.Token);
-        _status.Text = _connectionNote ?? "Loading directory…";
+        UpdateLocation();
+        _status.Text = _target is null ? "Loading directory…" : $"Connecting to {_target.Display}…";
 
-        if (_connectionNote is not null)
+        if (_target is not null)
         {
-            // The connection was refused or cancelled. Show the reason and stop: falling back to the
-            // local filesystem would put the user somewhere they did not ask to be, under a tab
-            // named after a server.
-            StateChanged?.Invoke(this, EventArgs.Empty);
-            return;
+            // Connect before building the model, and stop with one clear sentence if it fails. The
+            // model would otherwise try the saved directory, then the fallback, then the selection,
+            // and report all three — one refusal said three times, which reads as three faults.
+            // Falling back to the local disk would be worse: a pane labelled with a server showing C:.
+            var problem = _fileSystem is null
+                ? "The sign-in was cancelled."
+                : await Task.Run(() => Probe(_fileSystem), linked.Token);
+
+            if (problem is not null)
+            {
+                ShowConnectionProblem(problem);
+                StateChanged?.Invoke(this, EventArgs.Empty);
+                return;
+            }
         }
 
+        HideConnectionProblem();
         _model = await Task.Run(
             () => new FileBrowserModel(_pane, _fallbackDirectory, _fileSystem),
             linked.Token);
         RenderModel();
+        UpdateLocation();
+    }
+
+    /// <summary>One round trip to the server, to find out whether there is a connection at all.</summary>
+    private static string? Probe(IFileBrowserFileSystem fileSystem)
+    {
+        try
+        {
+            fileSystem.DirectoryExists(Remote.RemotePath.Root);
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException)
+        {
+            return ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Try again after a refused or failed connection — asking for the password, because the one that
+    /// was tried is the likeliest reason it failed.
+    /// </summary>
+    private async Task ReconnectAsync()
+    {
+        if (_connect is null || _target is null || Volatile.Read(ref _disposed) != 0) return;
+
+        _connectionText.Text = $"Connecting to {_target.Display}…";
+        var fresh = await _connect(true);
+        if (fresh is null)
+        {
+            ShowConnectionProblem("The sign-in was cancelled.");
+            return;
+        }
+
+        var old = _fileSystem;
+        _fileSystem = fresh;
+        if (old is not null)
+        {
+            FileBrowserClipboard.Shared.Forget(old);
+            if (old is IDisposable disposable) _ = Task.Run(disposable.Dispose);
+        }
+
+        _model = null;
+        await InitializeAsync(CancellationToken.None);
     }
 
     public bool Focus() => FocusList();
@@ -172,12 +233,17 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
         // The browser is shell UI, so it takes the shell's colours rather than its own. It used to
         // carry a hardcoded palette that drifted from the chrome around it.
         _root.Background = Chrome.Palette.SurfaceBrush;
-        _root.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-        _root.RowDefinitions.Add(new RowDefinition(GridLength.Star));
-        _root.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        _root.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // toolbar
+        _root.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // connection banner
+        _root.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // column headers
+        _root.RowDefinitions.Add(new RowDefinition(GridLength.Star)); // the listing
+        _root.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // status
+
+        BuildChrome();
 
         var toolbar = new Grid { Margin = new Thickness(6), ColumnDefinitions =
         {
+            new ColumnDefinition(GridLength.Auto),
             new ColumnDefinition(GridLength.Auto),
             new ColumnDefinition(GridLength.Auto),
             new ColumnDefinition(GridLength.Star),
@@ -196,11 +262,13 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
         ToolTip.SetTip(newFolder, "New folder (Ctrl+Shift+N)");
         Grid.SetColumn(up, 0);
         Grid.SetColumn(refresh, 1);
-        Grid.SetColumn(_path, 2);
-        Grid.SetColumn(newFolder, 3);
-        Grid.SetColumn(terminal, 4);
+        Grid.SetColumn(_location, 2);
+        Grid.SetColumn(_path, 3);
+        Grid.SetColumn(newFolder, 4);
+        Grid.SetColumn(terminal, 5);
         toolbar.Children.Add(up);
         toolbar.Children.Add(refresh);
+        toolbar.Children.Add(_location);
         toolbar.Children.Add(_path);
         toolbar.Children.Add(newFolder);
         toolbar.Children.Add(terminal);
@@ -221,11 +289,16 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
             handledEventsToo: true);
 
         FileBrowserChanges.DirectoryChanged += OnDirectoryChanged;
+        InitializeDragDrop();
 
         Grid.SetRow(toolbar, 0);
-        Grid.SetRow(_list, 1);
-        Grid.SetRow(_status, 2);
+        Grid.SetRow(_banner, 1);
+        Grid.SetRow(_header, 2);
+        Grid.SetRow(_list, 3);
+        Grid.SetRow(_status, 4);
         _root.Children.Add(toolbar);
+        _root.Children.Add(_banner);
+        _root.Children.Add(_header);
         _root.Children.Add(_list);
         _root.Children.Add(_status);
 
@@ -248,14 +321,19 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
         _list.SelectionChanged += (_, _) =>
         {
             if (_rendering || _model is null) return;
-            var item = (_list.SelectedItem as ListBoxItem)?.Tag as FileBrowserNavigationItem;
-            _model.Select(item?.Path);
+            _model.SelectMany((_list.SelectedItems ?? Array.Empty<object>())
+                .OfType<ListBoxItem>()
+                .Select(row => row.Tag)
+                .OfType<FileBrowserNavigationItem>()
+                .Select(item => item.Path));
             RenderStatus();
             StateChanged?.Invoke(this, EventArgs.Empty);
         };
         _list.DoubleTapped += (_, e) =>
         {
-            if ((_list.SelectedItem as ListBoxItem)?.Tag is not FileBrowserNavigationItem { IsDirectory: true } item) return;
+            // The row under the pointer, not the selection: with several rows selected the first of
+            // them is not necessarily the one that was double-clicked.
+            if (RowAt(e.Source)?.Tag is not FileBrowserNavigationItem { IsDirectory: true } item) return;
             e.Handled = true;
             _ = RunNavigationAsync((model, token) => model.NavigateTo(item.Path, token));
         };
@@ -351,7 +429,7 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
             cut.IsEnabled = writable && selected;
             copy.IsEnabled = selected;
             paste.IsEnabled = model?.CanPaste == true;
-            rename.IsEnabled = writable && selected;
+            rename.IsEnabled = writable && model?.SelectedItems.Count == 1;
             delete.IsEnabled = writable && selected;
             destroy.IsEnabled = writable && selected;
             terminal.IsEnabled = model is not null;
@@ -460,19 +538,22 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
 
     private async Task DeleteAsync(bool permanent)
     {
-        if (_model?.SelectedItem is not { } item || Owner is not { } owner) return;
+        if (_model?.SelectedItems is not { Count: > 0 } items || Owner is not { } owner) return;
 
         // A Recycle Bin delete is undoable, so it does not interrupt — CLAUDE.md's "do not interrupt
         // for success" applies to anything the user can reverse. A permanent one cannot be undone
         // and is the only destructive act this pane has, so it always asks.
         if (permanent)
         {
-            var what = item.IsDirectory ? "folder" : "file";
+            var item = items[0];
+            var what = items.Count > 1 ? $"these {items.Count} items"
+                : item.IsDirectory ? $"the folder '{item.Name}'"
+                : $"the file '{item.Name}'";
             var confirmed = await NoticeWindow.ConfirmAsync(
                 owner,
                 "Delete permanently",
-                $"Delete the {what} '{item.Name}' permanently?\n\n" +
-                (item.IsDirectory ? "Everything inside it goes too. " : "") +
+                $"Delete {what} permanently?\n\n" +
+                (items.Any(i => i.IsDirectory) ? "Everything inside a folder goes too. " : "") +
                 "This cannot be undone and it does not go to the Recycle Bin.",
                 "Delete permanently");
 
@@ -536,21 +617,30 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
         {
             _path.Text = _model.CurrentDirectory;
             _list.Items.Clear();
-            ListBoxItem? selected = null;
+            var selectedPaths = _model.SelectedItems.Select(item => item.Path).ToHashSet(_model.FileSystem.PathComparer);
+            var selected = new List<ListBoxItem>();
+            var icons = new List<RowView>(_model.Entries.Count);
+
+            // Keep the header; the rows are about to be rebuilt.
+            _rowGrids.RemoveRange(1, _rowGrids.Count - 1);
             foreach (var item in _model.Entries)
             {
                 var row = new ListBoxItem
                 {
-                    Content = (item.IsDirectory ? "📁  " : "     ") + item.Name,
+                    Content = RowContent(item, out var view),
                     Tag = item,
-                    Padding = new Thickness(8, 5),
+                    Padding = new Thickness(8, 4),
                 };
-                if (string.Equals(item.Path, _model.SelectedPath,
-                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
-                    selected = row;
+                icons.Add(view);
+                if (selectedPaths.Contains(item.Path)) selected.Add(row);
                 _list.Items.Add(row);
             }
-            _list.SelectedItem = selected;
+
+            _list.SelectedItems?.Clear();
+            foreach (var row in selected) _list.SelectedItems?.Add(row);
+            LoadIcons(icons);
+            RenderHeader();
+            UpdateLocation();
             RenderStatus();
         }
         finally
@@ -595,6 +685,7 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         FileBrowserChanges.DirectoryChanged -= OnDirectoryChanged;
+        Interlocked.Increment(ref _iconGeneration);
         _lifetime.Cancel();
         _operation?.Cancel();
         _operation?.Dispose();
