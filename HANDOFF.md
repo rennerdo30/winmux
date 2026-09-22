@@ -17,8 +17,8 @@ Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux
 **Verified 2026-09-23: 813 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
 skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set; with a server they pass too (819, 0 skipped
 — checked the same day against SFTPGo 2.7.6 portable; how to run it is in `RemoteLiveTests`).
-`v0.7.0` is tagged and published (2026-09-16), CI green. Nothing after it is released yet;
-`CHANGELOG.md` has an *Unreleased* section.
+`v0.7.1` (cross-filesystem copy and the fixes found with it) was tagged and pushed on 2026-09-23;
+`release.yml` builds it. `v0.7.0` was the first release (2026-09-16).
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
@@ -60,8 +60,6 @@ Only a person, a machine setting or a judgement can move these; nothing in the c
   four costed options and a recommendation (ask the author to publish the source; keep hashes pinned;
   benchmark `Iciclecreek.Avalonia.Terminal`). Nobody has asked the author; that is a message, not a
   commit.
-- **Release the Unreleased changes** when you want them out: bump `<Version>` in
-  `Directory.Build.props`, move the changelog heading, `git tag v0.7.1 && git push origin v0.7.1`.
 
 ## Standing constraints
 
