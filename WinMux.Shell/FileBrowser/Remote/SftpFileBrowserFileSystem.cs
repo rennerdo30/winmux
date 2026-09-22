@@ -137,6 +137,22 @@ internal sealed class SftpFileBrowserFileSystem : IFileBrowserFileSystem, IDispo
         }
     }
 
+    public void ReadFile(string path, Action<Stream> read) => Run(client =>
+    {
+        using var stream = client.OpenRead(RemotePath.Normalize(path));
+        read(stream);
+        return true;
+    });
+
+    public void WriteNewFile(string path, Action<Stream> write) => Run(client =>
+    {
+        // CreateNew becomes SSH_FXF_CREAT | SSH_FXF_EXCL: the server refuses an existing name
+        // rather than truncating it, which Create would do.
+        using var stream = client.Open(RemotePath.Normalize(path), FileMode.CreateNew, FileAccess.Write);
+        write(stream);
+        return true;
+    });
+
     public void Delete(string path, bool isDirectory, bool permanent)
     {
         if (!permanent)

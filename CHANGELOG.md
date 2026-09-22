@@ -7,6 +7,25 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## Unreleased
+
+### Added
+
+- **Copy and move between filesystems** in the file browser: an SFTP or FTP server and the local
+  disk, or two different servers. Copy in one pane, paste in the other; folders go whole, progress
+  shows in the status line, nothing is overwritten, and an interrupted move leaves the original
+  untouched ([ADR 0020 addendum](docs/adr/0020-sftp-and-ftp.md#addendum-2026-09-23--copying-between-filesystems)).
+
+### Fixed
+
+- Pasting something copied in a *different* file-browser pane on another filesystem handed its path
+  to the wrong filesystem and failed.
+- A pane you moved a file out of went on listing it until refreshed by hand.
+- Clicking the empty part of a file-browser pane did not make it the focused pane, so the next
+  `Ctrl+V` went to the other one. Moving to a file-browser pane from the keyboard had the same fault.
+- A cancelled file operation did not say it had been cancelled.
+- Closing a remote pane could block the window while that connection was busy.
+
 ## 0.7.0 — 2026-09-16
 
 The first published release. WinMux has been usable for a while; this is the point at which the

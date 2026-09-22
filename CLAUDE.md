@@ -182,7 +182,8 @@ priority 2 exists to keep alive.
 is one `IFileBrowserFileSystem` (SSH.NET and FluentFTP, both MIT) and nothing above that interface
 knows the difference. SCP gets no kind of its own: it cannot list a directory. Remote paths go
 through `RemotePath`, never `System.IO.Path`, which answers for Windows and would put a backslash in
-a POSIX path.
+a POSIX path. A paste between two *different* filesystems streams through `FileBrowserTransfer`
+(ADR 0020's 2026-09-23 addendum); the clipboard carries the source filesystem, never a bare path.
 
 A `Stack` may appear anywhere a node may, including inside another `Stack`
 ([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md)). Its tab strip is **reserved

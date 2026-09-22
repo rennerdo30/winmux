@@ -133,7 +133,11 @@ internal sealed class FileBrowserModel
         return true;
     }
 
-    public void Refresh(CancellationToken cancellationToken = default)
+    /// <param name="reportLostSelection">
+    /// False when the refresh follows a change another pane made — a move out of this directory is
+    /// expected to take the selection with it, and warning about it reads as if something went wrong.
+    /// </param>
+    public void Refresh(CancellationToken cancellationToken = default, bool reportLostSelection = true)
     {
         if (TryReadDirectory(CurrentDirectory, cancellationToken, out var normalized, out var entries, out var error))
         {
@@ -144,7 +148,7 @@ internal sealed class FileBrowserModel
                 ? null
                 : entries.FirstOrDefault(entry =>
                     _fileSystem.PathComparer.Equals(entry.Path, previousSelection));
-            StatusMessage = previousSelection is not null && SelectedItem is null
+            StatusMessage = reportLostSelection && previousSelection is not null && SelectedItem is null
                 ? $"The selected item '{previousSelection}' is no longer available."
                 : null;
             PersistState();
@@ -154,6 +158,20 @@ internal sealed class FileBrowserModel
         var unavailable = CurrentDirectory;
         _unavailableRestoreDirectory ??= unavailable;
         LoadFallback($"Directory '{unavailable}' is unavailable. {error}");
+    }
+
+    /// <summary>Whether this pane is showing <paramref name="directory"/> on <paramref name="fileSystem"/>.</summary>
+    public bool IsShowing(IFileBrowserFileSystem fileSystem, string directory)
+    {
+        if (!ReferenceEquals(fileSystem, _fileSystem)) return false;
+        try
+        {
+            return _fileSystem.PathComparer.Equals(_fileSystem.GetFullPath(directory), CurrentDirectory);
+        }
+        catch (Exception ex) when (IsFileSystemFailure(ex))
+        {
+            return false;
+        }
     }
 
     /// <summary>Whether this filesystem can be changed at all; false hides every modifying command.</summary>
@@ -265,12 +283,12 @@ internal sealed class FileBrowserModel
             return false;
         }
 
-        _clipboard.Set(item.Path, item.IsDirectory, isMove);
+        _clipboard.Set(item.Path, item.IsDirectory, isMove, _fileSystem);
         StatusMessage = $"{(isMove ? "Cut" : "Copied")} '{item.Name}'.";
         return true;
     }
 
-    public bool Paste(CancellationToken cancellationToken = default)
+    public bool Paste(CancellationToken cancellationToken = default, IProgress<string>? progress = null)
     {
         if (!_clipboard.HasContent)
         {
@@ -287,7 +305,13 @@ internal sealed class FileBrowserModel
         var source = _clipboard.Path!;
         var isDirectory = _clipboard.IsDirectory;
         var isMove = _clipboard.IsMove;
+        var from = _clipboard.FileSystem ?? _fileSystem;
         var name = NameOf(source);
+
+        if (!ReferenceEquals(from, _fileSystem))
+        {
+            return PasteAcross(from, source, name, isDirectory, isMove, cancellationToken, progress);
+        }
 
         // Moving a directory inside itself destroys it, and the OS error for it is unhelpful.
         // Checked here so the message names the actual problem.
@@ -317,12 +341,94 @@ internal sealed class FileBrowserModel
                     _fileSystem.Copy(source, target, isDirectory, cancellationToken);
                 }
 
-                if (isMove) _clipboard.Clear();
+                if (isMove)
+                {
+                    _clipboard.Clear();
+                    FileBrowserChanges.Announce(this, _fileSystem, _fileSystem.GetParentDirectory(source));
+                }
+
                 return target;
             },
             cancellationToken,
             pasted => $"{(isMove ? "Moved" : "Copied")} '{NameOf(pasted)}' here.",
             $"Cannot paste '{name}'.");
+    }
+
+    /// <summary>
+    /// Paste something from a different filesystem — an SFTP file into a local folder, say.
+    ///
+    /// The bytes are streamed through <see cref="FileBrowserTransfer"/>. A move is a complete copy
+    /// followed by removing the original, and the original is only touched once the copy has
+    /// finished without error: a move interrupted halfway must leave the source whole, even if that
+    /// means a partial copy at the destination.
+    /// </summary>
+    private bool PasteAcross(
+        IFileBrowserFileSystem from,
+        string source,
+        string name,
+        bool isDirectory,
+        bool isMove,
+        CancellationToken cancellationToken,
+        IProgress<string>? progress)
+    {
+        // The source's own name may not be a legal name here: "a:b" is a fine file on a Unix server
+        // and not on Windows. Say so before any bytes move rather than letting the OS explain.
+        if (!ValidName(name, out var refusal))
+        {
+            StatusMessage = $"Cannot paste '{name}' here. {refusal}";
+            return false;
+        }
+
+        var files = 0;
+        string? cleanup = null;
+        var pasted = Perform(
+            () =>
+            {
+                var target = Unique(CurrentDirectory, name, isDirectory);
+                files = FileBrowserTransfer.Copy(from, source, _fileSystem, target, isDirectory, cancellationToken, progress);
+
+                if (isMove)
+                {
+                    _clipboard.Clear();
+                    cleanup = RemoveMovedOriginal(from, source, isDirectory);
+                    if (cleanup is null) FileBrowserChanges.Announce(this, from, from.GetParentDirectory(source));
+                }
+
+                return target;
+            },
+            cancellationToken,
+            target => (isMove ? $"Moved '{NameOf(target)}' here" : $"Copied '{NameOf(target)}' here") +
+                      (isDirectory ? $" ({files} file(s))." : "."),
+            $"Cannot paste '{name}'.");
+
+        if (pasted && cleanup is not null)
+        {
+            // The copy succeeded and is what matters most; the user still needs to know the original
+            // is where it was, or they will believe it gone.
+            StatusMessage = $"{StatusMessage} {cleanup}";
+        }
+
+        return pasted;
+    }
+
+    /// <summary>
+    /// The second half of a move between filesystems. Returns a sentence for the status line when
+    /// the original could not be removed, and null when it was.
+    /// </summary>
+    private static string? RemoveMovedOriginal(IFileBrowserFileSystem from, string source, bool isDirectory)
+    {
+        try
+        {
+            // To the Recycle Bin where there is one: the copy is verified only in the sense that no
+            // call failed, and a recoverable original costs nothing. Where there is none, a move has
+            // always meant the original goes, and the complete copy now exists.
+            from.Delete(source, isDirectory, permanent: !from.CanRecoverDeletes);
+            return null;
+        }
+        catch (Exception ex) when (IsFileSystemFailure(ex) || ex is ObjectDisposedException)
+        {
+            return $"The original could not be removed, so it is still there: {ex.Message}";
+        }
     }
 
     /// <summary>
@@ -342,8 +448,9 @@ internal sealed class FileBrowserModel
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = $"{failurePrefix} It was cancelled.";
+            // Refresh first: it resets the status line, and this message is the one that must stay.
             Refresh(CancellationToken.None);
+            StatusMessage = $"{failurePrefix} It was cancelled.";
             return false;
         }
         catch (Exception ex) when (IsFileSystemFailure(ex))
@@ -360,6 +467,9 @@ internal sealed class FileBrowserModel
 
         StatusMessage = success(produced);
         PersistState();
+
+        // Any other pane showing this directory is now out of date.
+        FileBrowserChanges.Announce(this, _fileSystem, CurrentDirectory);
         return true;
     }
 

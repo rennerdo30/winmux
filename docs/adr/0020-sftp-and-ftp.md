@@ -100,3 +100,60 @@ reading the type while adding two more kinds to it, not by any test. There are t
 The lesson generalises past this method: a hand-written `Equals` on a record is a standing
 invitation to this bug, because the compiler stops helping the moment it exists. Every field added
 to `LaunchProfile` has to be added in three places, and nothing enforces it but a test.
+
+## Addendum, 2026-09-23 — copying between filesystems
+
+**Context.** Every operation was within one filesystem. The shared clipboard held only a *path*, so
+cutting `/home/alice/notes.txt` in an SFTP pane and pasting in a local one handed that path to the
+local disk — a failure, not data loss, but the feature that makes a remote pane worth having beside a
+local one did not exist.
+
+**Decision.**
+
+- The clipboard remembers **which filesystem** its path belongs to (`FileBrowserClipboard.FileSystem`).
+  Same instance: the filesystem copies or moves for itself, exactly as before. Different instance:
+  `FileBrowserTransfer` streams it.
+- `IFileBrowserFileSystem` gains `ReadFile` and `WriteNewFile`, **callbacks rather than returned
+  streams**. Each remote filesystem serialises its connection behind a lock, and a stream handed out
+  of that lock would be read while the owning pane used the same connection for something else.
+- `WriteNewFile` **never overwrites**: `FileMode.CreateNew` locally, `SSH_FXF_EXCL` over SFTP. FTP has
+  no exclusive create, so it checks first under the connection lock — the most the protocol allows.
+- **A file that was not completely written is removed**, and only a file this transfer created: if the
+  destination name was taken, the file there is somebody else's.
+- **A move is a complete copy, then removing the original** — to the Recycle Bin where the source has
+  one. A move interrupted halfway leaves the source whole. A failure to remove the original is
+  reported ("it is still there") without failing the paste, because the copy is what mattered.
+- **One transfer at a time, across all panes.** A transfer holds the source connection's lock and the
+  destination's. Two opposite transfers between the same two servers would take them in opposite
+  orders and deadlock; a global semaphore removes the cycle, and parallel transfers over one link are
+  not faster anyway.
+- **A 64-level depth limit**, because an SFTP symlink to its own ancestor lists as an ordinary
+  directory and would otherwise be copied until the disk filled.
+- **Other panes are told** (`FileBrowserChanges`). A pane re-read its own directory after its own
+  operations, but never saw another pane change it — so after cut-left, paste-right, the left pane went
+  on listing a file that had gone. Matched on filesystem instance *and* path: `/data` on two servers
+  is two directories.
+- Closing a remote pane now disposes its connection **off the UI thread**. Disposing takes the
+  connection lock, which a transfer from another pane may be holding for minutes — waiting for it on
+  the UI thread would freeze the shell (priority 2).
+
+**Verified** with unit tests against an in-memory POSIX filesystem (failure midway, cancellation, a name
+Windows cannot hold, a closed source pane, a self-referencing link, each guard mutation-tested), with
+`RemoteLiveTests` round-tripping a 300 KB binary and a nested folder through SFTPGo on both protocols
+byte for byte, and on screen: server → local copy (hash identical), local → server move, and the
+source pane updating itself.
+
+### What failed
+
+- **Clicking empty space in a file-browser pane did not focus it.** Found on screen: a click below the
+  last row, then `Ctrl+V`, pasted into the *other* pane. Fluent's `ListBox` is not focusable — only its
+  rows are — so `_list.Focus()` returns false and does nothing. That call was also the runtime's
+  `IPaneRuntime.Focus()`, so moving to a file-browser pane from the keyboard had the same silent fault
+  whenever no row already held focus. Now `FocusList()` focuses the selected row, else the first, else
+  the list; a headless test clicks empty space and was verified by removing the handler.
+- **The first version of that headless test passed alone and failed in the suite**, because it listed
+  the shared temp folder, which the rest of the suite fills while running, so a row sat under the
+  pointer. It now gets its own empty directory.
+- **A cancelled file operation never said so.** `Perform` set "It was cancelled" and then called
+  `Refresh`, which reset the status line. Found by the cancellation test for this feature; present
+  since the file operations shipped.

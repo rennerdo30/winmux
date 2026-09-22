@@ -4,166 +4,64 @@
 
 ## Where we are
 
-**Phases 0–5 are complete. Phase 6 — the GUI — is most of the way through its first pass.**
+**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.0 is released.**
+What is left needs a person, a second monitor or a decision — see *Waiting on you*.
 
-WinMux runs terminal panes, foreign-application panes, a file browser and empty panes, all as
-providers behind `WinMux.Panes`. The platform layer is extracted, so `WinMux.Shell` declares zero
-`DllImport` ([ADR 0013](docs/adr/0013-phase-5-platform-layer.md)). Tab groups nest anywhere with a
-strip on any edge ([ADR 0014](docs/adr/0014-nested-tab-groups-and-shell-chrome.md)). Any installed
-application can be put in a pane through a Start Menu picker, kept as a profile, or adopted from a
-window that is already open ([ADR 0015](docs/adr/0015-profiles-app-catalog-and-empty-panes.md)).
-Panes can be renamed — double-click a tab, right-click it, or `Ctrl+B ,` as in tmux — and the name
-outranks whatever the program inside calls itself. Terminals scroll back through their history and
-support mouse selection with copy. The window wears its own Windows 11 caption: the toolbar lives
-*in* the title bar next to the app icon, with minimise, maximise and close drawn by us
-([ADR 0016](docs/adr/0016-windows-11-chrome.md)), and the chrome and dialogs are on Fluent 2's type
-ramp rather than a size below it.
+WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
+`WinMux.Panes`; the shell declares zero `DllImport` (ADR 0013); tab groups nest anywhere (ADR 0014);
+any installed app can be a profile (ADR 0015); the window wears its own Windows 11 caption (ADR 0016).
+The file browser speaks SFTP and FTP (ADR 0020) and now **copies and moves between filesystems** —
+server to disk, disk to server, server to server — with the same no-overwrite rule as everything else.
 
-Gate: `dotnet build WinMux.slnx -c Release` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-16: 799 passed, 0 warnings.** Four more are *skipped* by design — the live
-SFTP/FTP tests, which need a server and say so rather than passing quietly (ADR 0020). Version 0.7.0.
-Everything through `d5a0631` is **pushed** and CI is green there; the underline fix described below
-is newer than `origin/main`.
+Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
+**Verified 2026-09-23: 813 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
+skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set; with a server they pass too (819, 0 skipped
+— checked the same day against SFTPGo 2.7.6 portable; how to run it is in `RemoteLiveTests`).
+`v0.7.0` is tagged and published (2026-09-16), CI green. Nothing after it is released yet;
+`CHANGELOG.md` has an *Unreleased* section.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
-Package it: `publish.cmd` → `dist/WinMux-0.7.0-win-x64/` and a zip.
+Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
 
 ## What just happened
 
-**2026-09-15**, one long session. `git log 68103d5..` is the changelog; this is what a newcomer
-needs to know happened, and where the reasoning lives.
+**2026-09-23 — copying between filesystems** ([ADR 0020 addendum](docs/adr/0020-sftp-and-ftp.md#addendum-2026-09-23--copying-between-filesystems)).
+The clipboard now remembers which filesystem a path belongs to; a paste across two streams the bytes
+through `FileBrowserTransfer`. A move removes the original only after a complete copy; a half-written
+file is removed. Other panes showing a changed directory refresh themselves (`FileBrowserChanges`).
+Seen working on screen against a real SFTP server in both directions. Found on the way, and fixed:
+clicking empty space in a file-browser pane never focused it (Fluent's `ListBox` is not focusable, so
+`_list.Focus()` did nothing — including when the shell moved focus there by key); a cancelled
+operation never said so; closing a remote pane could block the UI thread on a busy connection.
 
-- **Phases 4 and 5 closed.** Pane providers and the file browser (ADR 0012); the platform layer
-  extracted so the shell declares zero `DllImport` (ADR 0013).
-- **Phase 6, the GUI.** Nested tab groups and shell chrome (ADR 0014), profiles and the app
-  catalogue (ADR 0015), then a Windows 11 pass over the chrome, the dialogs and the pane layer
-  (ADR 0016): Fluent 2 metrics, a caption the app draws itself with snap layouts claimed back,
-  inset rounded panes, an accent focus ring in the gutter, and terminal output rendered in colour
-  for the first time.
-- **Everything on the feature list landed**: scrollback search, tab reordering by key, menu and
-  drag, focus reconciliation against the OS, dragging a running window into a pane, and pane
-  providers loaded from `providers/` beside the executable with a working sample.
-- **Two long-standing claims were finally measured, and one was wrong.** Input-queue attachment
-  does *not* starve the shell of input — it blocks *focus* for the duration of a wedge, 201 ms
-  against 4,386 ms (ADR 0017). Symbol key bindings never worked on this machine at all, because
-  `KeyStroke`'s table assumes a US ANSI keyboard and the hardware here is Japanese 106/109.
-- **Three separate times, a measurement harness produced the alarming result rather than the
-  product.** That is the most transferable thing this session produced; see *Do not re-do* and
-  CLAUDE.md section 7.
-- **Dependencies are hash-locked** and `Terminal.Emulation` reassessed (ADR 0018).
-
-**2026-09-16.** CI, a documentation site and an in-app updater, all following the shape used in
-`bifrost-proxy`:
-
-- **Three workflows.** `ci.yml` builds, tests and packages on Windows with `--locked-mode` and
-  `-warnaserror`; `docs.yml` deploys the site to Pages; `release.yml` publishes a tagged build with
-  `checksums.txt`. The repository had no CI at all before this.
-- **Docs site** at `docs/` — Astro + Starlight, published to
-  <https://rennerdo30.github.io/winmux/>. The ADRs stay in `docs/adr/` and are mirrored into the
-  site at build time by `docs/scripts/sync-adrs.mjs`, so there is one editable copy of each
-  decision and the GitHub links keep working.
-- **In-app updater.** Checks GitHub a few seconds after launch, offers what it finds, and installs
-  nothing without being asked. It refuses any archive whose SHA-256 is not in the release's
-  `checksums.txt`. Windows locks a running image, so it stages beside the install, saves the
-  session, and hands the swap to a script. `Help` in the toolbar links the docs, the releases and
-  the updater.
-- **The terminal measures its own font** instead of assuming an 8.45px cell, and the family and
-  size are settings. The old constant was wrong for both the default face and the fallback, so
-  every *position* in a row drifted away from its glyphs.
-- **SSH and Remote Desktop are profiles**, not a new pane kind — one list behind every surface that
-  opens a pane (CLAUDE.md section 5a). `ICredentialStore` landed with them, backed by Windows
-  Credential Manager, so that no password ever reaches a file WinMux owns.
-- **The file browser can change files, not just look at them.** New folder, rename, cut/copy/paste
-  and delete, each with a key, a context-menu entry and — for the common ones — a button. Nothing
-  overwrites: a name collision becomes `report (2).txt`, so a mistake never costs the original.
-  Delete goes to the Recycle Bin through `IFileTrash`, and a *failed* recycle is never quietly
-  upgraded to a permanent delete.
-- **SFTP and FTP are built in** ([ADR 0020](docs/adr/0020-sftp-and-ftp.md)), because unlike SMB
-  there is no Windows client to delegate to. Each is one `IFileBrowserFileSystem` — SSH.NET and
-  FluentFTP, both MIT — and *nothing above that interface changed*. A saved connection is a profile
-  like any other, the password goes to Credential Manager and never to the session file, and SFTP
-  can use a key instead. **Verified against a real server** (SFTPGo portable, both protocols) and
-  then through the UI: session file, credential dialog, listing, folder created on the server.
-- **Switching tab did not move the keyboard with it.** `CycleTab` relaid out and focused nothing
-  at all, so `Ctrl+B n` left the next keystroke going to the tab you had just left; `FocusPane`
-  focused *before* the relayout, and focusing a control that has not been arranged does nothing,
-  silently. Both now go through `FocusActivePaneAfterLayout`, which relayouts first and posts the
-  focus at `Input` priority — the same shape as the file-browser list fix, for the same reason.
-- **Every line in a terminal pane was underlined**, reported from a screenshot. The cause was
-  `ESC[>4m` — a *private* CSI sequence (xterm's modifyOtherKeys) that `Terminal.Emulation` reads as
-  `ESC[4m`, underline on, with nothing afterwards to clear it. A second, real defect found on the
-  way — `ESC[4:0m`, underline *off*, read as underline on — is fixed as well.
-  `SgrColonNormalizer` repairs both in the adapter. There was nowhere to send a patch, which is
-  exactly the exposure [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md) describes; see
-  its 2026-09-16 addendum, including how the first fix was declared done while the bug was still
-  on screen.
-- **The release package could not start WinMux, and never could.** `winmux.exe` (the CLI) and
-  `WinMux.exe` (the shell) are one filename on Windows; the CLI published second and overwrote the
-  shell, so every package shipped a console application under the name the README says to
-  double-click. The CLI is now `wmux.exe`. Nothing had been released, so it reached nobody. Two
-  separate checks — `publish.ps1`'s file list and `UpdateInstaller`'s archive check — both asked
-  only whether `WinMux.exe` existed, and the CLI satisfied both.
-- **`THIRD-PARTY-NOTICES.txt` ships**, generated from the package contents. Around forty
-  third-party DLLs were being distributed with none of their licences, which MIT, BSD and Apache
-  all require.
-- **Network shares are Windows' job, and that is now decided and written down.** WinMux adds no SMB
-  or NFS client: Windows mounts a share, WinMux browses the path. An SMBLibrary dependency was
-  costed (LGPL-3.0 is compatible with MIT — weak copyleft, linking does not relicense us) and then
-  **dropped as unnecessary**. The guide is
-  [Network shares](docs/src/content/docs/network-shares.mdx).
+**2026-09-16** — CI, docs site, in-app updater, SSH/RDP/SFTP/FTP profiles, file operations, the
+0.7.0 release. `git log` and `CHANGELOG.md` have the detail.
 
 ## The next action
 
-**Cut 0.7.0.** (One fix landed after the release preparation: see the underline bug below. It is in.) The package is ready and was rebuilt from clean and started from the zip; what is
-left is one command, which is yours because it publishes:
+**Use it for an hour, and write down what annoyed you.** Every feature on the list is in and has been
+seen working; the remaining bugs are the kind only use finds. Today's session proved it again — the
+focus bug above had survived every test and was found in two minutes of clicking.
 
-```
-git tag v0.7.0 && git push origin v0.7.0
-```
-
-`release.yml` builds it, attaches the archive and `checksums.txt`, and the in-app updater refuses
-anything whose hash is not in that file. `CHANGELOG.md` has the notes.
-
-**Then use it for an hour, and write down what annoyed you.** Everything on the feature list is done and
-was seen working on screen; what is left is the class of finding that only comes from use, and this
-project has now had two sessions of code-reading produce less than one screenshot did.
-
-The connection work asked for on 2026-09-16 — RDP, SSH, FTP, SCP, SMB, NFS — is now **complete**:
-SSH and RDP delegate to the Windows clients, SMB and NFS to Windows itself (ADR 0019), SFTP and FTP
-are implemented (ADR 0020), and SCP is deliberately absent because it cannot list a directory.
-
-**Pane providers are under test now.** `Avalonia.Headless` runs them in-process, and
-`PaneProviderConstructionTests` builds every provider and reads back what its view says. That gap
-produced most of 2026-09-16's bugs — a pane that could not be created at all, an address bar broken
-since Phase 4, a launcher missing half the product — because nothing in the suite had ever
-constructed a provider. The guard was verified by reintroducing the shipped bug and watching it go
-red.
-
-The obvious next piece is **copying between two filesystems** — dragging from an SFTP pane onto a
-local one. Every operation today is within one filesystem; the interface already has the streams
-this would need.
-
-The two things still queued are taste calls rather than gaps, both from the 2026-09-15 critique:
-the toolbar is uniform icon+label with a divider after every group, where Explorer's command bar has
-neither; and `LayoutMetrics` is already parameterised, so a Normal/Compact density setting is a
-settings card rather than an architecture change. Neither should be done without deciding it is
-wanted.
+If engineering time is wanted before that, the candidates are taste calls, not gaps — decide they are
+wanted first: **drag and drop** between file-browser panes (paste works; dragging does not exist);
+**multi-select** in the browser (the clipboard holds one entry because the list selects one);
+and the two from the 2026-09-15 critique — a toolbar without a divider after every group, and a
+Normal/Compact density setting (`LayoutMetrics` is already parameterised).
 
 ## Waiting on you
 
-Three things, and only three. Each needs a person, a machine setting or a judgement — none is
-unfinished engineering, and nothing in the codebase is waiting on them.
+Only a person, a machine setting or a judgement can move these; nothing in the code waits on them.
 
 - **Run the mixed-DPI check.** Set one display to a different scale, then
-  `scripts/verify-mixed-dpi.ps1`. It refuses to report anything while the scales match, launches
-  WinMux across the seam, and lists what to look at. This is the last measurement in the project
-  that has never been taken, and it needs two monitors at different scales — which this machine has
-  never had.
-- **Decide `Terminal.Emulation`.** [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md)
-  has the facts, four costed options and a recommendation: ask the author to publish the source,
-  keep the hashes pinned, and benchmark `tomlm/Iciclecreek.Avalonia.Terminal` before assuming a
-  replacement is expensive. Nobody has asked the author; that is a message, not a commit.
-- **Use it for an hour.** See *The next action*.
+  `scripts/verify-mixed-dpi.ps1`. The last measurement in the project never taken — this machine has
+  never had two monitors at different scales.
+- **Decide `Terminal.Emulation`.** [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md) has
+  four costed options and a recommendation (ask the author to publish the source; keep hashes pinned;
+  benchmark `Iciclecreek.Avalonia.Terminal`). Nobody has asked the author; that is a message, not a
+  commit.
+- **Release the Unreleased changes** when you want them out: bump `<Version>` in
+  `Directory.Build.props`, move the changelog heading, `git tag v0.7.1 && git push origin v0.7.1`.
 
 ## Standing constraints
 
@@ -223,6 +121,10 @@ that a future session recognises them as answers rather than rediscovering them 
 - Do not put palette or modal chrome over the pane canvas; native windows paint above it.
 
 **Testing the UI**
+- Do not point a headless test at the shared temp folder when *where the pointer lands* matters. The
+  rest of the suite fills it while running, and the test passed alone and failed in the suite.
+- Do not script clicks at absolute screen coordinates across a relaunch — WinMux restores its window
+  wherever the session last saved it. Read the window rect and click relative to it.
 - Do not add an overload pair `RunAsync(Action)` / `RunAsync(Func<Task>)` to a test helper. An
   `async () => { … }` lambda binds to the `Action` one as `async void`, and every exception inside
   it — including a failed assertion — is discarded.
@@ -277,6 +179,10 @@ that a future session recognises them as answers rather than rediscovering them 
   resets on every launch; that happened twice before `SettingsRoundTripTests` existed to catch it.
 
 **Avalonia threading and focus**
+- Do not call `Focus()` on a Fluent `ListBox` and assume it worked. It is not focusable — its rows
+  are — so the call returns false and nothing happens. The file browser's `FocusList()` does it right.
+- Do not dispose a remote filesystem on the UI thread. Dispose takes the connection lock, which a
+  listing from a dead server or another pane's transfer may hold for minutes.
 - Do not touch a control inside the lambda handed to `RunNavigationAsync` — it runs on a background
   thread via `Task.Run`, and reading `TextBox.Text` there throws "the calling thread cannot access
   this object". Read the control on the UI thread and capture the value. The file browser's address

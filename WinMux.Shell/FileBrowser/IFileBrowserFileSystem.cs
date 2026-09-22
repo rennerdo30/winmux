@@ -54,6 +54,23 @@ internal interface IFileBrowserFileSystem
 
     /// <summary>Whether <see cref="Delete"/> can honour <c>permanent: false</c>.</summary>
     bool CanRecoverDeletes => false;
+
+    /// <summary>
+    /// Hand <paramref name="read"/> a stream over a file's contents, and close it afterwards.
+    ///
+    /// A callback rather than a returned stream, because the remote filesystems serialise every call
+    /// on one connection behind a lock, and a stream handed out of that lock would be read while
+    /// another pane operation used the same connection. This is what a copy *between* filesystems is
+    /// built from; see <see cref="FileBrowserTransfer"/>.
+    /// </summary>
+    void ReadFile(string path, Action<Stream> read) => throw new NotSupportedException();
+
+    /// <summary>
+    /// Create a file that does not exist yet and hand <paramref name="write"/> a stream to fill it.
+    /// Never overwrites: an existing file is an error, because the caller has already chosen a free
+    /// name and anything else would be a race it lost.
+    /// </summary>
+    void WriteNewFile(string path, Action<Stream> write) => throw new NotSupportedException();
 }
 
 internal sealed class SystemFileBrowserFileSystem : IFileBrowserFileSystem
@@ -140,6 +157,19 @@ internal sealed class SystemFileBrowserFileSystem : IFileBrowserFileSystem
         {
             CopyTree(child, Path.Combine(destination, child.Name), cancellationToken);
         }
+    }
+
+    public void ReadFile(string path, Action<Stream> read)
+    {
+        using var stream = File.OpenRead(path);
+        read(stream);
+    }
+
+    public void WriteNewFile(string path, Action<Stream> write)
+    {
+        // FileMode.CreateNew is the overwrite: false of streams — it throws if the name is taken.
+        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
+        write(stream);
     }
 
     public void Delete(string path, bool isDirectory, bool permanent)

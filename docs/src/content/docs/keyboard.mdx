@@ -62,7 +62,9 @@ These need no prefix; they act on the selected entry in the pane that has focus.
 | `Ctrl+Enter` | Open a terminal here |
 
 Right-click gives the same list with the shortcuts beside it. Copy in one pane and paste in another:
-the clipboard is shared between file-browser panes, which is most of the reason to have two.
+the clipboard is shared between file-browser panes, which is most of the reason to have two. It works
+between *different* filesystems too — cut on an SFTP server, paste into a local folder, or the other
+way round — and the pane you moved something out of updates by itself.
 
 Nothing here overwrites. Pasting onto a name that exists produces `report (2).txt`, and so does
 renaming onto one, so a collision never costs you the original file.

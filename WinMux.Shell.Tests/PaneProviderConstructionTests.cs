@@ -1,3 +1,4 @@
+using Avalonia.VisualTree;
 using Avalonia.Controls;
 using WinMux.Core.Model;
 using WinMux.Core.Settings;
@@ -67,6 +68,42 @@ public sealed class PaneProviderConstructionTests
         Assert.NotNull(runtime.View);
         Assert.Equal(PaneKind.FileBrowser, runtime.Kind);
         await runtime.DisposeAsync();
+    });
+
+    [Fact]
+    public Task Clicking_the_empty_part_of_a_file_browser_focuses_it() => Headless.RunAsync(async () =>
+    {
+        // Pane focus follows keyboard focus into a pane's view. A click below the last row of the
+        // list landed on nothing focusable, so the pane never became the focused one and the Ctrl+V
+        // that followed went to the pane on the other side of the window. Seen on screen, 2026-09-23.
+        // Its own empty directory: the shared temp folder fills up with other tests' files while the
+        // suite runs, and a row under the pointer would make this a different test.
+        var empty = Directory.CreateTempSubdirectory("winmux-focus-").FullName;
+        var provider = new FileBrowserPaneProvider(() => empty);
+        var runtime = await provider.CreateAsync(ContextFor(PaneKind.FileBrowser));
+        var elsewhere = new TextBox();
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
+        Grid.SetColumn(runtime.View, 1);
+        grid.Children.Add(elsewhere);
+        grid.Children.Add(runtime.View);
+        var window = new Window { Width = 800, Height = 600, Content = grid };
+        window.Show();
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        elsewhere.Focus();
+        Assert.False(runtime.View.IsKeyboardFocusWithin);
+
+        // Near the bottom of the right-hand column: below any row, above the status line.
+        Avalonia.Headless.HeadlessWindowExtensions.MouseDown(
+            window, new Avalonia.Point(600, 520), Avalonia.Input.MouseButton.Left);
+        Avalonia.Headless.HeadlessWindowExtensions.MouseUp(
+            window, new Avalonia.Point(600, 520), Avalonia.Input.MouseButton.Left);
+
+        var list = runtime.View.GetVisualDescendants().OfType<ListBox>().First();
+        Assert.True(runtime.View.IsKeyboardFocusWithin,
+            $"focusable={list.Focusable} focused={window.FocusManager?.GetFocusedElement()}");
+        window.Close();
+        await runtime.DisposeAsync();
+        Directory.Delete(empty, recursive: true);
     });
 
     [Fact]

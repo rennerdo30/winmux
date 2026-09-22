@@ -168,6 +168,79 @@ public sealed class RemoteLiveTests
             }
         }
     }
+
+    [SkippableTheory]
+    [InlineData(SftpVariable, RemoteFileBrowserTarget.Sftp)]
+    [InlineData(FtpVariable, RemoteFileBrowserTarget.Ftp)]
+    public void A_folder_goes_to_a_real_server_and_comes_back_byte_for_byte(string variable, string scheme)
+    {
+        if (Connect(variable, scheme) is not { } filesystem)
+        {
+            throw new Xunit.SkipException(
+                $"set {variable} to host:port:user:password to run this against a real server");
+        }
+
+        using var _ = (IDisposable)filesystem;
+
+        var local = Path.Combine(Path.GetTempPath(), "winmux-live-transfer-" + Guid.NewGuid().ToString("N")[..8]);
+        var source = Directory.CreateDirectory(Path.Combine(local, "out")).FullName;
+        var back = Directory.CreateDirectory(Path.Combine(local, "back")).FullName;
+        var remote = RemotePath.Combine("/", "winmux-transfer-" + Guid.NewGuid().ToString("N")[..8]);
+
+        // Binary, and bigger than one transfer block, so a text-mode FTP transfer or a short read
+        // shows up as a mismatch rather than passing on a few ASCII bytes.
+        var payload = new byte[300_000];
+        new Random(7).NextBytes(payload);
+        File.WriteAllBytes(Path.Combine(source, "blob.bin"), payload);
+        Directory.CreateDirectory(Path.Combine(source, "sub"));
+        File.WriteAllText(Path.Combine(source, "sub", "note.txt"), "nested");
+
+        var disk = new SystemFileBrowserFileSystem(new NoTrash());
+        try
+        {
+            filesystem.CreateDirectory(remote);
+
+            Assert.Equal(2, FileBrowserTransfer.Copy(
+                disk, source, filesystem, RemotePath.Combine(remote, "out"), isDirectory: true, CancellationToken.None));
+
+            // Never overwrite, on the wire too: the server must refuse a name that is taken.
+            Assert.Throws<IOException>(() => FileBrowserTransfer.Copy(
+                disk, Path.Combine(source, "blob.bin"), filesystem, RemotePath.Combine(remote, "out/blob.bin"),
+                isDirectory: false, CancellationToken.None));
+            Assert.True(filesystem.FileExists(RemotePath.Combine(remote, "out/blob.bin")),
+                "a refused write must not remove the file that was already there");
+
+            Assert.Equal(2, FileBrowserTransfer.Copy(
+                filesystem, RemotePath.Combine(remote, "out"), disk, Path.Combine(back, "out"), isDirectory: true, CancellationToken.None));
+
+            Assert.Equal(payload, File.ReadAllBytes(Path.Combine(back, "out", "blob.bin")));
+            Assert.Equal("nested", File.ReadAllText(Path.Combine(back, "out", "sub", "note.txt")));
+        }
+        finally
+        {
+            try
+            {
+                if (filesystem.DirectoryExists(remote)) filesystem.Delete(remote, isDirectory: true, permanent: true);
+            }
+            catch (IOException)
+            {
+                // Best effort, as above.
+            }
+
+            Directory.Delete(local, recursive: true);
+        }
+    }
+
+    private sealed class NoTrash : IFileTrash
+    {
+        public bool IsAvailable => false;
+
+        public bool TrySend(string path, bool isDirectory, out string? error)
+        {
+            error = "not in tests";
+            return false;
+        }
+    }
 }
 
 /// <summary>A file-browser pane sitting at a remote path, for the remote tests to drive.</summary>

@@ -115,6 +115,29 @@ internal sealed class FtpFileBrowserFileSystem : IFileBrowserFileSystem, IDispos
         }
     }
 
+    public void ReadFile(string path, Action<Stream> read) => Run(client =>
+    {
+        using var stream = client.OpenRead(RemotePath.Normalize(path));
+        read(stream);
+        return true;
+    });
+
+    public void WriteNewFile(string path, Action<Stream> write) => Run(client =>
+    {
+        var target = RemotePath.Normalize(path);
+
+        // FTP has no exclusive create; STOR replaces whatever is there. Checking first, under the
+        // same lock as every other call on this connection, is the most the protocol allows.
+        if (client.FileExists(target) || client.DirectoryExists(target))
+        {
+            throw new IOException($"'{target}' already exists");
+        }
+
+        using var stream = client.OpenWrite(target);
+        write(stream);
+        return true;
+    });
+
     public void Delete(string path, bool isDirectory, bool permanent)
     {
         if (!permanent) throw new IOException("FTP has no Recycle Bin; this delete would be permanent");

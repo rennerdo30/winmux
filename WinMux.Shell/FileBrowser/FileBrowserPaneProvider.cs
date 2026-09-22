@@ -69,7 +69,8 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
     private readonly string _fallbackDirectory;
     private readonly Grid _root = new();
     private readonly TextBox _path = new() { PlaceholderText = "Directory" };
-    private readonly ListBox _list = new();
+    // Focusable so that an empty directory, which has no rows to take focus, can still hold it.
+    private readonly ListBox _list = new() { Focusable = true };
     private readonly TextBlock _status = new()
     {
         Margin = new Thickness(8, 4),
@@ -128,7 +129,21 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
         RenderModel();
     }
 
-    public bool Focus() => _list.Focus();
+    public bool Focus() => FocusList();
+
+    /// <summary>
+    /// Put keyboard focus in the list: the selected row, else the first, else the list itself.
+    ///
+    /// <c>_list.Focus()</c> alone does nothing — Fluent's ListBox is not focusable, only its rows
+    /// are — and it fails silently. Every caller of it was a no-op whenever no row already had focus,
+    /// including the shell moving focus to this pane from the keyboard.
+    /// </summary>
+    private bool FocusList()
+    {
+        if (_list.SelectedItem is Control selected && selected.Focus()) return true;
+        if (_list.Items.Count > 0 && _list.Items[0] is Control first && first.Focus()) return true;
+        return _list.Focus();
+    }
     public void Arrange(PaneArrangement arrangement) { }
     public void RefreshRestoreState() { }
     public RestoreDescriptor CaptureRestoreDescriptor() => _pane.Restore;
@@ -191,6 +206,21 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
         toolbar.Children.Add(terminal);
 
         _list.ContextMenu = BuildContextMenu();
+
+        // A click below the last row lands on the list's empty area, which does not take focus —
+        // so the pane did not become the focused pane, and the Ctrl+V that followed went to
+        // whichever pane had focus before. Anything clicked in the pane that leaves focus outside
+        // it gives it to the list.
+        _root.AddHandler(
+            InputElement.PointerPressedEvent,
+            (_, _) =>
+            {
+                if (!_root.IsKeyboardFocusWithin) FocusList();
+            },
+            Avalonia.Interactivity.RoutingStrategies.Bubble,
+            handledEventsToo: true);
+
+        FileBrowserChanges.DirectoryChanged += OnDirectoryChanged;
 
         Grid.SetRow(toolbar, 0);
         Grid.SetRow(_list, 1);
@@ -273,7 +303,7 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
                 e.Handled = true;
                 if (e.Key == Key.V)
                 {
-                    _ = RunNavigationAsync((model, token) => model.Paste(token), "Pasting…");
+                    PasteHere();
                 }
                 else
                 {
@@ -292,7 +322,7 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
         var newFolder = Item("New folder", Key.N, KeyModifiers.Control | KeyModifiers.Shift, () => _ = NewFolderAsync());
         var cut = Item("Cut", Key.X, KeyModifiers.Control, () => HoldSelected(isMove: true));
         var copy = Item("Copy", Key.C, KeyModifiers.Control, () => HoldSelected(isMove: false));
-        var paste = Item("Paste", Key.V, KeyModifiers.Control, () => _ = RunNavigationAsync((model, token) => model.Paste(token), "Pasting…"));
+        var paste = Item("Paste", Key.V, KeyModifiers.Control, PasteHere);
         var rename = Item("Rename…", Key.F2, KeyModifiers.None, () => _ = RenameAsync());
         var delete = Item("Delete", Key.Delete, KeyModifiers.None, () => _ = DeleteAsync(permanent: false));
         var destroy = Item("Delete permanently…", Key.Delete, KeyModifiers.Shift, () => _ = DeleteAsync(permanent: true));
@@ -363,6 +393,39 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
         _model.HoldSelected(isMove);
         RenderStatus();
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Paste, reporting progress in the status line. A copy from a server can run for minutes, and
+    /// "Pasting…" alone for that long is indistinguishable from a hang.
+    /// </summary>
+    private void PasteHere()
+    {
+        // Created here, on the UI thread, so that its reports are posted back to it.
+        var progress = new Progress<string>(message =>
+        {
+            if (Volatile.Read(ref _disposed) == 0) _status.Text = message;
+        });
+
+        _ = RunNavigationAsync((model, token) => model.Paste(token, progress), "Pasting…");
+    }
+
+    /// <summary>
+    /// Another pane changed the directory this one is showing. Raised on whichever thread the
+    /// change happened on, so it is only a request to refresh on the UI thread.
+    /// </summary>
+    private void OnDirectoryChanged(object? sender, FileBrowserDirectoryChanged change)
+    {
+        var model = _model;
+        if (model is null || ReferenceEquals(sender, model) || !model.IsShowing(change.FileSystem, change.Directory)) return;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            // Not while this pane is busy: starting a refresh cancels the operation in flight, and
+            // that operation is a paste that re-reads the directory when it finishes anyway.
+            if (Volatile.Read(ref _disposed) != 0 || _operationLock.CurrentCount == 0) return;
+            _ = RunNavigationAsync((m, token) => { m.Refresh(token, reportLostSelection: false); return true; });
+        });
     }
 
     private Window? Owner => TopLevel.GetTopLevel(_root) as Window;
@@ -505,8 +568,7 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
                 () =>
                 {
                     if (Volatile.Read(ref _disposed) != 0) return;
-                    if (_list.SelectedItem is Control row) row.Focus();
-                    else _list.Focus();
+                    FocusList();
                 },
                 DispatcherPriority.Input);
         }
@@ -532,6 +594,7 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
     private void DisposeCore()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        FileBrowserChanges.DirectoryChanged -= OnDirectoryChanged;
         _lifetime.Cancel();
         _operation?.Cancel();
         _operation?.Dispose();
@@ -539,6 +602,12 @@ internal sealed class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHandoffRun
 
         // A remote filesystem holds a live socket. Closing the pane must close it, or a session of
         // opening and closing remote panes leaks a connection each time — and servers count those.
-        (_fileSystem as IDisposable)?.Dispose();
+        //
+        // Off the UI thread: disposing takes the connection's lock, and that lock is held for the
+        // whole of any call in flight — a listing from a server that has stopped answering, or a
+        // transfer another pane is running from this one. Waiting for either here would freeze the
+        // shell for as long as it takes (CLAUDE.md section 1, priority 2).
+        if (_fileSystem is not null) FileBrowserClipboard.Shared.Forget(_fileSystem);
+        if (_fileSystem is IDisposable disposable) _ = Task.Run(disposable.Dispose);
     }
 }
