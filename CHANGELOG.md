@@ -7,6 +7,13 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## Unreleased
+
+### Fixed
+
+- A name given to an empty pane was lost as soon as something was opened in it. The pane that
+  replaces it in place — a terminal, an application, an adopted window — now keeps the name.
+
 ## 0.7.2 — 2026-09-23
 
 ### Added

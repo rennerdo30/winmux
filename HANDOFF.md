@@ -38,6 +38,14 @@ SFTP server, including a drag out of a real Explorer window.
 Found on the way: **the headless test app had never been installed** — no
 `[assembly: AvaloniaTestApplication]` — so every headless test had run without control templates.
 
+**2026-09-23 (evening) — a renamed empty pane lost its name** when cmd was opened in it:
+`ReplacePaneAsync` swapped in a fresh `Pane` and nothing carried the custom title. `Pane.KeepCustomTitleOf`
+now does, for every in-place replacement; seen fixed on screen. Not released yet. A reported
+**missing taskbar icon** was not a code fault: every executable embeds it, the window carries both
+sizes, and it came back on the user's machine without a change — most likely Windows' icon cache.
+One Shell test failed once in a full run and passed in seven runs after; it has flaked once before
+(`The_profile_editor_can_be_built_for_every_kind`). Unexplained.
+
 **2026-09-23 (morning) — copying between filesystems** (ADR 0020 addendum), released as 0.7.1.
 
 ## The next action

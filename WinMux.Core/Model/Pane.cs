@@ -248,5 +248,22 @@ public sealed class Pane
         });
     }
 
+    /// <summary>
+    /// Take over the name the user gave <paramref name="previous"/>, when this pane replaces it in
+    /// place — an empty pane becoming a terminal, a window adopted into a pane.
+    ///
+    /// The name belongs to the place in the layout, not to what happened to be running there: a user
+    /// who names an empty pane "build" and then opens cmd in it has named the cmd pane. An automatic
+    /// title is not carried, because it described the old contents.
+    /// </summary>
+    public void KeepCustomTitleOf(Pane previous)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        if (!previous.Restore.TitleIsCustom) return;
+
+        Title = previous.Title;
+        Restore = Restore with { Title = previous.Title, TitleIsCustom = true };
+    }
+
     public override string ToString() => $"{Kind}:{Id} \"{Title}\"";
 }

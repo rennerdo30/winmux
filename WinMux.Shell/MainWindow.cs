@@ -1344,7 +1344,11 @@ internal sealed class MainWindow : Window
     /// </summary>
     private async Task ReplacePaneAsync(PaneId target, Pane replacement, string message)
     {
-        if (_tree.Find(target) is null) return;
+        if (_tree.Find(target)?.Pane is not { } previous) return;
+
+        // Before the runtime is created, so a terminal starts out knowing its title is the user's
+        // and never overwrites it with the one the shell reports.
+        replacement.KeepCustomTitleOf(previous);
 
         var runtime = await CreateNewRuntimeAsync(replacement);
 

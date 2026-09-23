@@ -25,6 +25,36 @@ public class CustomPaneTitleTests
     }
 
     [Fact]
+    public void A_pane_that_replaces_a_named_one_keeps_the_name()
+    {
+        // Name an empty pane, then open cmd in it: the cmd pane is the one that was named. Reported
+        // 2026-09-23 — the name vanished, because the replacement was a fresh pane.
+        var empty = Pane.Empty();
+        empty.Title = "build";
+        empty.Restore = empty.Restore with { Title = "build", TitleIsCustom = true };
+        var terminal = Pane.Terminal("Command Prompt", "cmd.exe");
+
+        terminal.KeepCustomTitleOf(empty);
+
+        Assert.Equal("build", terminal.Title);
+        Assert.Equal("build", terminal.Restore.Title);
+        Assert.True(terminal.Restore.TitleIsCustom);
+        Assert.Equal("cmd.exe", terminal.Restore.Program);
+        Assert.True(RoundTrip(terminal).Restore.TitleIsCustom, "and it survives the session file");
+    }
+
+    [Fact]
+    public void An_automatic_title_is_not_carried_to_the_replacement()
+    {
+        var terminal = Pane.Terminal("Command Prompt", "cmd.exe");
+
+        terminal.KeepCustomTitleOf(Pane.Empty());
+
+        Assert.Equal("Command Prompt", terminal.Title);
+        Assert.False(terminal.Restore.TitleIsCustom);
+    }
+
+    [Fact]
     public void An_automatic_title_round_trips_without_the_flag()
     {
         var restored = RoundTrip(Pane.Terminal("cmd", "cmd.exe"));
