@@ -4,8 +4,8 @@
 
 ## Where we are
 
-**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.1 is released; the
-file-browser work below is not in a release yet.** What is left needs a person, a second
+**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.2 is released, and
+carries everything below.** What is left needs a person, a second
 monitor or a decision — see *Waiting on you*.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
@@ -18,7 +18,8 @@ The file browser speaks SFTP and FTP (ADR 0020), copies between filesystems, and
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
 **Verified 2026-09-23: 837 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
 skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set; they passed the same day against SFTPGo 2.7.6
-portable (how to run it is in `RemoteLiveTests`). `v0.7.1` was tagged 2026-09-23, `v0.7.0` 2026-09-16.
+portable (how to run it is in `RemoteLiveTests`). `v0.7.2` (the file browser, ADR 0021) and `v0.7.1` (cross-filesystem copy) were both tagged on
+2026-09-23; `v0.7.0` was the first release, 2026-09-16.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
@@ -44,9 +45,7 @@ Found on the way: **the headless test app had never been installed** — no
 **Use it for an hour, and write down what annoyed you.** Today proved it twice more: a focus bug that
 survived every test, and a pane that never said what it was showing, both found by looking.
 
-If a release is wanted first: bump `<Version>` in `Directory.Build.props`, rename the changelog's
-*Unreleased* heading, tag, push. The candidates after that are taste calls — decide they are wanted
-before building them: a toolbar without a divider after every group, and a Normal/Compact density
+The candidates after that are taste calls — decide they are wanted before building them: a toolbar without a divider after every group, and a Normal/Compact density
 setting (`LayoutMetrics` is already parameterised).
 
 ## Waiting on you
