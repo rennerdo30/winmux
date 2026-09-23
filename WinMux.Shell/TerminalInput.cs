@@ -76,14 +76,19 @@ internal static class TerminalInput
         {
             // Alt+key is ESC followed by the key's own character: how every terminal program reads
             // Meta. Without this, Alt combinations sent nothing at all.
-            var text = symbol is { Length: > 0 } && !char.IsControl(symbol[0])
-                ? symbol
-                : key switch
-                {
-                    >= Key.A and <= Key.Z => ((char)((shift ? 'A' : 'a') + (key - Key.A))).ToString(),
-                    >= Key.D0 and <= Key.D9 => ((char)('0' + (key - Key.D0))).ToString(),
-                    _ => null,
-                };
+            //
+            // A letter's case comes from Shift, never from the reported symbol: with Alt held,
+            // Windows reports Alt+V's symbol as "V" — upper case — so trusting it sent ESC V, which a
+            // program reads as Alt+Shift+V, and Claude Code's Alt+V image paste never fired. Found in
+            // a key log on the user's machine; the symbol is still the answer for everything else,
+            // where it is what makes Alt work on a non-US layout.
+            var text = key switch
+            {
+                >= Key.A and <= Key.Z => ((char)((shift ? 'A' : 'a') + (key - Key.A))).ToString(),
+                _ when symbol is { Length: > 0 } && !char.IsControl(symbol[0]) => symbol,
+                >= Key.D0 and <= Key.D9 => ((char)('0' + (key - Key.D0))).ToString(),
+                _ => null,
+            };
 
             if (text is not null)
             {

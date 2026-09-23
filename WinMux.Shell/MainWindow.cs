@@ -135,6 +135,9 @@ internal sealed partial class MainWindow : Window
     private Divider? _dragDivider;
     private Avalonia.Point _lastDragPoint;
     private bool _shutdownStarted;
+
+    /// <summary>Closing because an update is waiting to install, which changes what a stuck close should say.</summary>
+    private bool _closingForUpdate;
     private bool _shutdownComplete;
     private bool _paneCloseInProgress;
 
@@ -832,6 +835,11 @@ internal sealed partial class MainWindow : Window
         // KeySymbol is what this keyboard produced, which is the only way a binding written as "%"
         // or ":" can work on a layout that does not put them where a US keyboard does.
         var route = _keymap.Route(new KeyStroke(e.Key, e.KeyModifiers), e.KeySymbol);
+        if (TerminalDebugLog.Enabled)
+        {
+            TerminalDebugLog.Write($"Window key={e.Key} modifiers={e.KeyModifiers} keymap={route.Kind} handled={route.Handled} focused={FocusManager?.GetFocusedElement()?.GetType().Name}");
+        }
+
         e.Handled = route.Handled;
         if (!route.Handled) return;
 
@@ -1112,12 +1120,15 @@ internal sealed partial class MainWindow : Window
         // Persistence is priority 1; do it before handing control to a script that will kill us.
         _session.SaveNow();
 
-        if (!UpdateInstaller.LaunchSwapAndExit(staged.StagedDirectory))
+        if (!UpdateInstaller.LaunchSwapAndExit(staged.StagedDirectory, _session.SessionPath, release.Version.ToString()))
         {
             ShowMessage("the update is downloaded but could not be started", StatusMessageKind.Error);
             return;
         }
 
+        // The user already agreed to "Download and restart", which says programs in panes close.
+        // Asking again here could leave WinMux open under the installer, which then must wait.
+        _closingForUpdate = true;
         Close();
     }
 
@@ -1959,6 +1970,11 @@ internal sealed partial class MainWindow : Window
                 _message = "WinMux stayed open because a pane could not close safely: " + failed.Message +
                            (removed > 0
                                ? $"; {removed} detached pane(s) were removed from this window"
+                               : string.Empty) +
+                           // The installer is waiting for WinMux to exit and gives up, changing
+                           // nothing, after five minutes. Say so, or the update looks lost.
+                           (_closingForUpdate
+                               ? ". The update is waiting for WinMux to close — close that pane, then WinMux"
                                : string.Empty);
                 Relayout();
                 return;

@@ -471,6 +471,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        TerminalDebugLog.Write($"PointerReleased dragging={_dragging} selection={_viewport.HasSelection}");
         base.OnPointerReleased(e);
         if (!_dragging) return;
         _dragging = false;
@@ -512,6 +513,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
+        TerminalDebugLog.Write($"PointerPressed clicks={e.ClickCount} handledAlready={e.Handled}");
         base.OnPointerPressed(e);
         Focus();
 
@@ -543,6 +545,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     protected override void OnTextInput(TextInputEventArgs e)
     {
+        TerminalDebugLog.Write($"TextInput text={Show(e.Text)} suppressed={Show(_suppressedText)}");
         base.OnTextInput(e);
         if (_suppressedText is not null && e.Text == _suppressedText)
         {
@@ -560,6 +563,14 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        if (TerminalDebugLog.Enabled)
+        {
+            TerminalDebugLog.Write(
+                $"KeyDown key={e.Key} modifiers={e.KeyModifiers} symbol={Show(e.KeySymbol)} physical={e.PhysicalKey} " +
+                $"handledAlready={e.Handled} selection={_viewport.HasSelection} focusReporting={_engine.FocusReportingEnabled} " +
+                $"bracketedPaste={_engine.BracketedPasteEnabled}");
+        }
+
         base.OnKeyDown(e);
 
         _suppressedText = null;
@@ -577,6 +588,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         // regardless meant selecting Claude Code's answer and pressing Ctrl+C cancelled Claude.
         if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.C && _viewport.HasSelection)
         {
+            TerminalDebugLog.Write("  -> Ctrl+C with a selection: copying");
             _ = CopySelectionAsync();
             _viewport.ClearSelection();
             InvalidateVisual();
@@ -589,6 +601,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         // screenshot) still can.
         if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.V)
         {
+            TerminalDebugLog.Write("  -> Ctrl+V: paste text, or pass ^V through");
             _ = PasteOrPassThroughAsync();
             e.Handled = true;
             return;
@@ -639,6 +652,14 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         // An Alt combination was sent as ESC + character here; if the platform also reports the
         // character as text input, it must not arrive a second time.
         if (encoded is not null && e.KeyModifiers.HasFlag(KeyModifiers.Alt)) _suppressedText = e.KeySymbol;
+
+        if (TerminalDebugLog.Enabled)
+        {
+            TerminalDebugLog.Write(encoded is null
+                ? "  -> not encoded here (left to text input, or not a key WinMux sends)"
+                : "  -> encoded " + TerminalDebugLog.Describe(encoded));
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Alt) && e.Key == Key.V) _ = LogClipboardAsync("Alt+V");
+        }
 
         if (!bytes.IsEmpty)
         {
@@ -712,9 +733,44 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         _ = ObserveExitAsync(session);
     }
 
+    /// <summary>
+    /// With <c>WINMUX_DEBUG_PTY=1</c>, every byte the program sends is saved, and every resize noted
+    /// against the byte offset it happened at — enough to replay a screen that drew wrong.
+    /// </summary>
+    private FileStream? _capture;
+    private StreamWriter? _captureEvents;
+    private long _captured;
+
+    private void OpenCapture()
+    {
+        if (Environment.GetEnvironmentVariable("WINMUX_DEBUG_PTY") != "1") return;
+        try
+        {
+            var directory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinMux", "pty-capture");
+            Directory.CreateDirectory(directory);
+            var stem = Path.Combine(directory, $"{DateTime.Now:yyyyMMdd-HHmmss}-{Environment.ProcessId}-{Guid.NewGuid():N}"[..40]);
+            _capture = new FileStream(stem + ".bin", FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            _captureEvents = new StreamWriter(stem + ".events.log") { AutoFlush = true };
+            _captureEvents.WriteLine($"program {_program} {string.Join(' ', _arguments)}");
+            _captureEvents.WriteLine($"offset 0 size {_engine.Columns}x{_engine.Rows}");
+        }
+        catch (Exception)
+        {
+            _capture = null;
+        }
+    }
+
+    private void CaptureEvent(string text)
+    {
+        try { _captureEvents?.WriteLine($"offset {Interlocked.Read(ref _captured)} {text}"); }
+        catch (Exception) { }
+    }
+
     private async Task PumpOutputAsync(IPtySession session, CancellationToken cancellationToken)
     {
         var buffer = new byte[16 * 1024];
+        OpenCapture();
         try
         {
             while (true)
@@ -723,6 +779,17 @@ internal sealed class TerminalPaneControl : Control, IDisposable
                 if (read == 0)
                 {
                     return;
+                }
+
+                if (_capture is not null)
+                {
+                    try
+                    {
+                        _capture.Write(buffer, 0, read);
+                        _capture.Flush();
+                        Interlocked.Add(ref _captured, read);
+                    }
+                    catch (Exception) { }
                 }
 
                 _engine.Write(buffer.AsSpan(0, read));
@@ -770,6 +837,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         // grows the grid, and growing it without reflow left the content anchored to the bottom —
         // which is why every terminal opened with its prompt a third of the way down the pane and
         // blank space above it.
+        CaptureEvent($"resize {columns}x{rows} (engine reflow: true)");
         _engine.Resize(columns, rows, reflow: true);
         lock (_gate)
         {
@@ -944,6 +1012,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     private async Task WriteInputAsync(ReadOnlyMemory<byte> bytes)
     {
+        if (TerminalDebugLog.Enabled) TerminalDebugLog.Write("  write to program: " + TerminalDebugLog.Describe(bytes.Span));
         SnapToLiveScreen();
         try
         {
@@ -999,6 +1068,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         }
 
         await clipboard.SetTextAsync(text.ToString());
+        TerminalDebugLog.Write($"  copied {text.Length} characters to the clipboard");
     }
 
     private async Task CopyVisibleTextAsync()
@@ -1030,6 +1100,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     private async Task PasteOrPassThroughAsync()
     {
+        if (TerminalDebugLog.Enabled) await LogClipboardAsync("Ctrl+V");
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         var text = clipboard is null ? null : await clipboard.TryGetTextAsync();
         if (!string.IsNullOrEmpty(text))
@@ -1039,6 +1110,29 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         }
 
         await WriteInputAsync(new byte[] { 0x16 });
+    }
+
+    private static string Show(string? text) =>
+        text is null ? "null" : "\"" + string.Concat(text.Select(c => c < ' ' ? $"<U+{(int)c:X4}>" : c.ToString())) + "\"";
+
+    /// <summary>What the clipboard held when a paste key arrived — an image is what Claude Code looks for.</summary>
+    private async Task LogClipboardAsync(string key)
+    {
+        try
+        {
+            if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+            {
+                TerminalDebugLog.Write($"  clipboard at {key}: no clipboard available");
+                return;
+            }
+
+            var formats = await clipboard.GetDataFormatsAsync();
+            TerminalDebugLog.Write($"  clipboard at {key}: {string.Join(", ", formats.Select(f => f.ToString()))}");
+        }
+        catch (Exception ex)
+        {
+            TerminalDebugLog.Write($"  clipboard at {key}: could not be read ({ex.GetType().Name}: {ex.Message})");
+        }
     }
 
     /// <summary>Send pasted text the way the program asked for it — bracketed when it enabled that.</summary>

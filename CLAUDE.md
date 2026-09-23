@@ -258,6 +258,10 @@ tables to match the tree produces `[[windows.root.children.children.children]]` 
 JSON it was meant to improve on. Panes are flat `[[windows.panes]]` tables and are explicitly the
 part worth hand-editing. Paths are written as TOML literal strings so backslashes survive unescaped.
 
+**The default session is `%APPDATA%\WinMux\session.toml`**, beside the settings, never a path
+relative to the working directory ([ADR 0023](docs/adr/0023-session-location-and-in-place-updates.md)).
+Relative, it followed a double-click into the installation, where the updater deleted it.
+
 Implemented in `WinMux.Core/Session`: `SessionFile.Save`/`Load` is the whole surface. Saving is
 atomic; loading an unreadable file quarantines a copy and refuses rather than starting empty.
 Reading rejects dangling references, duplicate ids, unreachable nodes and cycles by name.

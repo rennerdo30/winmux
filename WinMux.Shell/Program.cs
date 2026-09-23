@@ -16,6 +16,9 @@ internal sealed class App : Application
     public WinMux.Shell.Keymap.KeymapConfiguration Keymap { get; init; } = WinMux.Shell.Keymap.KeymapConfiguration.TmuxDefaults();
     public bool Restored { get; init; }
 
+    /// <summary>What startup has to say before anything else — an update's outcome, a moved session.</summary>
+    public IReadOnlyList<string> StartupNotices { get; init; } = [];
+
     private Avalonia.Platform.PlatformColorValues? _platformColors;
 
     private void ApplyTheme()
@@ -97,6 +100,10 @@ internal sealed class App : Application
                             + "so anything that was running has to be started again");
                     }
 
+                    // After the restore line, so these are what is left on screen: each is something
+                    // the user needs to know once, and the status line is where WinMux says things.
+                    foreach (var notice in StartupNotices) windows[0].ShowMessage(notice);
+
                     await windows[0].ShowCwdIntegrationAsync(onlyIfUnseen: true);
                 }
                 catch (InvalidOperationException ex)
@@ -128,7 +135,27 @@ internal static class Program
             Console.Error.WriteLine(ex.Message);
             return 64;
         }
-        string sessionPath = arguments.SessionPath ?? SessionFile.DefaultFileName;
+        SessionLocation.Resolution location;
+        try
+        {
+            location = SessionLocation.Resolve(
+                arguments.SessionPath,
+                [Environment.CurrentDirectory, AppContext.BaseDirectory]);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ShowStartupError("WinMux could not move the session to its new place", ex.Message);
+            return 1;
+        }
+
+        string sessionPath = location.Path;
+        var notices = new List<string>();
+        if (location.MigratedFrom is { } oldPlace)
+        {
+            notices.Add($"Your session now lives in {sessionPath}; the old copy at {oldPlace} was left where it was");
+        }
+
+        if (Update.UpdateInstaller.CollectResult() is { } updated) notices.Add(updated);
 
         SessionSnapshot snapshot;
         bool restored;
@@ -172,15 +199,19 @@ internal static class Program
             return 2;
         }
 
-        return BuildAvaloniaApp(snapshot, sessionPath, keymap, restored).StartWithClassicDesktopLifetime(argv);
+        return BuildAvaloniaApp(snapshot, sessionPath, keymap, restored, notices).StartWithClassicDesktopLifetime(argv);
     }
 
     private static AppBuilder BuildAvaloniaApp(
         SessionSnapshot snapshot,
         string sessionPath,
         Keymap.KeymapConfiguration keymap,
-        bool restored) =>
-        AppBuilder.Configure(() => new App { Snapshot = snapshot, SessionPath = sessionPath, Keymap = keymap, Restored = restored })
+        bool restored,
+        IReadOnlyList<string> notices) =>
+        AppBuilder.Configure(() => new App
+            {
+                Snapshot = snapshot, SessionPath = sessionPath, Keymap = keymap, Restored = restored, StartupNotices = notices,
+            })
             .UsePlatformDetect()
             .LogToTrace();
 

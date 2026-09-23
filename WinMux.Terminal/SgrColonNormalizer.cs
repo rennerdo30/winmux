@@ -97,8 +97,8 @@ internal sealed class SgrColonNormalizer
 
                     if (value is >= CsiFinalLow and <= CsiFinalHigh)
                     {
-                        if (value != SelectGraphicRendition) Flush();
-                        else if (HasPrivatePrefix()) Drop();
+                        if (IsMisreadPrivateSequence(value)) Drop();
+                        else if (value != SelectGraphicRendition) Flush();
                         else EmitRewritten();
 
                         _state = State.Text;
@@ -195,6 +195,36 @@ internal sealed class SgrColonNormalizer
     /// underlined with nothing to undo it. That is the bug that was reported.
     /// </summary>
     private bool HasPrivatePrefix() => _sequence.Count > 2 && _sequence[2] is >= 0x3C and <= 0x3F;
+
+    /// <summary>
+    /// A private sequence the engine would execute as its public namesake. Each is a query or a
+    /// keyboard-protocol setting — WinMux handles input itself, and not answering a query is how a
+    /// terminal says it does not support the feature — so dropping it loses nothing.
+    ///
+    /// <list type="bullet">
+    /// <item><c>ESC[&gt;4m</c> and every other private <c>m</c>: modifyOtherKeys, read as SGR — the
+    /// whole screen underlined.</item>
+    /// <item><c>ESC[?u</c>, <c>ESC[&gt;1u</c>, <c>ESC[&lt;u</c>, <c>ESC[=1;1u</c>: kitty's keyboard
+    /// protocol query, push, pop and set, read as <c>ESC[u</c> — <i>restore the saved cursor</i>.
+    /// Claude Code asks <c>ESC[?u</c> once at startup; the cursor jumped to wherever it was last
+    /// saved, and every relative move after it — its whole interface is drawn with them — landed
+    /// rows away from where it was meant. The trust dialog could not be answered, and redraws piled
+    /// on top of each other.</item>
+    /// <item><c>ESC[&gt;0q</c>: XTVERSION, "which terminal are you", which the engine has no answer
+    /// for and has no business reading as anything else.</item>
+    /// </list>
+    ///
+    /// Found by replaying a capture of the bytes Claude Code sent through the engine and watching the
+    /// cursor, after the dialog had been reported as "too buggy to use".
+    /// </summary>
+    private bool IsMisreadPrivateSequence(byte final) =>
+        HasPrivatePrefix() && final switch
+        {
+            SelectGraphicRendition => true,
+            (byte)'u' => true,
+            (byte)'q' => _sequence[2] == (byte)'>',
+            _ => false,
+        };
 
     /// <summary>
     /// Discard the sequence rather than pass it on.

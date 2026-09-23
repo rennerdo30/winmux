@@ -7,6 +7,37 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## 0.7.4 — 2026-09-24
+
+### Fixed
+
+- **Claude Code was unusable in a terminal pane**: its trust dialog could not be answered and its
+  screens were drawn over each other. At startup it asks `ESC[?u` (kitty keyboard protocol), which
+  the terminal engine executed as `ESC[u`, restore cursor, sending every later cursor move to the
+  wrong row. Private keyboard-protocol and version queries are now filtered before the engine
+  ([ADR 0018 addendum](docs/adr/0018-terminal-emulation-supply-chain.md)).
+- **`Alt+V` image paste in Claude Code** sent Alt+Shift+V: Windows reports the key's character as
+  "V" while Alt is held. An Alt+letter now takes its case from Shift.
+
+- **The updater could not install**, and did not restart WinMux when it failed
+  ([ADR 0023](docs/adr/0023-session-location-and-in-place-updates.md)). It renamed the whole
+  installation directory, which Windows refuses while anything has a handle inside it. It now
+  replaces files one at a time — renaming each old one aside, which Windows allows even for a file
+  in use — rolls everything back if any file cannot be replaced, **always starts WinMux again**, and
+  reports the outcome in the status bar with a log in `%LOCALAPPDATA%\WinMux\update.log`.
+  **Updating from 0.7.3 or earlier needs one manual install**: the old version's installer is the
+  one that runs.
+- **The session could be deleted by an update.** Its default was `session.toml` in the working
+  directory — the installation, when WinMux was started by double-clicking it — and the old updater
+  deleted the old installation. The session now lives in `%APPDATA%\WinMux\session.toml`; one left in
+  the old place is copied there on first start and the original kept.
+
+### Added
+
+- **Diagnostics for terminal problems**, off unless asked for: `WINMUX_DEBUG_KEYS=1` logs what
+  each key became (`%LOCALAPPDATA%\WinMux\keys-debug.log` — it records what is typed), and
+  `WINMUX_DEBUG_PTY=1` captures a pane's raw output for replay.
+
 ## 0.7.3 — 2026-09-23
 
 ### Added

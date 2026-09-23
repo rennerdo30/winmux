@@ -178,3 +178,26 @@ Two things this changes about the decision above:
 The recommendation is unchanged in shape but sharper in urgency: **benchmark
 `Iciclecreek.Avalonia.Terminal` against ADR 0002's numbers before v1.** The question is no longer
 only "can the source be read" but "who fixes the next one".
+
+## Addendum, 2026-09-24 — the second one, and it made Claude Code unusable
+
+"The next one needs its own" arrived eight days later. Reported as Claude Code in a WinMux pane
+being "totally bugged": its folder-trust dialog could not be answered, and its screens were drawn
+on top of each other. A capture of the raw PTY stream, replayed through the engine, showed why.
+At startup Claude Code asks `ESC[?u` — kitty's keyboard protocol: supported? — and the engine read
+it as `ESC[u`, *restore the saved cursor*. The cursor jumped to wherever it was last saved, and
+every relative move afterwards, which is how Claude Code draws its whole interface, landed rows
+from its target.
+
+Same defect as the underline one: a private prefix (`<`, `=`, `>`, `?`) ignored, and the public
+sequence of the same final byte executed instead. The normalizer now also drops private CSI
+sequences ending in `u` (kitty query, push, pop, set) and `>` + `q` (XTVERSION). Not answering is
+correct for both: it is how a terminal says it does not support them. `KeyboardProtocolQueryTests`
+pins each, with the public `ESC[u` as the control case that proves a restore is visible to the test,
+and a trimmed copy of the captured dialog stream fed one byte at a time. Removing the filter turns
+five of them red.
+
+The generalisation this ADR predicted now has two data points: **any** private sequence the engine
+does not know is at risk of being executed as its public namesake. Opt-in capture
+(`WINMUX_DEBUG_PTY=1`, raw bytes and resizes to `%LOCALAPPDATA%\WinMux\pty-capture`) exists so the
+third can be found the same way — from a replay, not a guess.

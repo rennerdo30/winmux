@@ -21,9 +21,9 @@ graph LR
     F -->|Yes| G[Download the zip]
     G --> H[Check SHA-256<br/>against checksums.txt]
     H -->|Mismatch| I[Discard, and say so]
-    H -->|Match| J[Unpack beside the install]
+    H -->|Match| J[Unpack into your profile]
     J --> K[Save the session]
-    K --> L[Swap directories and relaunch]
+    K --> L[Replace files and relaunch]
 ```
 
 ## Verification is not optional
@@ -39,10 +39,21 @@ one.
 ## Why it restarts
 
 Windows keeps a running executable locked, so an application cannot overwrite itself in place.
-WinMux unpacks the new version into a directory beside the installation, **saves your session**, and
-hands a small script the job of swapping the directories once WinMux has exited and starting it
-again. The old installation is kept until the new one has launched, so a failed swap has something
-to go back to.
+WinMux unpacks the new version into `%LOCALAPPDATA%\WinMux\update-staged`, **saves your session**,
+and hands a small script the job once WinMux has closed. The script renames each old file aside —
+Windows allows that even for a file still in use — and puts the new one in its place. If any file
+cannot be replaced, everything is put back as it was. **Either way WinMux starts again**, on the
+same session, and says in the status bar whether the update went in. Every step is written to
+`%LOCALAPPDATA%\WinMux\update.log`.
+
+If you have edited `foreign-app-quirks.json`, your copy is kept beside the new one as
+`foreign-app-quirks.json.before-update`.
+
+<Aside type="caution" title="Updating from 0.7.3 or earlier">
+The updater in those versions could fail to install and not restart. Install 0.7.4 once by hand —
+download the zip from the releases page and unpack it over your WinMux folder with WinMux closed.
+Updates after that use the new installer.
+</Aside>
 
 Your panes come back afterwards the same way they do after any restart — the programs in them are
 started again, not resumed.

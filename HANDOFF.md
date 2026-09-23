@@ -4,74 +4,59 @@
 
 ## Where we are
 
-**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.3 is released**,
-carrying terminal notifications, the terminal copy/paste fixes and the renamed-pane fix — all tested,
-but the toast and the new keys not yet seen on screen (*The next action*). What is left needs a person, a second monitor or a decision — see *Waiting on you*.
+**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.4 is released** —
+Claude Code now works in a terminal pane (rendering, Alt+V image paste, copy and paste), the updater
+installs and always restarts, and the session lives in `%APPDATA%\WinMux`. What is left needs a
+person, a second monitor or a decision — see *Waiting on you*.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
 `WinMux.Panes`; the shell declares zero `DllImport` (ADR 0013); tab groups nest anywhere (ADR 0014);
 any installed app can be a profile (ADR 0015); the window wears its own Windows 11 caption (ADR 0016).
-The file browser speaks SFTP/FTP, copies between filesystems, drags and drops (ADRs 0020, 0021). A
-program in a terminal pane — Claude Code above all — can now ask for the user and get a **Windows
-notification** ([ADR 0022](docs/adr/0022-terminal-notifications.md)).
+The file browser speaks SFTP/FTP, copies between filesystems, drags and drops (ADRs 0020, 0021).
+Terminal programs can raise Windows notifications (ADR 0022).
 
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-23: 886 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
-skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set; they passed the same day against SFTPGo 2.7.6
-portable (how to run it is in `RemoteLiveTests`). `v0.7.3`, `v0.7.2` and `v0.7.1` were all tagged on 2026-09-23;
-`v0.7.0` was the first release, 2026-09-16.
+**Verified 2026-09-24: 902 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
+skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set (how to run a server: `RemoteLiveTests`).
+Releases: `v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
 
 ## What just happened
 
-**2026-09-23 (latest) — copy and paste in terminal panes**, reported with Claude Code: text would
-not copy, images would not paste. Six gaps, all in `TerminalPaneControl`'s key handling: `Ctrl+C`
-with a selection sent an interrupt; `Ctrl+V` sent a raw ^V; `Alt` combinations sent nothing (Claude
-Code's `Alt+V` image paste on Windows); `Shift+Tab` sent Tab; pastes were never bracketed; OSC 52
-was ignored. Encoding now lives in `TerminalInput` (pure, tested) and follows xterm and Windows
-Terminal. **Not yet tried on screen** — by the user's choice, nothing drives the desktop without a
-foreground check; see *The next action*.
+**2026-09-24 — Claude Code in a pane, found with the user's own debug build.**
+- **Rendering**: Claude Code asks `ESC[?u` at startup; the engine executed it as `ESC[u` (restore
+  cursor), so every later relative move landed rows off. Found by replaying an opt-in PTY capture
+  through the engine; fixed in the normalizer ([ADR 0018 addendum](docs/adr/0018-terminal-emulation-supply-chain.md)).
+- **Alt+V** sent `ESC V` (Alt+Shift+V) because Windows reports Alt+V's symbol as "V". Found in the
+  opt-in key log (`WINMUX_DEBUG_KEYS=1`). Both confirmed working on screen by the user.
+- **The updater and the session** ([ADR 0023](docs/adr/0023-session-location-and-in-place-updates.md)):
+  in-place, rolled-back, always-relaunching updates; session moved out of the working directory,
+  where an update could delete it. `UpdateScriptTests` runs the real script.
+- "Claude Code has no colours" was the verifier's own `NO_COLOR=1` leaking into the panes it
+  launched — see *Do not re-do*.
 
-**2026-09-23 (late) — terminal notifications** ([ADR 0022](docs/adr/0022-terminal-notifications.md)).
-OSC 9/777/99 and BEL are parsed; focus reports (`ESC[I`/`ESC[O`) are sent; `TerminalAttention`
-decides; `IDesktopNotifier` shows a notification-area balloon that Windows turns into a toast; a
-click returns to the pane. Settings has the policy and a button that sets Claude Code's
-`preferredNotifChannel`. Seen on screen as far as the status bar ("claude: Claude needs your
-permission to use Bash" from a background pane) and the notifier's own calls succeeding. **The toast
-itself was not seen**: Windows notifications are switched off on this machine, which WinMux now
-detects and says. Claude Code was seen running correctly in a pane; its own notification reaching
-WinMux was not confirmed before the session stopped driving the UI.
-
-Also this session: the file browser's drag and drop, icons, details and location badges (ADR 0021,
-released as 0.7.2); a renamed empty pane losing its name when something opened in it
-(`Pane.KeepCustomTitleOf`, committed). A missing taskbar icon was Windows' icon cache.
-
-**Two things went wrong in verification and are recorded so they are not repeated** — see
-*Driving the UI from a script* below: keystrokes sent to a window that did not have focus, and test
-instances left open that the user then closed, which were taken for crashes.
+**2026-09-23** — notifications (ADR 0022), terminal copy and paste (`TerminalInput`), the file browser
+(ADR 0021), a renamed pane keeping its name. `git log` has the detail.
 
 ## The next action
 
-**Try Claude Code in a pane, with the user at the keyboard:** select text and press `Ctrl+C`, paste
-with `Ctrl+V`, copy a screenshot and press `Alt+V`, and paste a multi-line block. Then **see a Claude
-Code notification arrive**. Turn Windows notifications
-on (Settings › System › Notifications), set up Claude Code from WinMux's Settings, start `claude` in
-a pane, give it a short task, and switch to another pane. Expected: a toast naming the pane; clicking
-it returns to the pane. If nothing arrives, `%LOCALAPPDATA%\WinMux\crash.log` and the status bar say
-whether WinMux heard anything. Anything that fails there is a 0.7.4.
+**Have the user install 0.7.4 by hand once** (0.7.3's installer is the broken one; unzip over the
+WinMux folder with WinMux closed), then confirm the next update — 0.7.5, whenever it comes — installs
+itself through the new script. Still unseen on screen: the notification toast (needs Windows
+notifications switched on) and Claude Code's own notification reaching WinMux.
 
 ## Waiting on you
 
 Only a person, a machine setting or a judgement can move these; nothing in the code waits on them.
 
-- **The notification check above** — it needs Windows notifications switched on, which is the
-  user's setting to change, and a person watching.
-- **Run the mixed-DPI check.** Set one display to a different scale, then
-  `scripts/verify-mixed-dpi.ps1`. The last measurement in the project never taken.
-- **Decide `Terminal.Emulation`.** [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md) has
-  four costed options and a recommendation. Nobody has asked the author; that is a message.
+- **Install 0.7.4 by hand**, and later watch one update install itself.
+- **The notification check**: Windows notifications on, Claude Code set up from Settings, a task in
+  a pane, switch away — a toast naming the pane should appear.
+- **Run the mixed-DPI check.** One display at a different scale, then `scripts/verify-mixed-dpi.ps1`.
+- **Decide `Terminal.Emulation`.** [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md) — now
+  with a second engine defect behind it.
 
 ## Standing constraints
 
@@ -213,6 +198,15 @@ that a future session recognises them as answers rather than rediscovering them 
   became uncreatable. `new KeyGesture(Key.Delete, KeyModifiers.None)` is checked by the compiler.
 
 **Driving the UI from a script**
+- **Do not trust colours, or Claude Code's behaviour, in a WinMux the agent launched.** Its panes
+  inherit the agent's environment: `NO_COLOR=1` made Claude Code draw without colour, and
+  `CLAUDE_CODE_*` markers made it think it was a child session. Clear them before `Start-Process`.
+- **Do not expect `SetForegroundWindow` to work from a background script** while the user is using
+  another window — Windows' foreground lock refuses it. The keystroke guard then correctly sends
+  nothing. Ask the user to click the window, or give them a debug build to drive themselves.
+- **To see what a pane receives, capture it** (`WINMUX_DEBUG_PTY=1`) and replay the bytes through
+  `TerminalEmulationEngine` with a `dotnet run` file-based program. That found the `ESC[?u` bug in
+  minutes after an evening of guessing from screenshots.
 - **Never send a keystroke or click without first checking that the foreground window is the one you
   launched** — compare `GetForegroundWindow()` with its handle, right before sending, and send
   nothing if it differs. `AppActivate` returning true is not that check. On 2026-09-23 a command and

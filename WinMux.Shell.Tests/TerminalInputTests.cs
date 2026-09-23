@@ -20,6 +20,15 @@ public sealed class TerminalInputTests
     }
 
     [Fact]
+    public void Alt_and_a_letter_takes_its_case_from_shift_not_from_the_reported_symbol()
+    {
+        // What Windows really reports for Alt+V, from the user's key log: symbol "V", upper case,
+        // with no Shift held. Sending that made it Alt+Shift+V.
+        Assert.Equal("\u001bv", Key(Avalonia.Input.Key.V, KeyModifiers.Alt, "V"));
+        Assert.Equal("\u001bV", Key(Avalonia.Input.Key.V, KeyModifiers.Alt | KeyModifiers.Shift, "V"));
+    }
+
+    [Fact]
     public void Alt_uses_the_character_the_layout_produces()
     {
         // On a Japanese keyboard Shift+2 is a double quote; the symbol, not the key, decides.
