@@ -24,7 +24,7 @@ Windows Terminal and Visual Studio; installing it gives you the intended look.
 2. Check it against `checksums.txt`, published with every release:
 
    ```powershell
-   (Get-FileHash -Algorithm SHA256 .\WinMux-0.7.3-win-x64.zip).Hash.ToLower()
+   (Get-FileHash -Algorithm SHA256 .\WinMux-0.7.4-win-x64.zip).Hash.ToLower()
    ```
 
 3. Unzip it wherever you keep applications, and run `WinMux.exe`.
@@ -68,7 +68,7 @@ Open it again tomorrow and the panes come back, in the same shape, in the same d
 
 | | |
 |---|---|
-| Session | `session.toml` beside the executable, or whatever you opened |
+| Session | `session.toml` in `%APPDATA%\WinMux`, or whatever you opened |
 | Settings | `settings.toml` in your user profile |
 | Profiles | `profiles.toml`, beside the settings |
 | Application quirks | `foreign-app-quirks.json` beside the executable — editable |
