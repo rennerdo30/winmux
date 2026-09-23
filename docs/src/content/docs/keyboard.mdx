@@ -42,7 +42,18 @@ Inside a terminal, `Shift+PageUp` / `PageDown` scroll the history and `Ctrl+Shif
 to either end. Unshifted `PageUp` is never intercepted — it belongs to whatever is running in the
 pane. Anything you type returns the view to the live screen.
 
-`Ctrl+Shift+C` copies the selection, `Ctrl+Shift+V` and `Shift+Insert` paste.
+**Copy and paste work the way Windows Terminal does.** Select with the mouse, then `Ctrl+C` copies
+it; with nothing selected, `Ctrl+C` is the interrupt it always was. `Ctrl+V` pastes text.
+`Ctrl+Shift+C`, `Ctrl+Shift+V` and `Shift+Insert` work too. A program that copies for you — Claude
+Code, vim's `"+y` — reaches the Windows clipboard (OSC 52); programs can write to the clipboard but
+never read it.
+
+**Pasting an image into Claude Code** — press `Alt+V`, as in Windows Terminal. If the clipboard holds
+an image and no text, `Ctrl+V` is passed through to the program as well, so either works.
+
+Multi-line pastes arrive as one paste when the program asks for bracketed paste, so a pasted block
+does not run line by line. `Alt` combinations, `Shift+Tab`, function keys and modified arrows
+(`Ctrl+Left` and so on) reach the program as a terminal program expects them.
 
 ## In a file-browser pane
 

@@ -75,6 +75,8 @@ public static class SettingsFile
             TerminalFontFamily = String(root, "terminal_font_family", WinMuxSettings.Defaults.TerminalFontFamily),
             TerminalFontSize =
                 Number(root, "terminal_font_size", WinMuxSettings.Defaults.TerminalFontSize, 6, 72, problems),
+            TerminalNotifications =
+                Enum(root, "terminal_notifications", WinMuxSettings.Defaults.TerminalNotifications, problems),
         };
 
         return new LoadResult(
@@ -127,6 +129,10 @@ public static class SettingsFile
             terminal_font_family         = '{settings.TerminalFontFamily}'
             terminal_font_size           = {settings.TerminalFontSize.ToString(CultureInfo.InvariantCulture)}
 
+            # When a program in a terminal asks for attention and you are not looking at its pane:
+            # off, messages (OSC 9/777/99, as Claude Code sends), messages-and-bells.
+            terminal_notifications       = '{Text(settings.TerminalNotifications)}'
+
             """;
     }
 
@@ -135,6 +141,13 @@ public static class SettingsFile
         ThemePreference.Dark => "dark",
         ThemePreference.Light => "light",
         _ => "system",
+    };
+
+    private static string Text(TerminalNotificationPolicy value) => value switch
+    {
+        TerminalNotificationPolicy.Off => "off",
+        TerminalNotificationPolicy.Messages => "messages",
+        _ => "messages-and-bells",
     };
 
     private static string Text(UpdateChannel value) => value switch

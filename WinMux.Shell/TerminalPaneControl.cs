@@ -100,6 +100,8 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         _engine.TitleChanged += OnEngineTitleChanged;
         _engine.WorkingDirectoryChanged += OnEngineWorkingDirectoryChanged;
         _engine.Response += OnEngineResponse;
+        _engine.NotificationRequested += OnEngineNotification;
+        _engine.ClipboardWriteRequested += OnEngineClipboardWrite;
 
         Focusable = true;
         ClipToBounds = true;
@@ -114,6 +116,12 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     public event Action<string>? WorkingDirectoryChanged;
 
     public event Action<int>? Exited;
+
+    /// <summary>
+    /// The program asked for attention (OSC 9/777/99 or a bell). Raised on the UI thread; whether it
+    /// becomes a Windows notification is the window's decision, not the pane's.
+    /// </summary>
+    public event Action<TerminalNotification>? NotificationRequested;
 
     public int? ProcessId
     {
@@ -530,9 +538,19 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         e.Handled = true;
     }
 
+    /// <summary>Text the key handler has already sent, to be ignored if it also arrives as text input.</summary>
+    private string? _suppressedText;
+
     protected override void OnTextInput(TextInputEventArgs e)
     {
         base.OnTextInput(e);
+        if (_suppressedText is not null && e.Text == _suppressedText)
+        {
+            _suppressedText = null;
+            e.Handled = true;
+            return;
+        }
+
         if (!string.IsNullOrEmpty(e.Text))
         {
             _ = WriteInputAsync(Encoding.UTF8.GetBytes(e.Text));
@@ -544,10 +562,34 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     {
         base.OnKeyDown(e);
 
+        _suppressedText = null;
+
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
             e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.C)
         {
             _ = CopySelectionAsync();
+            e.Handled = true;
+            return;
+        }
+
+        // Plain Ctrl+C copies when something is selected and interrupts when nothing is — Windows
+        // Terminal's rule, and the one a Windows user's hands already follow. Sending the interrupt
+        // regardless meant selecting Claude Code's answer and pressing Ctrl+C cancelled Claude.
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.C && _viewport.HasSelection)
+        {
+            _ = CopySelectionAsync();
+            _viewport.ClearSelection();
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
+        // Plain Ctrl+V pastes text. When the clipboard holds no text — an image, say — the key goes
+        // through as Ctrl+V, so a program that reads the clipboard itself (Claude Code pasting a
+        // screenshot) still can.
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.V)
+        {
+            _ = PasteOrPassThroughAsync();
             e.Handled = true;
             return;
         }
@@ -591,34 +633,12 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             return;
         }
 
-        ReadOnlyMemory<byte> bytes = default;
-        var keyValue = (int)e.Key;
-        if ((e.KeyModifiers & KeyModifiers.Control) != 0 &&
-            keyValue >= (int)Key.A &&
-            keyValue <= (int)Key.Z)
-        {
-            bytes = new[] { (byte)(keyValue - (int)Key.A + 1) };
-        }
-        else
-        {
-            bytes = e.Key switch
-            {
-                Key.Enter => "\r"u8.ToArray(),
-                Key.Back => new byte[] { 0x7f },
-                Key.Left => "\u001b[D"u8.ToArray(),
-                Key.Right => "\u001b[C"u8.ToArray(),
-                Key.Up => "\u001b[A"u8.ToArray(),
-                Key.Down => "\u001b[B"u8.ToArray(),
-                Key.Home => "\u001b[H"u8.ToArray(),
-                Key.End => "\u001b[F"u8.ToArray(),
-                Key.Delete => "\u001b[3~"u8.ToArray(),
-                Key.PageUp => "\u001b[5~"u8.ToArray(),
-                Key.PageDown => "\u001b[6~"u8.ToArray(),
-                Key.Tab => "\t"u8.ToArray(),
-                Key.Escape => new byte[] { 0x1b },
-                _ => default,
-            };
-        }
+        var encoded = TerminalInput.EncodeKey(e.Key, e.KeyModifiers, e.KeySymbol, _engine.ApplicationCursorKeysEnabled);
+        ReadOnlyMemory<byte> bytes = encoded ?? default;
+
+        // An Alt combination was sent as ESC + character here; if the platform also reports the
+        // character as text input, it must not arrive a second time.
+        if (encoded is not null && e.KeyModifiers.HasFlag(KeyModifiers.Alt)) _suppressedText = e.KeySymbol;
 
         if (!bytes.IsEmpty)
         {
@@ -629,6 +649,8 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
+        if (change.Property == IsKeyboardFocusWithinProperty) ReportFocus();
+
         base.OnPropertyChanged(change);
         if (change.Property == BoundsProperty && Interlocked.Exchange(ref _resizeQueued, 1) == 0)
         {
@@ -648,6 +670,8 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         _engine.TitleChanged -= OnEngineTitleChanged;
         _engine.WorkingDirectoryChanged -= OnEngineWorkingDirectoryChanged;
         _engine.Response -= OnEngineResponse;
+        _engine.NotificationRequested -= OnEngineNotification;
+        _engine.ClipboardWriteRequested -= OnEngineClipboardWrite;
         _lifetime.Cancel();
         lock (_gate)
         {
@@ -822,6 +846,102 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         if (moved) InvalidateVisual();
     }
 
+    /// <summary>
+    /// A program copying to the clipboard with OSC 52 — Claude Code's copy, vim's "+y. Raised on the
+    /// PTY reader thread under the engine's lock, so it is handed to the UI thread, which owns the
+    /// clipboard.
+    /// </summary>
+    private void OnEngineClipboardWrite(string text)
+    {
+        Dispatcher.UIThread.Post(async () =>
+        {
+            if (Volatile.Read(ref _disposed) != 0) return;
+            if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
+        });
+    }
+
+    private void OnEngineNotification(TerminalNotification notification)
+    {
+        // Raised under the engine's lock on the PTY reader thread; never call back from there.
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (Volatile.Read(ref _disposed) == 0) NotificationRequested?.Invoke(notification);
+        });
+    }
+
+    // ---- focus reporting ------------------------------------------------------------------
+
+    private Window? _focusWindow;
+    private bool? _reportedFocus;
+
+    /// <summary>
+    /// Focused, for the program's purposes: this pane has the keyboard and WinMux is the active
+    /// window. Switching to another application is looking away just as much as switching pane.
+    /// </summary>
+    private bool HasEffectiveFocus => IsKeyboardFocusWithin && _focusWindow?.IsActive == true;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _focusWindow = TopLevel.GetTopLevel(this) as Window;
+        if (_focusWindow is not null)
+        {
+            _focusWindow.Activated += OnWindowActivationChanged;
+            _focusWindow.Deactivated += OnWindowActivationChanged;
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        if (_focusWindow is not null)
+        {
+            _focusWindow.Activated -= OnWindowActivationChanged;
+            _focusWindow.Deactivated -= OnWindowActivationChanged;
+            _focusWindow = null;
+        }
+
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnWindowActivationChanged(object? sender, EventArgs e) => ReportFocus();
+
+    /// <summary>
+    /// Tell the program about a focus change, if it asked to be told and the state really changed.
+    /// Only transitions are sent: a program that sees two focus-ins in a row may take the second
+    /// as a fresh return from elsewhere.
+    /// </summary>
+    private void ReportFocus()
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+
+        var focused = HasEffectiveFocus;
+        if (_reportedFocus == focused) return;
+        _reportedFocus = focused;
+
+        if (!_engine.FocusReportingEnabled) return;
+        _ = WriteFocusReportAsync(focused ? "\u001b[I"u8.ToArray() : "\u001b[O"u8.ToArray());
+    }
+
+    private async Task WriteFocusReportAsync(ReadOnlyMemory<byte> bytes)
+    {
+        // Not WriteInputAsync: a focus report is not typing, and must not snap a scrolled-back view
+        // to the live screen.
+        try
+        {
+            await WriteAsync(bytes, _lifetime.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+            // Not started yet, or already exited: there is nobody to tell.
+        }
+    }
+
     private async Task WriteInputAsync(ReadOnlyMemory<byte> bytes)
     {
         SnapToLiveScreen();
@@ -905,6 +1025,23 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null) return;
         var text = await clipboard.TryGetTextAsync();
-        if (!string.IsNullOrEmpty(text)) await SendText(text, _lifetime.Token);
+        if (!string.IsNullOrEmpty(text)) await PasteTextAsync(text);
     }
+
+    private async Task PasteOrPassThroughAsync()
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        var text = clipboard is null ? null : await clipboard.TryGetTextAsync();
+        if (!string.IsNullOrEmpty(text))
+        {
+            await PasteTextAsync(text);
+            return;
+        }
+
+        await WriteInputAsync(new byte[] { 0x16 });
+    }
+
+    /// <summary>Send pasted text the way the program asked for it — bracketed when it enabled that.</summary>
+    private Task PasteTextAsync(string text) =>
+        WriteInputAsync(TerminalInput.EncodePaste(text, _engine.BracketedPasteEnabled));
 }

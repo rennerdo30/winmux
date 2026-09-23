@@ -29,7 +29,7 @@ namespace WinMux.Shell;
 /// process whose top-level window follows its pane rectangle. The shell never reparents a pane
 /// host and never calls a foreign application's HWND; see ADR 0001.
 /// </summary>
-internal sealed class MainWindow : Window
+internal sealed partial class MainWindow : Window
 {
     private readonly Canvas _canvas = new();
 
@@ -290,7 +290,13 @@ internal sealed class MainWindow : Window
             await StartPanesAsync();
             _cwdCaptureTimer.Start();
         };
-        Closing += (_, e) => Shutdown(e);
+        Closing += (_, e) =>
+        {
+            // One line, so a clean exit in the log can be told from a crash: a window closed by the
+            // user reads differently from one closed by code.
+            CrashLog.Write($"main window closing (programmatic: {e.IsProgrammatic}, reason: {e.CloseReason})", null);
+            Shutdown(e);
+        };
         // Moving the window changes no pane rectangle, so a full relayout — which rebuilds every
         // tab strip — is pure waste at mouse-move frequency. The one thing that must follow the
         // window is a foreign pane: its host is a separate top-level window positioned in SCREEN
@@ -298,7 +304,16 @@ internal sealed class MainWindow : Window
         PositionChanged += (_, _) => FollowWindowMove();
         // Attach-mode windows sit above the shell but are not owned by it, so activating the shell
         // buries them. Re-assert placement (and z-order) whenever we come forward.
-        Activated += (_, _) => { _session.Activate(this); _foreignProvider.Refresh(); Relayout(); };
+        Activated += (_, _) =>
+        {
+            _session.Activate(this);
+            _foreignProvider.Refresh();
+            Relayout();
+
+            // Back in WinMux: whatever was waiting to be said has been seen, or is now in front of
+            // the user anyway.
+            PlatformServices.ClearNotifications();
+        };
         Deactivated += (_, _) => Relayout();
     }
 
@@ -351,6 +366,7 @@ internal sealed class MainWindow : Window
             handoff.TerminalHandoffRequested += (_, _) =>
                 Dispatcher.UIThread.Post(() => _ = OpenTerminalHereAsync(runtime));
         }
+        WireAttention(pane, runtime);
         SyncRuntimeState(pane, runtime);
     }
 

@@ -23,6 +23,7 @@ public sealed class SettingsRoundTripTests
         ConfirmBeforeClosingPanes = false,
         CheckForUpdates = false,
         UpdateChannel = UpdateChannel.Prerelease,
+        TerminalNotifications = TerminalNotificationPolicy.Messages,
         TerminalFontFamily = "Consolas",
         TerminalFontSize = 18,
     };
@@ -43,6 +44,7 @@ public sealed class SettingsRoundTripTests
         Assert.Equal(NonDefault.ConfirmBeforeClosingPanes, restored.ConfirmBeforeClosingPanes);
         Assert.Equal(NonDefault.CheckForUpdates, restored.CheckForUpdates);
         Assert.Equal(NonDefault.UpdateChannel, restored.UpdateChannel);
+        Assert.Equal(NonDefault.TerminalNotifications, restored.TerminalNotifications);
         Assert.Equal(NonDefault.TerminalFontFamily, restored.TerminalFontFamily);
         Assert.Equal(NonDefault.TerminalFontSize, restored.TerminalFontSize);
     }

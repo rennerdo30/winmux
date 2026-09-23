@@ -29,6 +29,7 @@ internal sealed class App : Application
 
     public override void Initialize()
     {
+        CrashLog.WatchDispatcher();
         Styles.Add(new FluentTheme());
 
         // Follow the system. An app that ignores the light/dark setting and picks its own accent
@@ -104,6 +105,7 @@ internal sealed class App : Application
                 }
             });
             desktop.Exit += (_, _) => session.Dispose();
+            desktop.Exit += (_, _) => PlatformServices.ShutDownNotifications();
         }
         base.OnFrameworkInitializationCompleted();
     }
@@ -114,6 +116,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] argv)
     {
+        CrashLog.Install();
+
         ShellArguments arguments;
         try
         {

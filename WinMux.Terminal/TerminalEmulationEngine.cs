@@ -14,7 +14,7 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
 {
     private readonly object sync = new();
     private readonly EmulationTerminal terminal;
-    private readonly OscWorkingDirectoryParser workingDirectoryParser = new();
+    private readonly OscObserver oscObserver = new();
 
     /// <summary>
     /// Repairs colon-form SGR underline parameters, which the engine reads as their plain form and
@@ -80,6 +80,21 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
         get { lock (sync) return terminal.Title ?? string.Empty; }
     }
 
+    public bool ApplicationCursorKeysEnabled
+    {
+        get { lock (sync) return terminal.Modes.ApplicationCursorKeys; }
+    }
+
+    public bool BracketedPasteEnabled
+    {
+        get { lock (sync) return terminal.Modes.BracketedPaste; }
+    }
+
+    public bool FocusReportingEnabled
+    {
+        get { lock (sync) return terminal.Modes.FocusReporting; }
+    }
+
     public bool UsingAlternateScreen
     {
         get { lock (sync) return terminal.UsingAlternate; }
@@ -98,6 +113,10 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
 
     public event Action<ReadOnlyMemory<byte>>? Response;
 
+    public event Action<TerminalNotification>? NotificationRequested;
+
+    public event Action<string>? ClipboardWriteRequested;
+
     public void Write(ReadOnlySpan<byte> bytes)
     {
         lock (sync)
@@ -105,7 +124,7 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
             // The working-directory parser reads the original bytes: it looks for OSC 7 and OSC 9;9,
             // which the normalizer does not touch, and giving it the rewritten copy would only make
             // the two able to disagree.
-            workingDirectoryParser.Write(bytes, OnWorkingDirectoryChanged);
+            oscObserver.Write(bytes, OnWorkingDirectoryChanged, OnNotification, OnClipboardWrite);
             terminal.Write(sgrNormalizer.Normalize(bytes));
         }
     }
@@ -154,6 +173,10 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
     private void OnTitleChanged(object? sender, string title) => TitleChanged?.Invoke(title);
 
     private void OnWorkingDirectoryChanged(string path) => WorkingDirectoryChanged?.Invoke(path);
+
+    private void OnNotification(TerminalNotification notification) => NotificationRequested?.Invoke(notification);
+
+    private void OnClipboardWrite(string text) => ClipboardWriteRequested?.Invoke(text);
 
     private void OnResponse(object? sender, ReadOnlyMemory<byte> bytes) => Response?.Invoke(bytes);
 

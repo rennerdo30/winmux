@@ -9,8 +9,24 @@ the ADRs say why.
 
 ## Unreleased
 
+### Added
+
+- **Windows notifications from terminal panes** ([ADR 0022](docs/adr/0022-terminal-notifications.md)).
+  When a program asks for attention — OSC 9, 777 or 99, or a bell — in a pane you are not looking at,
+  WinMux shows a notification naming the pane; clicking it brings you to that pane. A setting chooses
+  messages and bells, messages only, or off.
+- **Claude Code setup**: one button in Settings points Claude Code's notifications at WinMux, which
+  it does not otherwise recognise.
+- **Focus reporting** (`ESC [ I` / `ESC [ O`) for programs that ask for it.
+- **A crash log** at `%LOCALAPPDATA%\WinMux\crash.log`.
+
 ### Fixed
 
+- **Copy and paste in terminal panes**, found with Claude Code: `Ctrl+C` with text selected sent an
+  interrupt instead of copying; `Ctrl+V` did not paste; `Alt` combinations sent nothing, so
+  Claude Code's `Alt+V` image paste could not work; `Shift+Tab` sent a plain Tab; pastes were never
+  bracketed, so a multi-line paste ran line by line; and programs could not copy to the clipboard
+  (OSC 52). All six are fixed. Function keys and modified arrows now reach programs too.
 - A name given to an empty pane was lost as soon as something was opened in it. The pane that
   replaces it in place — a terminal, an application, an adopted window — now keeps the name.
 

@@ -4,69 +4,74 @@
 
 ## Where we are
 
-**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.2 is released, and
-carries everything below.** What is left needs a person, a second
-monitor or a decision — see *Waiting on you*.
+**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.2 is released.**
+Since then: the renamed-pane fix (committed, `0bb5040`, not pushed); terminal notifications and the
+terminal copy/paste fixes (neither committed yet). What is left needs a person, a second monitor or a decision — see *Waiting on you*.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
 `WinMux.Panes`; the shell declares zero `DllImport` (ADR 0013); tab groups nest anywhere (ADR 0014);
 any installed app can be a profile (ADR 0015); the window wears its own Windows 11 caption (ADR 0016).
-The file browser speaks SFTP and FTP (ADR 0020), copies between filesystems, and now does
-**drag and drop, multiple selection, real icons, detail columns, and says where each pane is**
-([ADR 0021](docs/adr/0021-file-browser-details-and-drag-and-drop.md)).
+The file browser speaks SFTP/FTP, copies between filesystems, drags and drops (ADRs 0020, 0021). A
+program in a terminal pane — Claude Code above all — can now ask for the user and get a **Windows
+notification** ([ADR 0022](docs/adr/0022-terminal-notifications.md)).
 
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-23: 837 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
+**Verified 2026-09-23: 886 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
 skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set; they passed the same day against SFTPGo 2.7.6
-portable (how to run it is in `RemoteLiveTests`). `v0.7.2` (the file browser, ADR 0021) and `v0.7.1` (cross-filesystem copy) were both tagged on
-2026-09-23; `v0.7.0` was the first release, 2026-09-16.
+portable (how to run it is in `RemoteLiveTests`). `v0.7.2` and `v0.7.1` were tagged on 2026-09-23;
+`v0.7.0` was the first release, 2026-09-16.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
 
 ## What just happened
 
-**2026-09-23 (afternoon) — the file browser, from a user's questions** ([ADR 0021](docs/adr/0021-file-browser-details-and-drag-and-drop.md)).
-Asked: can I drag and drop, why no icons, why no details, which pane is local and which a server?
-All four answered. Drag and drop works between any two panes whatever their filesystems, from
-Explorer into any pane, and from a local pane out to Explorer (not remote → Explorer; the ADR says
-why). Multiple selection. Windows' own icons and type names through a new `IFileIconSource`. Name /
-Date modified / Type / Size, sortable. A location badge on every pane, and a connection banner with
-**Try again** instead of three run-on sentences. Every direction was driven on screen against a real
-SFTP server, including a drag out of a real Explorer window.
+**2026-09-23 (latest) — copy and paste in terminal panes**, reported with Claude Code: text would
+not copy, images would not paste. Six gaps, all in `TerminalPaneControl`'s key handling: `Ctrl+C`
+with a selection sent an interrupt; `Ctrl+V` sent a raw ^V; `Alt` combinations sent nothing (Claude
+Code's `Alt+V` image paste on Windows); `Shift+Tab` sent Tab; pastes were never bracketed; OSC 52
+was ignored. Encoding now lives in `TerminalInput` (pure, tested) and follows xterm and Windows
+Terminal. **Not yet tried on screen** — by the user's choice, nothing drives the desktop without a
+foreground check; see *The next action*.
 
-Found on the way: **the headless test app had never been installed** — no
-`[assembly: AvaloniaTestApplication]` — so every headless test had run without control templates.
+**2026-09-23 (late) — terminal notifications** ([ADR 0022](docs/adr/0022-terminal-notifications.md)).
+OSC 9/777/99 and BEL are parsed; focus reports (`ESC[I`/`ESC[O`) are sent; `TerminalAttention`
+decides; `IDesktopNotifier` shows a notification-area balloon that Windows turns into a toast; a
+click returns to the pane. Settings has the policy and a button that sets Claude Code's
+`preferredNotifChannel`. Seen on screen as far as the status bar ("claude: Claude needs your
+permission to use Bash" from a background pane) and the notifier's own calls succeeding. **The toast
+itself was not seen**: Windows notifications are switched off on this machine, which WinMux now
+detects and says. Claude Code was seen running correctly in a pane; its own notification reaching
+WinMux was not confirmed before the session stopped driving the UI.
 
-**2026-09-23 (evening) — a renamed empty pane lost its name** when cmd was opened in it:
-`ReplacePaneAsync` swapped in a fresh `Pane` and nothing carried the custom title. `Pane.KeepCustomTitleOf`
-now does, for every in-place replacement; seen fixed on screen. Not released yet. A reported
-**missing taskbar icon** was not a code fault: every executable embeds it, the window carries both
-sizes, and it came back on the user's machine without a change — most likely Windows' icon cache.
-One Shell test failed once in a full run and passed in seven runs after; it has flaked once before
-(`The_profile_editor_can_be_built_for_every_kind`). Unexplained.
+Also this session: the file browser's drag and drop, icons, details and location badges (ADR 0021,
+released as 0.7.2); a renamed empty pane losing its name when something opened in it
+(`Pane.KeepCustomTitleOf`, committed). A missing taskbar icon was Windows' icon cache.
 
-**2026-09-23 (morning) — copying between filesystems** (ADR 0020 addendum), released as 0.7.1.
+**Two things went wrong in verification and are recorded so they are not repeated** — see
+*Driving the UI from a script* below: keystrokes sent to a window that did not have focus, and test
+instances left open that the user then closed, which were taken for crashes.
 
 ## The next action
 
-**Use it for an hour, and write down what annoyed you.** Today proved it twice more: a focus bug that
-survived every test, and a pane that never said what it was showing, both found by looking.
-
-The candidates after that are taste calls — decide they are wanted before building them: a toolbar without a divider after every group, and a Normal/Compact density
-setting (`LayoutMetrics` is already parameterised).
+**Try Claude Code in a pane, with the user at the keyboard:** select text and press `Ctrl+C`, paste
+with `Ctrl+V`, copy a screenshot and press `Alt+V`, and paste a multi-line block. Then **see a Claude
+Code notification arrive**. Turn Windows notifications
+on (Settings › System › Notifications), set up Claude Code from WinMux's Settings, start `claude` in
+a pane, give it a short task, and switch to another pane. Expected: a toast naming the pane; clicking
+it returns to the pane. If nothing arrives, `%LOCALAPPDATA%\WinMux\crash.log` and the status bar say
+whether WinMux heard anything. Then commit, and release 0.7.3 if wanted.
 
 ## Waiting on you
 
 Only a person, a machine setting or a judgement can move these; nothing in the code waits on them.
 
+- **The notification check above** — it needs Windows notifications switched on, which is the
+  user's setting to change, and a person watching.
 - **Run the mixed-DPI check.** Set one display to a different scale, then
-  `scripts/verify-mixed-dpi.ps1`. The last measurement in the project never taken — this machine has
-  never had two monitors at different scales.
+  `scripts/verify-mixed-dpi.ps1`. The last measurement in the project never taken.
 - **Decide `Terminal.Emulation`.** [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md) has
-  four costed options and a recommendation (ask the author to publish the source; keep hashes pinned;
-  benchmark `Iciclecreek.Avalonia.Terminal`). Nobody has asked the author; that is a message, not a
-  commit.
+  four costed options and a recommendation. Nobody has asked the author; that is a message.
 
 ## Standing constraints
 
@@ -208,6 +213,16 @@ that a future session recognises them as answers rather than rediscovering them 
   became uncreatable. `new KeyGesture(Key.Delete, KeyModifiers.None)` is checked by the compiler.
 
 **Driving the UI from a script**
+- **Never send a keystroke or click without first checking that the foreground window is the one you
+  launched** — compare `GetForegroundWindow()` with its handle, right before sending, and send
+  nothing if it differs. `AppActivate` returning true is not that check. On 2026-09-23 a command and
+  an Enter went into another application on the user's desktop. When in doubt, ask the user to do
+  the step.
+- **Close every WinMux instance a check starts, as soon as the check is done.** Instances left open
+  were closed by the user, and two clean exits (code 0) were then chased as a crash for an hour.
+  `%LOCALAPPDATA%\WinMux\crash.log` now records every exit and window close, so read it first.
+- Do not pass a command containing `+ ^ % ~ ( ) { }` to `SendKeys`; they are control characters.
+  Put it in a script file and type the path.
 - Always `AppActivate` (or click) before `SendKeys`. A key sent to an unfocused window goes to
   whatever *is* focused, which looks exactly like a feature that does not work.
 - A modal left open blocks every later click and key, and produces the same silent nothing. Three

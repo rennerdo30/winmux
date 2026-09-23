@@ -409,6 +409,12 @@ directory, and — for a windowed application — how to find and host its windo
 profiles, the app catalog, and the running windows it could adopt — so "make a pane, then decide"
 is a supported workflow rather than a gap between splitting and choosing.
 
+**A program in a pane can ask for the user** — OSC 9, 777, 99 or a bell — and WinMux turns it into a
+Windows notification when that pane is out of sight
+([ADR 0022](docs/adr/0022-terminal-notifications.md)). The notifier is `IDesktopNotifier`, a
+notification-area balloon rather than the WinRT toast API, which would need an SDK-versioned target
+framework and a registered AppUserModelID.
+
 **Resolving a shortcut is platform work.** Enumerating the Start Menu and following a `.lnk` to its
 target is Win32, so it lives behind `IAppCatalog` in `WinMux.Platform` and is implemented in
 `WinMux.Platform.Win32` — the shell keeps its zero `DllImport`

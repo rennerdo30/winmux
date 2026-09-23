@@ -27,6 +27,20 @@ WinMux **measures** the font you choose and builds its character grid from that 
 cursor, selection, search highlights and coloured cell backgrounds line up with the glyphs whichever
 font is actually in use.
 
+**Notifications** — when a program asks for your attention in a pane you are not looking at, WinMux
+shows a Windows notification naming the pane; click it to go straight there. *Messages and bells*
+(the default) counts a plain terminal bell too; *Messages only* counts only explicit notifications
+(OSC 9, 777 and 99); *Off* turns them off. If Windows notifications are switched off in
+Settings › System › Notifications, Windows shows nothing from any app — WinMux says so here and in
+the status bar.
+
+**Claude Code notifications** — Claude Code only sends desktop notifications to terminals it
+recognises, and WinMux is not one of them. *Set up…* sets `preferredNotifChannel` to `iterm2` in
+Claude Code's `settings.json`, after showing you exactly what will change. Every other setting is
+kept and the old file is backed up beside it. To do it by hand instead, add
+`"preferredNotifChannel": "iterm2"` to `~/.claude/settings.json`. Restart running Claude sessions to
+pick it up.
+
 ## New panes
 
 **Default terminal** — which profile a new terminal pane opens, and what the prefix key's split

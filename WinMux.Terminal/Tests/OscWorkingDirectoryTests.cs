@@ -86,7 +86,8 @@ public sealed class OscWorkingDirectoryTests
     {
         var engine = new TerminalEmulationEngine(40, 4);
         var reports = CaptureReports(engine);
-        var oversized = $"\e]9;9;C:\\{new string('x', 20_000)}\e\\";
+        // Past the 1 MB bound, which is sized for a long OSC 52 clipboard write.
+        var oversized = $"\e]9;9;C:\\{new string('x', 1_100_000)}\e\\";
 
         engine.Write(Encoding.ASCII.GetBytes(oversized));
         engine.Write("\e]9;9;C:\\after-overflow\a"u8);

@@ -44,7 +44,7 @@ internal sealed class TerminalPaneProvider : IPaneProvider
     private static PaneKind KindValue() => PaneKind.Terminal;
 }
 
-internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime
+internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime, Notifications.IAttentionRuntime
 {
     private readonly Pane _pane;
     private readonly TerminalPaneControl _terminal;
@@ -114,6 +114,8 @@ internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime
             StatusMessage = $"captured cwd from the shell: {path}";
             StateChanged?.Invoke(this, EventArgs.Empty);
         });
+        // Already on the UI thread: the control marshals it there.
+        _terminal.NotificationRequested += notification => AttentionRequested?.Invoke(notification);
         _terminal.Exited += exitCode => Dispatcher.UIThread.Post(() =>
         {
             StatusMessage = $"terminal exited with code {exitCode}";
@@ -126,6 +128,7 @@ internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime
     public Avalonia.Controls.Control View => _terminal;
     public string? StatusMessage { get; private set; }
     public event EventHandler? StateChanged;
+    public event Action<WinMux.Terminal.TerminalNotification>? AttentionRequested;
 
     public Task StartAsync(CancellationToken token) => _terminal.StartAsync(token);
     public bool Focus() => _terminal.Focus();

@@ -26,6 +26,7 @@ internal sealed class SettingsWindow : Window
     private string _pendingDefaultTerminal = string.Empty;
     private readonly ComboBox _tabPlacement;
     private readonly CheckBox _confirmClosing;
+    private readonly ComboBox _notifications;
     private readonly TextBox _fontFamily;
     private readonly NumericUpDown _fontSize;
     private readonly CheckBox _checkUpdates;
@@ -125,6 +126,17 @@ internal sealed class SettingsWindow : Window
             MinWidth = 0,
         };
 
+        _notifications = Choice(
+            [
+                ("Messages and bells", TerminalNotificationPolicy.MessagesAndBells),
+                ("Messages only", TerminalNotificationPolicy.Messages),
+                ("Off", TerminalNotificationPolicy.Off),
+            ],
+            current.TerminalNotifications);
+
+        var claude = new Button { Content = "Set up…", Classes = { Chrome.Theme.DialogButton } };
+        claude.Click += (_, _) => _ = SetUpClaudeCodeAsync();
+
         var cwd = new Button { Content = "Set up…", Classes = { Chrome.Theme.DialogButton } };
         cwd.Click += (_, _) => { OpenCwdReporting = true; Close(); };
 
@@ -153,6 +165,19 @@ internal sealed class SettingsWindow : Window
             "Font size",
             _fontSize,
             "In pixels, between 6 and 72."));
+
+        body.Children.Add(SettingsCard.Row(
+            "Notifications",
+            _notifications,
+            "When a program asks for your attention in a pane you are not looking at — Claude Code " +
+            "waiting on a permission, a build that finished — show a Windows notification. Click it to " +
+            "go to the pane." +
+            (PlatformServices.Notifications.BlockedReason is { } blocked ? " " + blocked : "")));
+        body.Children.Add(SettingsCard.Row(
+            "Claude Code notifications",
+            claude,
+            "Claude Code only notifies terminals it recognises, and WinMux is not one of them. This " +
+            "tells it to send its notifications in a form WinMux understands."));
 
         body.Children.Add(SettingsCard.Heading("New panes"));
         body.Children.Add(SettingsCard.Row(
@@ -211,6 +236,7 @@ internal sealed class SettingsWindow : Window
                 TerminalFontSize = (double)(_fontSize.Value ?? (decimal)TerminalFontMetrics.DefaultFontSize),
                 CheckForUpdates = _checkUpdates.IsChecked == true,
                 UpdateChannel = Selected<UpdateChannel>(_updateChannel),
+                TerminalNotifications = Selected<TerminalNotificationPolicy>(_notifications),
             };
             Close();
         };
@@ -405,6 +431,54 @@ internal sealed class SettingsWindow : Window
 
     private string SelectedTerminalId() =>
         (_terminal.SelectedItem as ComboBoxItem)?.Tag as string ?? _pendingDefaultTerminal;
+
+    /// <summary>
+    /// Point Claude Code's notifications at WinMux. It is another program's configuration file, so
+    /// this says exactly what will change and where before touching it, and touches one key.
+    /// </summary>
+    private async Task SetUpClaudeCodeAsync()
+    {
+        var state = ClaudeCodeNotifications.Inspect(ClaudeCodeNotifications.DefaultPath());
+
+        if (state.Problem is not null)
+        {
+            await new NoticeWindow("Claude Code notifications", state.Problem).ShowDialog(this);
+            return;
+        }
+
+        if (state.IsSetUp)
+        {
+            await new NoticeWindow(
+                "Claude Code notifications",
+                $"Claude Code is already set to send notifications WinMux can show " +
+                $"({ClaudeCodeNotifications.Key} is \"{state.Current}\" in {state.Path}).").ShowDialog(this);
+            return;
+        }
+
+        var confirmed = await NoticeWindow.ConfirmAsync(
+            this,
+            "Send Claude Code's notifications to WinMux",
+            $"Claude Code only sends desktop notifications to terminals it recognises. WinMux will set " +
+            $"{ClaudeCodeNotifications.Key} to \"{ClaudeCodeNotifications.Channel}\" in\n\n{state.Path}\n\n" +
+            (state.Current is null ? "It is not set at the moment. " : $"It is \"{state.Current}\" at the moment. ") +
+            (state.Exists ? "Every other setting is kept, and the current file is saved beside it as a backup. " : "") +
+            "Claude Code sessions already running pick it up when they are restarted.",
+            "Set it");
+        if (!confirmed) return;
+
+        try
+        {
+            ClaudeCodeNotifications.Apply(state.Path);
+            await new NoticeWindow(
+                "Claude Code notifications",
+                "Done. When Claude Code needs you in a pane you are not looking at, WinMux will show a " +
+                "Windows notification; click it to go straight to that pane.").ShowDialog(this);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            await new NoticeWindow("Claude Code notifications", $"The file was not changed. {ex.Message}").ShowDialog(this);
+        }
+    }
 
     private static ComboBox Choice<T>((string Label, T Value)[] options, T current)
     {

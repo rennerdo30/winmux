@@ -13,6 +13,19 @@ public enum ThemePreference
     Light,
 }
 
+/// <summary>Which requests for attention from a terminal become a desktop notification.</summary>
+public enum TerminalNotificationPolicy
+{
+    /// <summary>None. The requests are still read; nothing is shown.</summary>
+    Off,
+
+    /// <summary>Only an explicit message — OSC 9, 777 or 99 — such as Claude Code sends.</summary>
+    Messages,
+
+    /// <summary>Messages, and the bell too, which is how a program says "look" without saying why.</summary>
+    MessagesAndBells,
+}
+
 /// <summary>
 /// The shell's preferences, separate from any session.
 ///
@@ -71,6 +84,13 @@ public sealed record WinMuxSettings
 
     /// <summary>Terminal font size, in device-independent pixels.</summary>
     public double TerminalFontSize { get; init; } = 14;
+
+    /// <summary>
+    /// Whether a program in a terminal pane that asks for attention — Claude Code waiting on a
+    /// permission, a build ringing the bell — gets a Windows notification. Only ever when the pane is
+    /// not the one being looked at; a notification about what is on screen is noise.
+    /// </summary>
+    public TerminalNotificationPolicy TerminalNotifications { get; init; } = TerminalNotificationPolicy.MessagesAndBells;
 
     /// <summary>The defaults, for a first run or a settings file that could not be read.</summary>
     public static WinMuxSettings Defaults { get; } = new();

@@ -3,24 +3,41 @@ using System.Text;
 namespace WinMux.Terminal;
 
 /// <summary>
-/// Observes the raw terminal byte stream for shell working-directory reports. It deliberately
-/// does not remove sequences from the stream; the terminal emulator remains the owner of normal
-/// VT processing.
+/// Observes the raw terminal byte stream for the sequences WinMux acts on itself: shell
+/// working-directory reports (OSC 7, OSC 9;9) and requests for the user's attention (OSC 9, 777
+/// and 99, and a bare BEL). It deliberately does not remove sequences from the stream; the terminal
+/// emulator remains the owner of normal VT processing.
 /// </summary>
-internal sealed class OscWorkingDirectoryParser
+internal sealed class OscObserver
 {
-    // Well beyond ordinary cwd reports while keeping an unterminated or hostile OSC bounded.
-    private const int MaximumPayloadBytes = 16 * 1024;
+    /// <summary>Longest notification text passed on; a message is a sentence, not a log.</summary>
+    internal const int MaximumNotificationLength = 500;
+
+    /// <summary>Kitty notifications split across several sequences, by id. Bounded, see <see cref="Kitty"/>.</summary>
+    private readonly Dictionary<string, (string? Title, string Body)> kittyParts = new(StringComparer.Ordinal);
+
+    // Large enough for an OSC 52 clipboard write of a long passage (base64 costs a third again),
+    // while keeping an unterminated or hostile OSC bounded. The buffer starts small and grows.
+    internal const int MaximumPayloadBytes = 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
-    private readonly byte[] payload = new byte[MaximumPayloadBytes];
+    private byte[] payload = new byte[16 * 1024];
     private ParserState state;
     private int payloadLength;
     private int utf8ContinuationBytes;
 
-    public void Write(ReadOnlySpan<byte> bytes, Action<string> report)
+    private Action<TerminalNotification>? notify;
+    private Action<string>? clipboard;
+
+    public void Write(
+        ReadOnlySpan<byte> bytes,
+        Action<string> report,
+        Action<TerminalNotification>? notify = null,
+        Action<string>? clipboard = null)
     {
         ArgumentNullException.ThrowIfNull(report);
+        this.notify = notify;
+        this.clipboard = clipboard;
 
         foreach (var value in bytes)
         {
@@ -30,6 +47,12 @@ internal sealed class OscWorkingDirectoryParser
                     if (value == Control.Escape)
                     {
                         state = ParserState.Escape;
+                    }
+                    else if (value == Control.Bell)
+                    {
+                        // Outside any string sequence a BEL is the bell itself. Inside an OSC it is
+                        // the terminator, which is handled by the OSC states and never reaches here.
+                        notify?.Invoke(new TerminalNotification(TerminalNotificationKind.Bell, null, string.Empty));
                     }
                     break;
 
@@ -187,6 +210,11 @@ internal sealed class OscWorkingDirectoryParser
 
     private void Append(byte value)
     {
+        if (payloadLength == payload.Length && payload.Length < MaximumPayloadBytes)
+        {
+            Array.Resize(ref payload, Math.Min(payload.Length * 2, MaximumPayloadBytes));
+        }
+
         if (payloadLength == payload.Length)
         {
             payloadLength = 0;
@@ -224,13 +252,202 @@ internal sealed class OscWorkingDirectoryParser
 
     private void Complete(Action<string> report)
     {
-        var path = ParsePayload(payload.AsSpan(0, payloadLength));
+        var text = Decode(payload.AsSpan(0, payloadLength));
         Reset();
+        if (text is null) return;
 
-        if (path is not null)
+        if (ParsePayload(text) is { } path)
         {
             report(path);
+            return;
         }
+
+        if (clipboard is not null && text.StartsWith("52;", StringComparison.Ordinal))
+        {
+            if (ParseClipboardWrite(text) is { } copied) clipboard(copied);
+            return;
+        }
+
+        if (notify is not null && ParseNotification(text) is { } notification)
+        {
+            notify(notification);
+        }
+    }
+
+    /// <summary>
+    /// OSC 52 — <c>52 ; selection ; base64</c> — a program putting text on the clipboard: how Claude
+    /// Code, vim and tmux copy from inside a terminal. Only writing is honoured. A payload of
+    /// <c>?</c> asks the terminal to send the clipboard back, and answering would let any program
+    /// in a pane — or anything it prints, a file shown with cat — read what the user last copied.
+    /// </summary>
+    private static string? ParseClipboardWrite(string value)
+    {
+        var rest = value[3..];
+        var split = rest.IndexOf(';');
+        if (split < 0) return null;
+
+        var data = rest[(split + 1)..];
+        if (data.Length == 0 || data == "?") return null;
+
+        try
+        {
+            return StrictUtf8.GetString(Convert.FromBase64String(data));
+        }
+        catch (Exception ex) when (ex is FormatException or DecoderFallbackException)
+        {
+            return null;
+        }
+    }
+
+    private static string? Decode(ReadOnlySpan<byte> bytes)
+    {
+        try
+        {
+            return StrictUtf8.GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The attention requests. OSC 9 is shared with ConEmu, whose numbered subcommands — 9;9 is the
+    /// working directory, 9;4 a progress bar — are not messages; iTerm2's message is free text.
+    /// </summary>
+    private TerminalNotification? ParseNotification(string value)
+    {
+        if (value.StartsWith("9;", StringComparison.Ordinal))
+        {
+            var message = value[2..];
+            if (IsConEmuSubcommand(message)) return null;
+            return Make(TerminalNotificationKind.Osc9, null, message);
+        }
+
+        if (value.StartsWith("777;notify;", StringComparison.Ordinal))
+        {
+            // title;body — and the body may itself contain semicolons.
+            var rest = value["777;notify;".Length..];
+            var split = rest.IndexOf(';');
+            return split < 0
+                ? Make(TerminalNotificationKind.Osc777, null, rest)
+                : Make(TerminalNotificationKind.Osc777, rest[..split], rest[(split + 1)..]);
+        }
+
+        if (value.StartsWith("99;", StringComparison.Ordinal))
+        {
+            return Kitty(value[3..]);
+        }
+
+        return null;
+    }
+
+    private static bool IsConEmuSubcommand(string message)
+    {
+        var index = 0;
+        while (index < message.Length && char.IsAsciiDigit(message[index])) index++;
+        return index > 0 && (index == message.Length || message[index] == ';');
+    }
+
+    /// <summary>
+    /// Kitty's OSC 99: <c>metadata ; payload</c>, where metadata is <c>key=value</c> pairs joined by
+    /// colons. <c>p</c> says whether the payload is the title or the body, <c>d=0</c> that more parts
+    /// follow under the same <c>i</c>, and <c>e=1</c> that the payload is base64. Only what a desktop
+    /// notification needs is read; actions, icons and sounds are ignored.
+    /// </summary>
+    private TerminalNotification? Kitty(string value)
+    {
+        var split = value.IndexOf(';');
+        if (split < 0) return null;
+
+        var metadata = value[..split];
+        var text = value[(split + 1)..];
+        string id = string.Empty, part = "title";
+        var done = true;
+        var encoded = false;
+
+        foreach (var pair in metadata.Split(':', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var equals = pair.IndexOf('=');
+            if (equals <= 0) continue;
+            var key = pair[..equals];
+            var setting = pair[(equals + 1)..];
+            switch (key)
+            {
+                case "i": id = setting; break;
+                case "p": part = setting; break;
+                case "d": done = setting != "0"; break;
+                case "e": encoded = setting == "1"; break;
+            }
+        }
+
+        if (part is not ("title" or "body")) return null;
+
+        if (encoded)
+        {
+            try
+            {
+                text = Encoding.UTF8.GetString(Convert.FromBase64String(text));
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
+        }
+
+        kittyParts.TryGetValue(id, out var so);
+        var title = part == "title" ? (so.Title ?? string.Empty) + text : so.Title;
+        var body = part == "body" ? (so.Body ?? string.Empty) + text : so.Body ?? string.Empty;
+
+        if (!done)
+        {
+            // A program that opens notifications and never finishes them must not grow this without
+            // limit; the oldest unfinished one is simply dropped.
+            if (!kittyParts.ContainsKey(id) && kittyParts.Count >= 8) kittyParts.Remove(kittyParts.Keys.First());
+            kittyParts[id] = (title, body);
+            return null;
+        }
+
+        kittyParts.Remove(id);
+
+        // A title with no body is still a notification; show the title as the message.
+        return string.IsNullOrWhiteSpace(body)
+            ? Make(TerminalNotificationKind.Osc99, null, title ?? string.Empty)
+            : Make(TerminalNotificationKind.Osc99, title, body);
+    }
+
+    private static TerminalNotification? Make(TerminalNotificationKind kind, string? title, string body)
+    {
+        var cleanBody = Clean(body);
+        var cleanTitle = title is null ? null : Clean(title);
+        if (cleanBody.Length == 0 && string.IsNullOrEmpty(cleanTitle)) return null;
+        return new TerminalNotification(kind, string.IsNullOrEmpty(cleanTitle) ? null : cleanTitle, cleanBody);
+    }
+
+    /// <summary>No control characters, collapsed whitespace, and a length a notification can show.</summary>
+    private static string Clean(string text)
+    {
+        var builder = new StringBuilder(Math.Min(text.Length, MaximumNotificationLength));
+        var space = false;
+        foreach (var character in text)
+        {
+            if (char.IsControl(character) || char.IsWhiteSpace(character))
+            {
+                space = builder.Length > 0;
+                continue;
+            }
+
+            if (space) builder.Append(' ');
+            space = false;
+            builder.Append(character);
+            if (builder.Length >= MaximumNotificationLength)
+            {
+                builder.Append('…');
+                break;
+            }
+        }
+
+        return builder.ToString();
     }
 
     private void Reset()
@@ -240,18 +457,8 @@ internal sealed class OscWorkingDirectoryParser
         state = ParserState.Text;
     }
 
-    private static string? ParsePayload(ReadOnlySpan<byte> bytes)
+    private static string? ParsePayload(string value)
     {
-        string value;
-        try
-        {
-            value = StrictUtf8.GetString(bytes);
-        }
-        catch (DecoderFallbackException)
-        {
-            return null;
-        }
-
         if (value.StartsWith("9;9;", StringComparison.Ordinal))
         {
             return ValidatePath(Unquote(value[4..]));

@@ -30,6 +30,26 @@ public interface ITerminalEngine
     bool UsingAlternateScreen { get; }
 
     /// <summary>
+    /// Whether the program asked (DECSET 1004) to be told when the terminal gains and loses focus,
+    /// as <c>ESC [ I</c> and <c>ESC [ O</c>. Editors use it to reload files; Claude Code uses it to
+    /// decide whether the user is away and a notification is worth sending.
+    /// </summary>
+    bool FocusReportingEnabled { get; }
+
+    /// <summary>
+    /// Whether the program asked (DECSET 2004) for pasted text to arrive between <c>ESC [ 200 ~</c>
+    /// and <c>ESC [ 201 ~</c>, so that it can tell a paste from typing — and not run each line of a
+    /// multi-line paste as it arrives.
+    /// </summary>
+    bool BracketedPasteEnabled { get; }
+
+    /// <summary>
+    /// DECCKM: the program asked for cursor keys as <c>ESC O A</c> rather than <c>ESC [ A</c>. Full-screen
+    /// programs — vim, less — switch it on while they run.
+    /// </summary>
+    bool ApplicationCursorKeysEnabled { get; }
+
+    /// <summary>
     /// Changes when OSC 8 link identifiers may have been renumbered or discarded.
     /// </summary>
     int HyperlinkGeneration { get; }
@@ -51,6 +71,19 @@ public interface ITerminalEngine
     /// write them back to the PTY. The supplied memory must not be retained after the callback.
     /// </summary>
     event Action<ReadOnlyMemory<byte>>? Response;
+
+    /// <summary>
+    /// Raised when the program asks for the user's attention: an OSC 9, 777 or 99 notification, or a
+    /// bare BEL. Raised on the thread that called <see cref="Write"/>, with the engine's lock held,
+    /// so a subscriber must hand the work off rather than call back into the engine.
+    /// </summary>
+    event Action<TerminalNotification>? NotificationRequested;
+
+    /// <summary>
+    /// Raised when the program puts text on the clipboard with OSC 52. Raised under the engine's lock
+    /// on the writing thread; the subscriber must marshal to whatever owns the clipboard.
+    /// </summary>
+    event Action<string>? ClipboardWriteRequested;
 
     /// <summary>Feeds bytes received from the PTY into the VT parser.</summary>
     void Write(ReadOnlySpan<byte> bytes);

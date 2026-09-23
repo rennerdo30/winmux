@@ -49,4 +49,24 @@ internal static class PlatformServices
 
     /// <summary>File and folder icons for the file browser, local or remote.</summary>
     public static IFileIconSource FileIcons { get; } = new Win32FileIconSource();
+
+    private static readonly Lazy<IDesktopNotifier> LazyNotifications = new(() => new Win32DesktopNotifier());
+
+    /// <summary>
+    /// Desktop notifications, for a terminal program asking for attention. Created on first use —
+    /// it runs a thread of its own — so a session that never notifies never starts one.
+    /// </summary>
+    public static IDesktopNotifier Notifications => LazyNotifications.Value;
+
+    /// <summary>Withdraw any outstanding notification, without starting the notifier to do it.</summary>
+    public static void ClearNotifications()
+    {
+        if (LazyNotifications.IsValueCreated) LazyNotifications.Value.Clear();
+    }
+
+    /// <summary>Withdraw the notification icon on exit, if one was ever needed.</summary>
+    public static void ShutDownNotifications()
+    {
+        if (LazyNotifications.IsValueCreated) LazyNotifications.Value.Dispose();
+    }
 }
