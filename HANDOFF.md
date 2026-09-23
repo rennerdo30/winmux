@@ -4,9 +4,9 @@
 
 ## Where we are
 
-**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.2 is released.**
-Since then: the renamed-pane fix (committed, `0bb5040`, not pushed); terminal notifications and the
-terminal copy/paste fixes (neither committed yet). What is left needs a person, a second monitor or a decision — see *Waiting on you*.
+**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.3 is released**,
+carrying terminal notifications, the terminal copy/paste fixes and the renamed-pane fix — all tested,
+but the toast and the new keys not yet seen on screen (*The next action*). What is left needs a person, a second monitor or a decision — see *Waiting on you*.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
 `WinMux.Panes`; the shell declares zero `DllImport` (ADR 0013); tab groups nest anywhere (ADR 0014);
@@ -18,7 +18,7 @@ notification** ([ADR 0022](docs/adr/0022-terminal-notifications.md)).
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
 **Verified 2026-09-23: 886 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
 skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set; they passed the same day against SFTPGo 2.7.6
-portable (how to run it is in `RemoteLiveTests`). `v0.7.2` and `v0.7.1` were tagged on 2026-09-23;
+portable (how to run it is in `RemoteLiveTests`). `v0.7.3`, `v0.7.2` and `v0.7.1` were all tagged on 2026-09-23;
 `v0.7.0` was the first release, 2026-09-16.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
@@ -60,7 +60,7 @@ Code notification arrive**. Turn Windows notifications
 on (Settings › System › Notifications), set up Claude Code from WinMux's Settings, start `claude` in
 a pane, give it a short task, and switch to another pane. Expected: a toast naming the pane; clicking
 it returns to the pane. If nothing arrives, `%LOCALAPPDATA%\WinMux\crash.log` and the status bar say
-whether WinMux heard anything. Then commit, and release 0.7.3 if wanted.
+whether WinMux heard anything. Anything that fails there is a 0.7.4.
 
 ## Waiting on you
 

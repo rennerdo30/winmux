@@ -7,7 +7,7 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
-## Unreleased
+## 0.7.3 — 2026-09-23
 
 ### Added
 
