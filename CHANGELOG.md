@@ -7,7 +7,7 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
-## 0.7.5 — 2026-09-24
+## 0.7.6 — 2026-09-24
 
 ### Added
 
@@ -21,19 +21,6 @@ the ADRs say why.
   silently doing nothing. `Ctrl+B .`, or the tab's right-click menu, or `toggle-pin` from the
   palette and the CLI. The pin is saved with the session.
 
-### Fixed
-
-- **WinMux crashed when a full-screen program started in a pane that held scrollback.** Starting
-  vim, less, htop or Claude Code discards the whole scrollback in one write, and the repaint already
-  in flight was still copying rows by their old indices — `IndexOutOfRangeException`, from the render
-  pass, taking the process with it. Reading a row is now total: a row that is no longer there reads
-  as empty and the next repaint is correct
-  ([ADR 0024](docs/adr/0024-reading-a-terminal-while-it-is-written-to.md)). The same fault could be
-  reached from copy, select-word and search, not only from drawing.
-- **No cursor in a full-screen program started after scrolling back.** The view stayed parked above
-  history that no longer existed, and the cursor is deliberately not drawn while you are reading
-  history.
-
 ### Changed
 
 - **The settings dialog got a pass over what it actually looks like**, rendered rather than
@@ -46,6 +33,27 @@ the ADRs say why.
 - **A notification block is its own warning, with the button that fixes it.** "Windows
   notifications are turned off" was appended to a description in the same muted grey as everything
   else, so the one thing on the page that needed doing was the easiest to miss.
+
+### Documentation
+
+- [Keyboard](https://winmux.dev/keyboard/) covers `Ctrl`+click on a link and the `.` pin key.
+
+## 0.7.5 — 2026-09-24
+
+*Never published: 0.7.6 followed the same day and contains everything below.*
+
+### Fixed
+
+- **WinMux crashed when a full-screen program started in a pane that held scrollback.** Starting
+  vim, less, htop or Claude Code discards the whole scrollback in one write, and the repaint already
+  in flight was still copying rows by their old indices — `IndexOutOfRangeException`, from the render
+  pass, taking the process with it. Reading a row is now total: a row that is no longer there reads
+  as empty and the next repaint is correct
+  ([ADR 0024](docs/adr/0024-reading-a-terminal-while-it-is-written-to.md)). The same fault could be
+  reached from copy, select-word and search, not only from drawing.
+- **No cursor in a full-screen program started after scrolling back.** The view stayed parked above
+  history that no longer existed, and the cursor is deliberately not drawn while you are reading
+  history.
 
 ### Documentation
 

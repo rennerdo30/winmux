@@ -4,10 +4,11 @@
 
 ## Where we are
 
-**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.4 is released, and
-0.7.5 is committed but not tagged** — it fixes a crash that 0.7.4 could reach within a minute of
-starting a full-screen program, and adds pinned tabs and clickable links. What is left needs a
-person, a second monitor or a decision — see *Waiting on you*.
+**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.6 is released** —
+it fixes a crash that 0.7.4 could reach within a minute of starting a full-screen program, and adds
+pinned tabs, clickable links and a reworked settings dialog. 0.7.5 was the crash fix alone and was
+superseded before it was ever published. What is left needs a person, a second monitor or a
+decision — see *Waiting on you*.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
 `WinMux.Panes`; the shell declares zero `DllImport` (ADR 0013); tab groups nest anywhere (ADR 0014);
@@ -18,7 +19,7 @@ Terminal programs can raise Windows notifications (ADR 0022).
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
 **Verified 2026-09-24: 934 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
 skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set (how to run a server: `RemoteLiveTests`).
-Releases: `v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
+Releases: `v0.7.6` 2026-09-24; `v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
@@ -50,17 +51,18 @@ Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
 
 ## The next action
 
-**Try 0.7.5 from `dist/` and then tag it** (`git tag v0.7.5 && git push origin v0.7.5`) — tagging
-publishes, so it stays the user's to run. Three things want a look on screen first: a full-screen
-program started in a pane holding scrollback (the crash), `Ctrl`+click on a URL, and pinning a tab
-and then trying to close it. **0.7.4 still has to be installed by hand once** on any machine on
-0.7.3 or earlier, because the old version's broken installer is the one that runs.
+**Watch one update install itself.** 0.7.6 is the first release published since the updater was
+rewritten (ADR 0023), so the 0.7.4 → 0.7.6 step is the first real exercise of it. **A machine on
+0.7.3 or earlier still needs one manual install**, because the old version's broken installer is
+the one that runs. Three things in 0.7.6 are still unseen on screen: a full-screen program started
+in a pane holding scrollback (the crash), `Ctrl`+click on a URL, and a pinned tab refusing to
+close.
 
 ## Waiting on you
 
 Only a person, a machine setting or a judgement can move these; nothing in the code waits on them.
 
-- **Tag `v0.7.5`**, and install 0.7.4 by hand anywhere still below it.
+- **Install by hand anywhere still on 0.7.3 or earlier**, then watch one update install itself.
 - **The notification check**: Windows notifications on, Claude Code set up from Settings, a task in
   a pane, switch away — a toast naming the pane should appear.
 - **Run the mixed-DPI check.** One display at a different scale, then `scripts/verify-mixed-dpi.ps1`.
