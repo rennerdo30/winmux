@@ -172,7 +172,8 @@ internal sealed partial class MainWindow : Window
                     {
                         FocusPane(pane);
                         Run(AddTabGroupAsync(Pane.Empty(), "new tab group"));
-                    }),
+                    },
+                    () => Run(ShowConnectionsAsync())),
                 () => Settings.ShellProfiles.All,
                 PlatformServices.AppIcons,
                 OfferablePaneKinds),
@@ -969,6 +970,7 @@ internal sealed partial class MainWindow : Window
         _actions.Register(ShellActionNames.NextTab, () => CycleTab(1));
         _actions.Register(ShellActionNames.PreviousTab, () => CycleTab(-1));
         _actions.RegisterAsync(ShellActionNames.ShowSettings, _ => new ValueTask(ShowSettingsAsync()));
+        _actions.RegisterAsync(ShellActionNames.ShowConnections, _ => new ValueTask(ShowConnectionsAsync()));
         _actions.RegisterAsync(ShellActionNames.OpenSession, _ => new ValueTask(OpenSessionAsync()));
         _actions.Register(ShellActionNames.SaveSession, SaveSession);
         _actions.RegisterAsync(ShellActionNames.SaveSessionAs, _ => new ValueTask(SaveSessionAsAsync()));
@@ -1815,6 +1817,50 @@ internal sealed partial class MainWindow : Window
         {
             _paneCloseInProgress = false;
         }
+    }
+
+    /// <summary>
+    /// The saved connections of every tool on this machine (ADR 0025).
+    ///
+    /// Reading is done here rather than in the window so that a slow or unreadable source is the
+    /// shell's problem and not a dialog that opens empty: six readers that nothing could open would
+    /// be a capability with no interface, and one that opens and shows nothing is barely better.
+    /// </summary>
+    private async Task ShowConnectionsAsync()
+    {
+        var catalogue = Connections.ConnectionCatalog.Standard(PlatformServices.Registry, PlatformServices.Unprotect);
+        var results = await Task.Run(catalogue.Read);
+
+        if (results.Count == 0)
+        {
+            await new NoticeWindow(
+                "Saved connections",
+                "No saved connections were found. WinMux looks for PuTTY, WinSCP, FileZilla, " +
+                "MobaXterm and mRemoteNG where each of them normally keeps its sessions.").ShowDialog(this);
+            return;
+        }
+
+        var dialog = new ConnectionsWindow(results, PlatformServices.Credentials);
+        await dialog.ShowDialog(this);
+
+        // Imported first: a connection the user both imported and opened should be opened from the
+        // profile they now own rather than from the foreign file.
+        if (dialog.Imported.Count > 0)
+        {
+            // Anything already carrying the same id is left alone rather than duplicated, so
+            // importing the same folder twice adds nothing the second time.
+            var known = Settings.ShellProfiles.All.Select(profile => profile.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var fresh = dialog.Imported.Where(profile => known.Add(profile.Id)).ToArray();
+
+            var error = Settings.ShellProfiles.Replace([.. Settings.ShellProfiles.All, .. fresh]);
+            ShowMessage(
+                error ?? (fresh.Length == 0
+                    ? "those connections were already imported"
+                    : $"imported {fresh.Length} connection(s)"),
+                error is null ? StatusMessageKind.Info : StatusMessageKind.Error);
+        }
+
+        if (dialog.Chosen is { } profile) await OpenProfileAsync(profile, split: false);
     }
 
     private async Task ShowSettingsAsync()

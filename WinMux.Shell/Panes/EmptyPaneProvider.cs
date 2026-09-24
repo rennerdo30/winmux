@@ -23,7 +23,8 @@ internal sealed record EmptyPaneCommands(
     Action<PaneId> OpenFileBrowser,
     Action<PaneId, PaneKind> OpenPaneKind,
     Action<PaneId, ProfileKind> Connect,
-    Action<PaneId> MakeTabGroup);
+    Action<PaneId> MakeTabGroup,
+    Action ShowSavedConnections);
 
 /// <summary>
 /// A pane with nothing in it, offering everything that could go in it.
@@ -162,6 +163,10 @@ internal sealed class EmptyPaneRuntime : IPaneRuntime
         // it a tab group is a decision about the shape around it, and it was reachable only from the
         // toolbar — which is a long way to go from the pane that is asking the question.
         extras.Children.Add(Secondary("Make this a tab group", () => commands.MakeTabGroup(_pane.Id)));
+
+        // Somebody who already has two hundred servers in PuTTY or mRemoteNG should not have to
+        // type one of them in again to find out that WinMux can open it.
+        extras.Children.Add(Secondary("Saved connections…", commands.ShowSavedConnections));
 
         var content = new StackPanel
         {

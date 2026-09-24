@@ -195,6 +195,10 @@ internal static class ShellToolbar
             empty.Click += (_, _) => dispatch(ShellActionNames.NewEmptyPane);
             items.Add(empty);
 
+            var saved = new MenuItem { Header = "Saved connections from other tools…" };
+            saved.Click += (_, _) => dispatch(ShellActionNames.ShowConnections);
+            items.Add(saved);
+
             var manage = new MenuItem { Header = "Add or edit profiles…" };
             manage.Click += (_, _) => dispatch(ShellActionNames.ShowSettings);
             items.Add(manage);

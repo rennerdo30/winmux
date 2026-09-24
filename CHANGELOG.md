@@ -7,6 +7,19 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## Unreleased
+
+### Added
+
+- **A window for the saved connections of other tools.** *New → Saved connections from other
+  tools…*, or from an empty pane. PuTTY, WinSCP, FileZilla, MobaXterm and mRemoteNG are found where
+  each of them normally keeps its sessions, and shown as one tree. Every setting is displayed with
+  **where it came from** — "svc-deploy (from Production)" — which is the half of inheritance that
+  makes it usable: a server connecting as the wrong user tells you which folder to go and change.
+  Open a connection straight into a pane, import a host or a whole folder into WinMux's own
+  profiles, or copy a tool's stored passwords into Windows Credential Manager. Importing takes a
+  copy; the other tool's file is never touched by any of it.
+
 ## 0.7.8-test.1 — 2026-09-24
 
 A **test build**, published as a prerelease so it is not offered to anyone on the stable channel.

@@ -32,6 +32,9 @@ public static class ShellActionNames
     public const string NextTab = "next-tab";
     public const string PreviousTab = "previous-tab";
     public const string ShowSettings = "show-settings";
+
+    /// <summary>The saved connections of PuTTY, WinSCP, FileZilla, MobaXterm and mRemoteNG.</summary>
+    public const string ShowConnections = "show-connections";
     public const string OpenSession = "open-session";
     public const string SaveSession = "save-session";
     public const string SaveSessionAs = "save-session-as";
@@ -81,6 +84,7 @@ public static class ShellActionNames
         NextTab,
         PreviousTab,
         ShowSettings,
+        ShowConnections,
         OpenSession,
         SaveSession,
         SaveSessionAs,

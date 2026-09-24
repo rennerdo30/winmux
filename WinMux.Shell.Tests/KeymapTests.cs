@@ -111,6 +111,8 @@ public class KeymapTests
     private static readonly string[] MenuOnlyActions =
     [
         ShellActionNames.ShowSettings,
+        // In the toolbar's New menu and in an empty pane. The prefix keys are for the layout.
+        ShellActionNames.ShowConnections,
         ShellActionNames.OpenSession,
         ShellActionNames.SaveSessionAs,
         // Its own toolbar button, and an entry in that button's menu. The prefix keys already

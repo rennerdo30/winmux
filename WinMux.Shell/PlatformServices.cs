@@ -50,6 +50,12 @@ internal static class PlatformServices
     /// <summary>File and folder icons for the file browser, local or remote.</summary>
     public static IFileIconSource FileIcons { get; } = new Win32FileIconSource();
 
+    /// <summary>Where PuTTY and WinSCP keep their saved sessions (ADR 0025).</summary>
+    public static WinMux.Connections.IRegistryStore Registry { get; } = new Win32RegistryStore();
+
+    /// <summary>Undoing DPAPI, which is how Remote Desktop Connection Manager stores a password.</summary>
+    public static WinMux.Connections.Unprotect Unprotect { get; } = Win32SecretUnprotector.Unprotect;
+
     private static readonly Lazy<IDesktopNotifier> LazyNotifications = new(() => new Win32DesktopNotifier());
 
     /// <summary>
