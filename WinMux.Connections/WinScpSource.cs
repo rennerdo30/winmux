@@ -26,11 +26,30 @@ public sealed class WinScpSource : IConnectionSource
 {
     private const string SessionPrefix = @"Sessions\";
 
+    /// <summary>Where an installed WinSCP keeps its sessions, as opposed to a portable one.</summary>
+    private const string RegistryRoot = @"Software\Martin Prikryl\WinSCP 2";
+
     private readonly string _path;
+    private readonly IRegistryStore? _registry;
     private readonly Dictionary<ConnectionNode, string> _sections = [];
     private IniDocument? _document;
 
     public WinScpSource(string? path = null) => _path = path ?? DefaultPath();
+
+    /// <summary>
+    /// An installed WinSCP, which keeps its sessions in the registry rather than in a file.
+    ///
+    /// <para>
+    /// The file is the portable install, and it is the exception. Looking only there is why a
+    /// machine with WinSCP on it reported no saved connections at all — found by checking what was
+    /// actually on a machine rather than by reasoning about where the file ought to be.
+    /// </para>
+    /// </summary>
+    public WinScpSource(IRegistryStore registry)
+    {
+        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+        _path = @"HKCU\" + RegistryRoot;
+    }
 
     /// <summary>
     /// The portable file, beside WinSCP.exe. An installed WinSCP uses the registry instead, which
@@ -44,7 +63,9 @@ public sealed class WinScpSource : IConnectionSource
 
     public string Location => _path;
 
-    public bool Exists => File.Exists(_path);
+    public bool Exists => _registry is null
+        ? File.Exists(_path)
+        : _registry.KeyExists(RegistryRoot + @"\Sessions");
 
     /// <summary>WinSCP writes its ini when it closes, and would overwrite anything saved under it.</summary>
     public bool CanWriteWhileOtherToolRuns => false;
@@ -52,6 +73,7 @@ public sealed class WinScpSource : IConnectionSource
     public ConnectionFolder Read()
     {
         if (!Exists) throw new ConnectionSourceException($"There is no WinSCP configuration at {_path}.");
+        if (_registry is not null) return ReadRegistry(_registry);
 
         _document = IniDocument.Load(_path);
         _sections.Clear();
@@ -90,9 +112,56 @@ public sealed class WinScpSource : IConnectionSource
         return root;
     }
 
+    /// <summary>
+    /// The registry form: each session is a subkey whose name is the same escaped folder path the
+    /// ini uses for its section names, so the tree is built the same way.
+    /// </summary>
+    private ConnectionFolder ReadRegistry(IRegistryStore registry)
+    {
+        _sections.Clear();
+        var root = new ConnectionFolder("WinSCP");
+
+        foreach (var key in registry.SubKeyNames(RegistryRoot + @"\Sessions"))
+        {
+            var parts = key.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Unescape).ToArray();
+            if (parts.Length == 0) continue;
+
+            // WinSCP's own template, which is a default rather than a host anyone can open. Compared
+            // after unescaping, because the key is "Default%20Settings" and the name is not.
+            if (parts[^1].Equals("Default Settings", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var parent = root;
+            for (var i = 0; i < parts.Length - 1; i++) parent = FolderIn(parent, parts[i]);
+
+            var path = $@"{RegistryRoot}\Sessions\{key}";
+            var entry = new ConnectionEntry(parts[^1], new ConnectionSettings
+            {
+                Protocol = Inherited<ConnectionProtocol>.Of(ProtocolOf(registry.ReadValue(path, "FSProtocol"))),
+                Host = Inherited<string>.Of(registry.ReadValue(path, "HostName")?.Trim() ?? string.Empty),
+                Port = PortOf(registry.ReadValue(path, "PortNumber")),
+                User = Stated(registry.ReadValue(path, "UserName")),
+                RemoteDirectory = Stated(registry.ReadValue(path, "RemoteDirectory")),
+                Identity = Stated(registry.ReadValue(path, "PublicKeyFile") is { } file ? Unescape(file) : null),
+            });
+
+            parent.Add(entry);
+        }
+
+        return root;
+    }
+
+    private static Inherited<string> Stated(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? Inherited<string>.Inherit : Inherited<string>.Of(value.Trim());
+
     public void Write(ConnectionFolder root)
     {
         ArgumentNullException.ThrowIfNull(root);
+
+        if (_registry is not null)
+        {
+            throw new ConnectionSourceException(
+                "WinMux reads an installed WinSCP's sessions from the registry but does not write them yet.");
+        }
 
         var document = _document
             ?? throw new ConnectionSourceException("Read the WinSCP sessions before writing them back.");
@@ -128,6 +197,9 @@ public sealed class WinScpSource : IConnectionSource
     public IReadOnlyList<FoundCredential> ReadCredentials(ConnectionFolder root)
     {
         ArgumentNullException.ThrowIfNull(root);
+
+        // The registry form keeps its passwords the same way, but reading them needs the session
+        // key for each entry, which the ini path carries and this one does not yet.
         if (_document is null) return [];
 
         var found = new List<FoundCredential>();

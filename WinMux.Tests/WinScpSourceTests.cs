@@ -244,3 +244,89 @@ public class WinScpSourceTests : IDisposable
         return text.ToString();
     }
 }
+
+/// <summary>
+/// An installed WinSCP, which keeps its sessions in the registry rather than in a file.
+///
+/// Found the way these things are: by checking a machine rather than by reasoning about where the
+/// file ought to be. Looking only for WinSCP.ini is why a machine with WinSCP on it reported no
+/// saved connections at all.
+/// </summary>
+public class WinScpRegistryTests
+{
+    private const string Sessions = @"Software\Martin Prikryl\WinSCP 2\Sessions";
+
+    private static PuttySourceTests.FakeRegistry WithSessions()
+    {
+        var registry = new PuttySourceTests.FakeRegistry();
+
+        registry.Set($@"{Sessions}\Default%20Settings", "FSProtocol", "5");
+
+        registry.Set($@"{Sessions}\Production/web-01", "HostName", "files.example.com");
+        registry.Set($@"{Sessions}\Production/web-01", "PortNumber", "2222");
+        registry.Set($@"{Sessions}\Production/web-01", "UserName", "deploy");
+        registry.Set($@"{Sessions}\Production/web-01", "FSProtocol", "5");
+        registry.Set($@"{Sessions}\Production/web-01", "RemoteDirectory", "/srv/www");
+
+        registry.Set($@"{Sessions}\public%20mirror", "HostName", "ftp.example.org");
+        registry.Set($@"{Sessions}\public%20mirror", "FSProtocol", "2");
+
+        return registry;
+    }
+
+    [Fact]
+    public void Sessions_are_found_in_the_registry()
+    {
+        var source = new WinScpSource(WithSessions());
+
+        Assert.True(source.Exists);
+        Assert.Equal(["web-01", "public mirror"], source.Read().Entries().Select(entry => entry.Name));
+    }
+
+    [Fact]
+    public void The_folder_in_the_key_name_becomes_a_folder()
+    {
+        var root = new WinScpSource(WithSessions()).Read();
+
+        Assert.Equal(["WinSCP", "Production"], root.Folders().Select(folder => folder.Name));
+    }
+
+    [Fact]
+    public void A_session_keeps_its_settings()
+    {
+        var root = new WinScpSource(WithSessions()).Read();
+        var web = root.Entries().First(entry => entry.Name == "web-01");
+
+        Assert.Equal("files.example.com", ConnectionResolver.Host(web).Value);
+        Assert.Equal(2222, ConnectionResolver.Port(web).Value);
+        Assert.Equal("deploy", ConnectionResolver.User(web).Value);
+        Assert.Equal("/srv/www", ConnectionResolver.RemoteDirectory(web).Value);
+        Assert.Equal(ConnectionProtocol.Sftp, ConnectionResolver.Protocol(web).Value);
+    }
+
+    [Fact]
+    public void WinSCPs_own_template_is_not_a_host_you_can_open()
+    {
+        var root = new WinScpSource(WithSessions()).Read();
+
+        Assert.DoesNotContain(root.Entries(), entry => entry.Name.Contains("Default", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Nothing_in_the_registry_says_so_rather_than_reading_as_empty()
+    {
+        var source = new WinScpSource(new PuttySourceTests.FakeRegistry());
+
+        Assert.False(source.Exists);
+        Assert.Throws<ConnectionSourceException>(() => source.Read());
+    }
+
+    [Fact]
+    public void Writing_the_registry_form_is_refused_in_words_rather_than_silently_skipped()
+    {
+        var source = new WinScpSource(WithSessions());
+        var root = source.Read();
+
+        Assert.Throws<ConnectionSourceException>(() => source.Write(root));
+    }
+}

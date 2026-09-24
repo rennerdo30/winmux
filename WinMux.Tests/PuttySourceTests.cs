@@ -154,7 +154,7 @@ public class PuttySourceTests
     }
 
     /// <summary>A registry in a dictionary. Paths are keys; values hang off them.</summary>
-    internal sealed class FakeRegistry : IRegistryStore
+    public sealed class FakeRegistry : IRegistryStore
     {
         private readonly Dictionary<string, Dictionary<string, string>> _keys =
             new(StringComparer.OrdinalIgnoreCase);

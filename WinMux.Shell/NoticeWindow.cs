@@ -40,8 +40,11 @@ internal sealed class NoticeWindow : Window
 
     private NoticeWindow(string title, string message, string confirmText, string? cancelText)
     {
+        const double Width520 = 520;
+        const double SidePadding = 22;
+
         Title = title;
-        Width = 520;
+        Width = Width520;
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         ShowInTaskbar = false;
@@ -56,6 +59,9 @@ internal sealed class NoticeWindow : Window
             FontWeight = FontWeight.SemiBold,
             Foreground = Palette.TextBrush,
             TextWrapping = TextWrapping.Wrap,
+
+            // Without it, a 20px face is laid out in a box sized for 14 and the ascenders clip.
+            LineHeight = 26,
         };
 
         var body = new TextBlock
@@ -106,9 +112,15 @@ internal sealed class NoticeWindow : Window
 
         var content = new StackPanel
         {
-            Margin = new Thickness(22, 20, 22, 20),
+            Margin = new Thickness(SidePadding, 20, SidePadding, 20),
             Spacing = 10,
             Children = { heading, body },
+
+            // The width the text will actually have, stated rather than left to be discovered.
+            // SizeToContent.Height measures against an unbounded width, so a wrapping TextBlock
+            // reports the height of one very long line; the window is then sized to that, and the
+            // text wraps inside it afterwards with the last line or two below the bottom edge.
+            MaxWidth = Width520 - (2 * SidePadding),
         };
 
         var root = new DockPanel { LastChildFill = true };
@@ -116,6 +128,28 @@ internal sealed class NoticeWindow : Window
         root.Children.Add(footer);
         root.Children.Add(content);
         Content = root;
+
+        // SizeToContent.Height asks the content how tall it is before the width it will really have
+        // is settled, so a wrapping message can be measured as one very long line and the window
+        // sized for far less text than it holds — the last line or two then sit below the bottom
+        // edge. Reported from a screenshot on 2026-09-24.
+        //
+        // Measuring again once the window exists is the part that does not depend on guessing which
+        // pass got there first: at that point the client width is a fact, and a shortfall is
+        // arithmetic. MinHeight rather than Height, because SizeToContent owns Height and would
+        // undo it.
+        //
+        // Deliberately not verified by a test: Avalonia's headless windows size correctly here with
+        // and without it, so a headless test would pass either way and prove nothing.
+        Opened += (_, _) =>
+        {
+            if (Content is not Control body) return;
+
+            body.Measure(new Size(ClientSize.Width, double.PositiveInfinity));
+            var frame = Math.Max(0, Bounds.Height - ClientSize.Height);
+            var needed = body.DesiredSize.Height + frame;
+            if (needed > Bounds.Height) MinHeight = needed;
+        };
 
         // Esc should dismiss anything that only wants an acknowledgement.
         KeyDown += (_, e) =>

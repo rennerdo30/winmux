@@ -9,6 +9,14 @@ the ADRs say why.
 
 ## Unreleased
 
+### Fixed
+
+- **A dialog could cut off the last line of a long message.** `SizeToContent` asks the content how
+  tall it is before the width it will really have is settled, so a wrapping message is measured as
+  one very long line. The dialog measures again once it exists, when the width is a fact.
+- **An installed WinSCP's sessions were not found at all.** WinSCP keeps them in the registry
+  unless it is the portable build, and only the portable file was being looked for.
+
 ### Added
 
 - **A window for the saved connections of other tools.** *New → Saved connections from other

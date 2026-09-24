@@ -40,6 +40,11 @@ public sealed class ConnectionCatalog
         [
             new PuttySource(registry),
             new FileZillaSource(),
+
+            // Both WinSCPs: the installed one keeps its sessions in the registry and the portable
+            // one in a file beside itself. Looking only for the file is why a machine with WinSCP
+            // on it reported nothing at all.
+            new WinScpSource(registry),
             new WinScpSource(),
             new MobaXtermSource(),
             new MRemoteNgSource(),
