@@ -43,7 +43,15 @@ internal static class TabStripView
 {
     private const double AccentWeight = 2;
 
-    public static Control Build(LayoutTabStrip strip, PaneId focused, TabStripCommands commands)
+    /// <param name="waiting">
+    /// What a pane is waiting to tell the user, or null. A tab whose pane is waiting says so, which
+    /// is how "one of these six panes rang" becomes "that one".
+    /// </param>
+    public static Control Build(
+        LayoutTabStrip strip,
+        PaneId focused,
+        TabStripCommands commands,
+        Func<PaneId, string?>? waiting = null)
     {
         var vertical = strip.IsVertical;
         var items = new StackPanel
@@ -60,13 +68,20 @@ internal static class TabStripView
         for (var index = 0; index < strip.Stack.Children.Count; index++)
         {
             var child = strip.Stack.Children[index];
+            // Any pane under this tab, because a tab can hold a whole split and the pane that rang
+            // may not be the one whose title the tab shows.
+            var asking = waiting is null
+                ? null
+                : child.Leaves().Select(leaf => waiting(leaf.Pane.Id)).FirstOrDefault(m => m is not null);
+
             var tab = BuildTab(
                 child,
                 isActive: index == strip.Stack.ActiveIndex,
                 hasFocus: stackHasFocus && child.Leaves().Any(leaf => leaf.Pane.Id == focused),
                 vertical,
                 strip.Placement,
-                commands);
+                commands,
+                asking);
 
             tabs.Add(tab);
             items.Children.Add(tab);
@@ -329,7 +344,8 @@ internal static class TabStripView
         bool hasFocus,
         bool vertical,
         TabStripPlacement placement,
-        TabStripCommands commands)
+        TabStripCommands commands,
+        string? waiting)
     {
         var leaves = child.Leaves().ToArray();
         var target = leaves[0].Pane.Id;
@@ -373,6 +389,26 @@ internal static class TabStripView
         var row = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(corner, Dock.Right);
         row.Children.Add(corner);
+
+        // A dot rather than a bell: OSC 9 is a message as often as it is a ring, and an unread dot
+        // is the one mark nobody has to learn. Before the title, where a list is scanned, and in
+        // the accent so it reads at a glance on a tab that is not the active one.
+        if (waiting is not null)
+        {
+            var dot = new Border
+            {
+                Width = 7,
+                Height = 7,
+                CornerRadius = new CornerRadius(4),
+                Background = Palette.AccentBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 7, 0),
+                [ToolTip.TipProperty] = waiting,
+            };
+            DockPanel.SetDock(dot, Dock.Left);
+            row.Children.Add(dot);
+        }
+
         row.Children.Add(label);
 
         var tab = new Button
@@ -380,7 +416,7 @@ internal static class TabStripView
             Content = row,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             HorizontalAlignment = vertical ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
-            [ToolTip.TipProperty] = title,
+            [ToolTip.TipProperty] = waiting is null ? title : $"{title}{Environment.NewLine}{waiting}",
         };
         tab.Classes.Add(Theme.Tab);
         if (isActive) tab.Classes.Add(Theme.ActiveTab);

@@ -56,6 +56,18 @@ Multi-line pastes arrive as one paste when the program asks for bracketed paste,
 does not run line by line. `Alt` combinations, `Shift+Tab`, function keys and modified arrows
 (`Ctrl+Left` and so on) reach the program as a terminal program expects them.
 
+### When a pane wants you
+
+A program in a pane can ask for attention — Claude Code waiting on a permission, a build that
+finished, a bare bell. When it does and you are not looking at that pane, **an accent dot appears on
+its tab**, and hovering the tab says what it asked. The dot goes when you look at the pane, however
+you get there: clicking the tab, the prefix keys, or the command palette.
+
+It follows the **Notifications** setting in Settings, so turning notifications off turns the dots
+off too, and setting it to messages only leaves a bare bell unmarked. A pane in a split with no tab
+group of its own has no tab to mark; the status bar still says it, and a Windows notification still
+appears.
+
 ### Moving tabs
 
 **Drag a tab to move it.** Along its own strip to reorder it, or onto another group's strip to move

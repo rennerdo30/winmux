@@ -27,6 +27,7 @@ internal sealed class TerminalAttention
     public static readonly TimeSpan RepeatQuiet = TimeSpan.FromSeconds(30);
 
     private readonly Dictionary<PaneId, (DateTimeOffset At, string Text)> _last = [];
+    private readonly Dictionary<PaneId, string> _waiting = [];
 
     /// <param name="looking">
     /// The user is looking at this pane: WinMux is the active window and this is the focused pane.
@@ -54,8 +55,41 @@ internal sealed class TerminalAttention
         return true;
     }
 
+    /// <summary>
+    /// Whether a request should leave a mark on the pane's tab.
+    ///
+    /// <para>
+    /// The same policy filter as a notification and none of its quiet periods. A toast repeated
+    /// every second would bury the notification centre, which is why those exist; a mark that is
+    /// already showing cannot be shown twice, so there is nothing to rate-limit. A program ringing
+    /// in a loop is a program that still wants you.
+    /// </para>
+    /// </summary>
+    public static bool ShouldMark(TerminalNotificationPolicy policy, TerminalNotification notification) =>
+        policy != TerminalNotificationPolicy.Off &&
+        (notification.Kind != TerminalNotificationKind.Bell || policy == TerminalNotificationPolicy.MessagesAndBells);
+
+    /// <summary>Mark a pane as waiting, with what it said, for the tab to show and explain.</summary>
+    public void Mark(PaneId pane, string message) => _waiting[pane] = message;
+
+    /// <summary>
+    /// Drop the mark, because the user has looked. Returns true when there was one, so the caller
+    /// can skip a relayout it does not need.
+    /// </summary>
+    public bool Seen(PaneId pane) => _waiting.Remove(pane);
+
+    /// <summary>What <paramref name="pane"/> is waiting to say, or null when it is not waiting.</summary>
+    public string? WaitingMessage(PaneId pane) => _waiting.GetValueOrDefault(pane);
+
+    /// <summary>Whether any pane is waiting. Cheap enough to ask on every tab that is drawn.</summary>
+    public bool IsWaiting(PaneId pane) => _waiting.ContainsKey(pane);
+
     /// <summary>Forget a pane that has closed.</summary>
-    public void Forget(PaneId pane) => _last.Remove(pane);
+    public void Forget(PaneId pane)
+    {
+        _last.Remove(pane);
+        _waiting.Remove(pane);
+    }
 
     /// <summary>
     /// The heading names the pane, because "Claude needs your permission" is only useful once you

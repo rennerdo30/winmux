@@ -30,7 +30,10 @@ public sealed class PinnedTabTests
             MoveTab: _ => { });
     }
 
-    private static (Control Strip, Pane First, Recorder Log) BuildStrip(bool pinFirst)
+    private static (Control Strip, Pane First, Recorder Log) BuildStrip(bool pinFirst) =>
+        BuildStrip(pinFirst, waiting: null);
+
+    private static (Control Strip, Pane First, Recorder Log) BuildStrip(bool pinFirst, Func<PaneId, string?>? waiting)
     {
         var first = Pane.Terminal("build");
         var second = Pane.Terminal("scratch");
@@ -42,7 +45,10 @@ public sealed class PinnedTabTests
         var stack = (StackNode)tree.Root;
         var log = new Recorder([], []);
         var strip = TabStripView.Build(
-            new WinMux.Core.Layout.TabStrip(stack, new WinMux.Core.Layout.Rect(0, 0, 400, 32), TabStripPlacement.Top), first.Id, log.Commands);
+            new WinMux.Core.Layout.TabStrip(stack, new WinMux.Core.Layout.Rect(0, 0, 400, 32), TabStripPlacement.Top),
+            first.Id,
+            log.Commands,
+            waiting);
 
         // Shown in a window rather than measured by hand: the strip's own controls are templated,
         // and a template is only applied once the control is attached to a root. Without this the

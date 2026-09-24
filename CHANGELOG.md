@@ -11,6 +11,12 @@ the ADRs say why.
 
 ### Added
 
+- **A pane asking for you marks its tab.** When a program raises a notification — Claude Code
+  waiting on a permission, a bell — an accent dot appears on that pane's tab, with what it said on
+  the tooltip, and stays until you look at the pane. The notification tells you *that* something
+  happened; the dot tells you *which* of six panes, which is the part that was missing. It follows
+  the same Notifications setting, and unlike the toast it is not rate-limited: a program still
+  ringing is a program that still wants you.
 - **A tab drag shows where the tab will land.** An accent caret in the gap the drop will fill — on
   the gap rather than on a tab, because "between which two" is the question a drag asks and
   highlighting one tab cannot say before or after. The strip about to receive it takes the accent

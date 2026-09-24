@@ -94,3 +94,107 @@ public sealed class TerminalAttentionTests
         Assert.Contains("bell", message, StringComparison.OrdinalIgnoreCase);
     }
 }
+
+/// <summary>
+/// The mark a waiting pane leaves on its tab.
+///
+/// It answers a different question from the notification — not "tell me now" but "which of these
+/// six panes wants me" — so it follows different rules: no quiet periods, and it lasts until the
+/// pane is looked at rather than until a toast has been shown.
+/// </summary>
+public sealed class WaitingPaneMarkTests
+{
+    private static readonly TerminalNotification Message =
+        new(TerminalNotificationKind.Osc9, null, "Claude needs your permission");
+
+    private static readonly TerminalNotification Bell = new(TerminalNotificationKind.Bell, null, "");
+
+    [Fact]
+    public void A_marked_pane_is_waiting_and_remembers_what_it_said()
+    {
+        var attention = new TerminalAttention();
+        var pane = PaneId.New();
+
+        attention.Mark(pane, "Claude needs your permission");
+
+        Assert.True(attention.IsWaiting(pane));
+        Assert.Equal("Claude needs your permission", attention.WaitingMessage(pane));
+    }
+
+    [Fact]
+    public void An_unmarked_pane_is_not_waiting()
+    {
+        var attention = new TerminalAttention();
+
+        Assert.False(attention.IsWaiting(PaneId.New()));
+        Assert.Null(attention.WaitingMessage(PaneId.New()));
+    }
+
+    [Fact]
+    public void Looking_at_a_pane_clears_it()
+    {
+        var attention = new TerminalAttention();
+        var pane = PaneId.New();
+        attention.Mark(pane, "anything");
+
+        Assert.True(attention.Seen(pane));
+        Assert.False(attention.IsWaiting(pane));
+
+        // And says there was nothing to clear the second time, so the caller can skip a relayout.
+        Assert.False(attention.Seen(pane));
+    }
+
+    [Fact]
+    public void One_pane_waiting_does_not_mark_another()
+    {
+        var attention = new TerminalAttention();
+        var asking = PaneId.New();
+        var quiet = PaneId.New();
+        attention.Mark(asking, "over here");
+
+        Assert.True(attention.IsWaiting(asking));
+        Assert.False(attention.IsWaiting(quiet));
+    }
+
+    [Fact]
+    public void A_closed_pane_is_forgotten()
+    {
+        var attention = new TerminalAttention();
+        var pane = PaneId.New();
+        attention.Mark(pane, "anything");
+
+        attention.Forget(pane);
+
+        Assert.False(attention.IsWaiting(pane));
+    }
+
+    [Theory]
+    [InlineData(TerminalNotificationPolicy.Off, false)]
+    [InlineData(TerminalNotificationPolicy.Messages, true)]
+    [InlineData(TerminalNotificationPolicy.MessagesAndBells, true)]
+    public void A_message_is_marked_unless_notifications_are_off(TerminalNotificationPolicy policy, bool expected) =>
+        Assert.Equal(expected, TerminalAttention.ShouldMark(policy, Message));
+
+    [Theory]
+    [InlineData(TerminalNotificationPolicy.Off, false)]
+    [InlineData(TerminalNotificationPolicy.Messages, false)]
+    [InlineData(TerminalNotificationPolicy.MessagesAndBells, true)]
+    public void A_bare_bell_is_marked_only_when_bells_count(TerminalNotificationPolicy policy, bool expected) =>
+        Assert.Equal(expected, TerminalAttention.ShouldMark(policy, Bell));
+
+    [Fact]
+    public void A_pane_ringing_in_a_loop_stays_marked_without_being_rate_limited()
+    {
+        // ShouldNotify has quiet periods because a flood of toasts buries the notification centre.
+        // A mark that is already showing cannot be shown twice, so there is nothing to limit, and a
+        // program still ringing is a program that still wants you.
+        var attention = new TerminalAttention();
+        var pane = PaneId.New();
+        var now = new DateTimeOffset(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);
+
+        Assert.True(attention.ShouldNotify(TerminalNotificationPolicy.Messages, Message, pane, looking: false, now));
+        Assert.False(attention.ShouldNotify(TerminalNotificationPolicy.Messages, Message, pane, looking: false, now));
+
+        Assert.True(TerminalAttention.ShouldMark(TerminalNotificationPolicy.Messages, Message));
+    }
+}

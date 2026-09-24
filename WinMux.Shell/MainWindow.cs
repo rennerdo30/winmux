@@ -485,7 +485,7 @@ internal sealed partial class MainWindow : Window
 
         foreach (var strip in arrangement.TabStrips)
         {
-            var view = TabStripView.Build(strip, _tree.Focused, commands);
+            var view = TabStripView.Build(strip, _tree.Focused, commands, _attention.WaitingMessage);
             Canvas.SetLeft(view, strip.Rect.X);
             Canvas.SetTop(view, strip.Rect.Y);
             view.Width = strip.Rect.Width;
@@ -613,6 +613,7 @@ internal sealed partial class MainWindow : Window
     private void FocusPane(PaneId pane)
     {
         _tree.Focus(pane);
+        _attention.Seen(pane);
         Relayout();
         FocusActivePaneAfterLayout();
     }
@@ -648,6 +649,7 @@ internal sealed partial class MainWindow : Window
     private void FocusActivePaneAfterLayout()
     {
         var target = _tree.Focused;
+        _attention.Seen(target);
         UpdateLayout();
         _runtimes.GetValueOrDefault(target)?.Focus();
     }
