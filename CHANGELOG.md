@@ -11,6 +11,9 @@ the ADRs say why.
 
 ### Added
 
+- **An empty pane offers to become a tab group.** Making a pane a tab group is a decision about
+  the shape around it rather than about what goes in it, and it was reachable only from the toolbar
+  — a long way from the pane that is asking the question.
 - **A pane asking for you marks its tab.** When a program raises a notification — Claude Code
   waiting on a permission, a bell — an accent dot appears on that pane's tab, with what it said on
   the tooltip, and stays until you look at the pane. The notification tells you *that* something
@@ -34,6 +37,12 @@ the ADRs say why.
 
 ### Fixed
 
+- **"Tab group" added another tab to the group the pane was already in**, instead of making a
+  group. The toolbar button has always said "turn the focused pane into a tab group" and did
+  exactly that once — on every press after the first it added a tab to the group it had made.
+  A pane already in a group now gets a group nested inside it. **"New tab, tabs down the side" was
+  worse**: it found the *enclosing* group and moved its strip, so asking for a side-tabbed group
+  from inside a top-tabbed one moved every existing tab to the side instead of making anything.
 - **Selecting a tab often needed a second click while a full-screen program was running.** A
   terminal pane posts a repaint whenever its engine updates, at a higher dispatcher priority than
   the job that moved the keyboard to the newly selected pane — and Claude Code, vim or a build

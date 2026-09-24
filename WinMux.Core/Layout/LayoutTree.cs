@@ -124,6 +124,28 @@ public sealed class LayoutTree
     }
 
     /// <summary>
+    /// Put the target pane and a new one into a tab group of their own, whatever is around them.
+    ///
+    /// <para>
+    /// Distinct from <see cref="AddTab"/>, which joins the group the pane is already in if there is
+    /// one. "Turn this pane into a tab group" and "add a tab beside this pane" are the same thing
+    /// exactly once — the first time — and the toolbar button promising the first was doing the
+    /// second on every press after that. A pane already in a group gets a group nested inside it,
+    /// which is a shape the layout has always supported (ADR 0014).
+    /// </para>
+    /// </summary>
+    public PaneId AddTabGroup(PaneId target, Pane newPane)
+    {
+        ArgumentNullException.ThrowIfNull(newPane);
+
+        var leaf = Find(target) ?? throw new InvalidOperationException($"No such pane: {target}");
+        var created = new StackNode([new LeafNode(leaf.Pane), new LeafNode(newPane)], activeIndex: 1);
+        Replace(leaf, created);
+        _focused = newPane.Id;
+        return newPane.Id;
+    }
+
+    /// <summary>
     /// Add a tab to a stack that already exists, beside its active child.
     ///
     /// <para>

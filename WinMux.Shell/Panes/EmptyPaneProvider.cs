@@ -22,7 +22,8 @@ internal sealed record EmptyPaneCommands(
     Action<PaneId> AttachWindow,
     Action<PaneId> OpenFileBrowser,
     Action<PaneId, PaneKind> OpenPaneKind,
-    Action<PaneId, ProfileKind> Connect);
+    Action<PaneId, ProfileKind> Connect,
+    Action<PaneId> MakeTabGroup);
 
 /// <summary>
 /// A pane with nothing in it, offering everything that could go in it.
@@ -156,6 +157,11 @@ internal sealed class EmptyPaneRuntime : IPaneRuntime
         };
         extras.Children.Add(Secondary("Choose an application…", () => commands.ChooseApplication(_pane.Id)));
         extras.Children.Add(Secondary("Attach an open window…", () => commands.AttachWindow(_pane.Id)));
+
+        // Not everything you can do with an empty pane is a decision about what goes *in* it. Making
+        // it a tab group is a decision about the shape around it, and it was reachable only from the
+        // toolbar — which is a long way to go from the pane that is asking the question.
+        extras.Children.Add(Secondary("Make this a tab group", () => commands.MakeTabGroup(_pane.Id)));
 
         var content = new StackPanel
         {

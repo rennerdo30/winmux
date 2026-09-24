@@ -113,6 +113,9 @@ public class KeymapTests
         ShellActionNames.ShowSettings,
         ShellActionNames.OpenSession,
         ShellActionNames.SaveSessionAs,
+        // Its own toolbar button, and an entry in that button's menu. The prefix keys already
+        // spend `c` and `v` on tabs.
+        ShellActionNames.NewTabGroup,
         ShellActionNames.MoveTabsTop,
         ShellActionNames.MoveTabsBottom,
         ShellActionNames.MoveTabsLeft,

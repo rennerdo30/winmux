@@ -167,7 +167,12 @@ internal sealed partial class MainWindow : Window
                         NewFileBrowserPane(_tree.GetPane(_tree.Focused)?.Restore.Cwd.Path),
                         "opened the file browser")),
                     (pane, kind) => Run(OpenPaneKindInAsync(pane, kind)),
-                    (pane, kind) => Run(ConnectInPaneAsync(pane, kind))),
+                    (pane, kind) => Run(ConnectInPaneAsync(pane, kind)),
+                    pane =>
+                    {
+                        FocusPane(pane);
+                        Run(AddTabGroupAsync(Pane.Empty(), "new tab group"));
+                    }),
                 () => Settings.ShellProfiles.All,
                 PlatformServices.AppIcons,
                 OfferablePaneKinds),
@@ -736,14 +741,38 @@ internal sealed partial class MainWindow : Window
     }
 
     /// <summary>A tab group whose tabs run down the side, created in one step.</summary>
-    private async Task AddVerticalTabAsync()
+    private Task AddVerticalTabAsync() =>
+        AddTabGroupAsync(NewTerminalPane(), "new tab group, tabs on the left", TabStripPlacement.Left);
+
+    /// <summary>
+    /// Put the focused pane into a tab group of its own, and open <paramref name="pane"/> beside it.
+    ///
+    /// <para>
+    /// Unlike a new tab, this always makes a group: a pane already in one gets a group nested inside
+    /// it. That is what the toolbar's "Tab group" button has always said it does — "turn the focused
+    /// pane into a tab group" — while actually adding another tab to the group the pane was in, on
+    /// every press after the first.
+    /// </para>
+    ///
+    /// <para>
+    /// The placement is set on the group this made, which is the other half of the same fault: the
+    /// vertical variant used to find the <em>enclosing</em> group and move its strip, so asking for
+    /// a side-tabbed group while inside a top-tabbed one moved every tab of the existing group to
+    /// the side instead.
+    /// </para>
+    /// </summary>
+    private async Task AddTabGroupAsync(Pane pane, string message, TabStripPlacement? placement = null)
     {
-        await AddTabAsync(NewTerminalPane(), "new tab, tabs on the left");
-        if (FindEnclosingStack(_tree.Find(_tree.Focused)) is { } stack)
-        {
-            stack.TabStrip = TabStripPlacement.Left;
-            Relayout();
-        }
+        var runtime = await CreateNewRuntimeAsync(pane);
+        var id = _tree.AddTabGroup(_tree.Focused, pane);
+        AddRuntime(pane, runtime);
+
+        if (FindEnclosingStack(_tree.Find(id)) is { } created)
+            created.TabStrip = placement ?? Settings.ShellSettings.Current.DefaultTabPlacement;
+
+        _message = message;
+        Relayout();
+        FocusActivePaneAfterLayout();
     }
 
     private static StackNode? FindEnclosingStack(LayoutNode? node)
@@ -928,6 +957,8 @@ internal sealed partial class MainWindow : Window
         _actions.Register(ShellActionNames.TogglePin, () => TogglePin(_tree.Focused));
         _actions.RegisterAsync(ShellActionNames.NewTab, _ => new ValueTask(AddTabAsync()));
         _actions.RegisterAsync(ShellActionNames.NewTabVertical, _ => new ValueTask(AddVerticalTabAsync()));
+        _actions.RegisterAsync(ShellActionNames.NewTabGroup,
+            _ => new ValueTask(AddTabGroupAsync(Pane.Empty(), "new tab group")));
         _actions.RegisterAsync(ShellActionNames.RenamePane, _ => new ValueTask(RenamePaneAsync(_tree.Focused)));
         _actions.RegisterAsync(ShellActionNames.NewEmptyPane,
             _ => new ValueTask(AddTabAsync(Pane.Empty(), "new empty pane")));

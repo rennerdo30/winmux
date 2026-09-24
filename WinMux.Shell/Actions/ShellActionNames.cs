@@ -18,6 +18,12 @@ public static class ShellActionNames
     /// <summary>Pin or unpin the focused pane, so that closing a pane leaves it alone.</summary>
     public const string TogglePin = "toggle-pin";
     public const string NewTab = "new-tab";
+
+    /// <summary>
+    /// Put the focused pane in a tab group of its own, even when it is already in one — which then
+    /// nests, rather than adding another tab to the group it is in.
+    /// </summary>
+    public const string NewTabGroup = "new-tab-group";
     public const string NewEmptyPane = "new-empty-pane";
     public const string RenamePane = "rename-pane";
 
@@ -67,6 +73,7 @@ public static class ShellActionNames
         FocusDown,
         ClosePane,
         TogglePin,
+        NewTabGroup,
         NewTab,
         NewEmptyPane,
         RenamePane,

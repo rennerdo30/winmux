@@ -58,11 +58,12 @@ internal static class ShellToolbar
         bar.Children.Add(Divider());
 
         bar.Children.Add(SplitButton(
-            Icons.TabGroup(), "Tab group", "Turn the focused pane into a tab group",
-            () => dispatch(ShellActionNames.NewTab),
+            Icons.TabGroup(), "Tab group", "Put the focused pane in a tab group of its own",
+            () => dispatch(ShellActionNames.NewTabGroup),
             [
                 ("New tab here", ShellActionNames.NewTab),
-                ("New tab, tabs down the side", ShellActionNames.NewTabVertical),
+                ("New tab group", ShellActionNames.NewTabGroup),
+                ("New tab group, tabs down the side", ShellActionNames.NewTabVertical),
             ],
             dispatch,
             extras:
