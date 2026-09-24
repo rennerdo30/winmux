@@ -53,9 +53,16 @@ internal sealed class SettingsWindow : Window
         _profiles = [.. profiles];
 
         Title = "WinMux settings";
-        Width = 620;
-        SizeToContent = SizeToContent.Height;
-        CanResize = false;
+
+        // Sized and resizable rather than shrink-wrapped and fixed. The page is about 2,100px of
+        // cards; at the old fixed 640px viewport that was three and a third screens of scrolling
+        // with no way to make the window taller, on any monitor. The height is clamped to the
+        // screen once there is a screen to ask (see Opened).
+        Width = 660;
+        Height = 820;
+        MinWidth = 560;
+        MinHeight = 420;
+        CanResize = true;
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Palette.DialogBrush;
@@ -73,9 +80,13 @@ internal sealed class SettingsWindow : Window
             CornerRadius = Palette.ControlRadius,
         };
 
+        // No fixed height: 210px cut the fourth profile through the middle of its name, which reads
+        // as a rendering fault rather than as "there is more below". It now takes what it needs and
+        // scrolls only once there are more profiles than fit.
         _profileList = new ListBox
         {
-            Height = 210,
+            MinHeight = 120,
+            MaxHeight = 320,
             CornerRadius = Palette.ControlRadius,
             Background = Palette.SurfaceBrush,
         };
@@ -171,8 +182,13 @@ internal sealed class SettingsWindow : Window
             _notifications,
             "When a program asks for your attention in a pane you are not looking at — Claude Code " +
             "waiting on a permission, a build that finished — show a Windows notification. Click it to " +
-            "go to the pane." +
-            (PlatformServices.Notifications.BlockedReason is { } blocked ? " " + blocked : "")));
+            "go to the pane."));
+        if (PlatformServices.Notifications.BlockedReason is { } blocked)
+        {
+            body.Children.Add(SettingsCard.Warning(
+                blocked, "Open Windows settings", PlatformServices.Notifications.OpenSystemSettings));
+        }
+
         body.Children.Add(SettingsCard.Row(
             "Claude Code notifications",
             claude,
@@ -194,9 +210,9 @@ internal sealed class SettingsWindow : Window
             "Confirm before closing running panes",
             _confirmClosing,
             "Asks first when an action would close a pane with a program still in it."));
-        body.Children.Add(SettingsCard.Info("Session file", sessionPath));
-        body.Children.Add(SettingsCard.Info("Settings file", settingsPath));
-        body.Children.Add(SettingsCard.Info("Profiles file", profilesPath));
+        body.Children.Add(SettingsCard.File("Session file", sessionPath, () => OpenFolderOf(sessionPath)));
+        body.Children.Add(SettingsCard.File("Settings file", settingsPath, () => OpenFolderOf(settingsPath)));
+        body.Children.Add(SettingsCard.File("Profiles file", profilesPath, () => OpenFolderOf(profilesPath)));
 
         body.Children.Add(SettingsCard.Heading("Working directories"));
         body.Children.Add(SettingsCard.Row(
@@ -262,8 +278,17 @@ internal sealed class SettingsWindow : Window
         var root = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(footer, Dock.Bottom);
         root.Children.Add(footer);
-        root.Children.Add(new ScrollViewer { Content = body, MaxHeight = 640 });
+        root.Children.Add(new ScrollViewer { Content = body });
         Content = root;
+
+        // A default of 820 is right on a 1440p display and taller than the whole screen on a
+        // 1366x768 laptop. The screen is only knowable once the window has one.
+        Opened += (_, _) =>
+        {
+            if (Screens.ScreenFromWindow(this) is not { } screen) return;
+            var available = screen.WorkingArea.Height / screen.Scaling;
+            Height = Math.Clamp(Height, MinHeight, Math.Max(MinHeight, available - 80));
+        };
 
         KeyDown += (_, e) =>
         {
@@ -281,7 +306,6 @@ internal sealed class SettingsWindow : Window
         {
             Orientation = Orientation.Horizontal,
             Spacing = Palette.GapSmall,
-            Margin = new Thickness(0, Palette.GapMedium, 0, 0),
         };
 
         row.Children.Add(Small("Add application…", () => _ = AddFromCatalogAsync()));
@@ -294,9 +318,46 @@ internal sealed class SettingsWindow : Window
 
         row.Children.Add(Small("Add manually…", () => _ = AddManuallyAsync()));
         row.Children.Add(Small("Edit…", () => _ = EditSelectedAsync()));
-        row.Children.Add(Small("Remove", RemoveSelected));
 
-        return new StackPanel { Children = { _profileList, row } };
+        // Remove sits apart from the other four, and reddens under the pointer. It was the fifth
+        // identical button in a row of five, one pixel from Edit, and it is the only one of them
+        // that destroys something.
+        var remove = Small("Remove", RemoveSelected);
+        remove.Classes.Add(Chrome.Theme.DangerButton);
+
+        var buttons = new Grid
+        {
+            ColumnDefinitions = [new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto)],
+            Margin = new Thickness(0, Palette.GapMedium, 0, 0),
+        };
+        Grid.SetColumn(row, 0);
+        Grid.SetColumn(remove, 2);
+        buttons.Children.Add(row);
+        buttons.Children.Add(remove);
+
+        return new StackPanel { Children = { _profileList, buttons } };
+    }
+
+    /// <summary>
+    /// Show the folder a settings file lives in. The reason to look at one of these paths is nearly
+    /// always to go there, and reading it out of a dialog into Explorer by hand is the step this
+    /// removes. <c>UseShellExecute</c> hands the path to the shell, which is what opens a window on
+    /// it rather than trying to run it.
+    /// </summary>
+    private static void OpenFolderOf(string path)
+    {
+        try
+        {
+            var folder = Path.GetDirectoryName(Path.GetFullPath(path));
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return;
+            using var _ = System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+                                      or IOException or ArgumentException or NotSupportedException)
+        {
+            // Nothing here is worth interrupting the dialog for.
+        }
     }
 
     private Button Small(string label, Action invoke)

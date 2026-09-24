@@ -73,6 +73,24 @@ public sealed class Win32DesktopNotifier : IDesktopNotifier
         }
     }
 
+    /// <summary>
+    /// The notification page of the Windows settings app. <c>UseShellExecute</c> is what makes the
+    /// string a request to the shell rather than a program to run, which is what resolves the
+    /// <c>ms-settings:</c> scheme.
+    /// </summary>
+    public void OpenSystemSettings()
+    {
+        try
+        {
+            using var _ = System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo("ms-settings:notifications") { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            // A settings page that will not open is not worth interrupting anyone over.
+        }
+    }
+
     public void Show(string title, string message, Action? activated)
     {
         ArgumentNullException.ThrowIfNull(title);

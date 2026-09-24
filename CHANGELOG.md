@@ -22,6 +22,19 @@ the ADRs say why.
   history that no longer existed, and the cursor is deliberately not drawn while you are reading
   history.
 
+### Changed
+
+- **The settings dialog got a pass over what it actually looks like**, rendered rather than
+  reasoned about. The three file paths wrapped into right-aligned fragments — `C:` alone on the
+  first line, `ml` alone on the third — and are now one line that ellipsises by whole directories,
+  with the full path on the tooltip and an **Open folder** button beside it. The window is
+  **resizable** and opens as tall as the screen allows, instead of being fixed at a 640px viewport
+  over 2,100px of content. The profile list no longer cuts its last row through the middle.
+  **Remove** is separated from the four buttons it sat flush against and reddens under the pointer.
+- **A notification block is its own warning, with the button that fixes it.** "Windows
+  notifications are turned off" was appended to a description in the same muted grey as everything
+  else, so the one thing on the page that needed doing was the easiest to miss.
+
 ### Documentation
 
 - [Troubleshooting](https://winmux.dev/troubleshooting/) says where the crash log is

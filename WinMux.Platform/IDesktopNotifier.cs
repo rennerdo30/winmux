@@ -22,6 +22,16 @@ public interface IDesktopNotifier : IDisposable
     string? BlockedReason { get; }
 
     /// <summary>
+    /// Take the user to wherever <see cref="BlockedReason"/> can be lifted — on Windows, the
+    /// notification page of the system settings.
+    ///
+    /// The reason is a sentence telling someone to go somewhere, and a sentence telling someone to
+    /// go somewhere is not an interface (CLAUDE.md section 5a). Does nothing when nothing is in the
+    /// way, and never throws: failing to open a settings page is not worth an error dialog.
+    /// </summary>
+    void OpenSystemSettings();
+
+    /// <summary>
     /// Show a notification. Returns at once; the notification appears shortly after.
     /// </summary>
     /// <param name="title">The heading — which pane is asking.</param>

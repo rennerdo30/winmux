@@ -199,6 +199,9 @@ internal static class Theme
     public const string ActiveTab = "active-tab";
     public const string CloseButton = "close-button";
     public const string DialogButton = "dialog-button";
+
+    /// <summary>A button that destroys something. Ordinary until the pointer is on it.</summary>
+    public const string DangerButton = "danger-button";
     public const string CaptionButton = "caption-button";
     public const string CaptionClose = "caption-close";
 
@@ -328,6 +331,15 @@ internal static class Theme
         styles.Add(new Style(x => x.OfType<Button>().Class(ActiveTab))
         {
             Setters = { new Setter(TemplatedControl.ForegroundProperty, Palette.TextBrush) },
+        });
+
+        // A destructive button reads as ordinary until you are about to press it, which is the
+        // moment the warning is worth anything. Colouring it red at rest would make Remove the
+        // loudest thing on a settings page.
+        styles.Add(new Style(x => x.OfType<Button>().Class(DangerButton).Class(":pointerover")
+                                   .Template().OfType<ContentPresenter>())
+        {
+            Setters = { new Setter(ContentPresenter.BackgroundProperty, Palette.DangerBrush) },
         });
 
         // Closing is the one destructive thing on a tab, so it says so on hover.
