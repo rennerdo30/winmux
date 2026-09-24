@@ -5,7 +5,7 @@ using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
-using WinMux.Core.Connections;
+using WinMux.Connections;
 
 namespace WinMux.Tests;
 

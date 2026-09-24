@@ -31,6 +31,17 @@ hundred servers use those tools rather than a list.
 
 ## Decision
 
+### Their own assembly, not Core
+
+`WinMux.Connections`. Core is the layout tree, the session model and the config; six foreign-format
+parsers are none of those, and mRemoteNG's AES-GCM needs a crypto library Core has no business
+carrying.
+
+This was not the original plan — the first sources went into Core, and `CoreIsPlatformFreeTests`
+failed the build the moment a package arrived with them, with a message saying that adding one is a
+design decision belonging in an ADR. It was right. The guard existed to make exactly this call
+deliberate rather than incidental, and it did.
+
 ### A connection tree, separate from profiles
 
 `WinMux.Core/Connections` gains a tree of `ConnectionFolder` and `ConnectionEntry`. It is **not** a

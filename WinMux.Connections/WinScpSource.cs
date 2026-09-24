@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// WinSCP's saved sessions, from <c>WinSCP.ini</c> or from the registry.

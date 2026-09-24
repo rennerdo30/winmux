@@ -1,5 +1,5 @@
 using System.Text;
-using WinMux.Core.Connections;
+using WinMux.Connections;
 
 namespace WinMux.Tests;
 

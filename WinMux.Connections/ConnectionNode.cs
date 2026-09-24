@@ -1,4 +1,4 @@
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// A node in a connection tree: a folder that groups and states defaults, or an entry that is a

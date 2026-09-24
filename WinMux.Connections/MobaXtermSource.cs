@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// MobaXterm's saved sessions, from <c>MobaXterm.ini</c>.

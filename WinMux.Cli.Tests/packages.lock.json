@@ -29,11 +29,6 @@
         "resolved": "3.1.4",
         "contentHash": "5mj99LvCqrq3CNi06xYdyIAXOEh+5b33F2nErCzI5zWiDdLHXiPXEWFSUAF8zlIv0ZWqjZNCwHTQeAPYbF3pCg=="
       },
-      "BouncyCastle.Cryptography": {
-        "type": "Transitive",
-        "resolved": "2.7.0",
-        "contentHash": "U+12df8UEWHgBi04YVf/Lgi2dy3SItlIYvHjjEVa/BngCQIzDCDRBk50DDByCfDvSbe5pRNFr3b7UrVK2kMcLw=="
-      },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
         "resolved": "17.14.1",
@@ -106,7 +101,6 @@
       "winmux.core": {
         "type": "Project",
         "dependencies": {
-          "BouncyCastle.Cryptography": "[2.7.0, )",
           "Tomlyn": "[2.10.1, )"
         }
       },

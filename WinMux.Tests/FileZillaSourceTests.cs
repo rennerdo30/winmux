@@ -1,5 +1,5 @@
 using System.Xml.Linq;
-using WinMux.Core.Connections;
+using WinMux.Connections;
 
 namespace WinMux.Tests;
 

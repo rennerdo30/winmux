@@ -32,10 +32,15 @@
         "resolved": "2.10.1",
         "contentHash": "ykjOY3IpYmC4SpPcAZRTl/w2jTmhPMDydHq8xcV7tTBAQ22nKBsOkPqauIrZlMjHm03cmKfV23UOPscKp+J4Og=="
       },
+      "winmux.connections": {
+        "type": "Project",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "[2.7.0, )"
+        }
+      },
       "winmux.core": {
         "type": "Project",
         "dependencies": {
-          "BouncyCastle.Cryptography": "[2.7.0, )",
           "Tomlyn": "[2.10.1, )"
         }
       },

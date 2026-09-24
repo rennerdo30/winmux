@@ -6,7 +6,7 @@ using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
 
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// mRemoteNG's connections, from <c>confCons.xml</c>.

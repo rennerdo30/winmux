@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\WinMux.Core\WinMux.Core.csproj" />
     <ProjectReference Include="..\WinMux.Platform\WinMux.Platform.csproj" />
+    <ProjectReference Include="..\WinMux.Connections\WinMux.Connections.csproj" />
   </ItemGroup>
 
   <!-- Hand the platform-free test the path to Core's project file, so it can assert on the

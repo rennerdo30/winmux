@@ -1,4 +1,4 @@
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// A setting's effective value and the node that supplied it.

@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\WinMux.Core\WinMux.Core.csproj" />
     <ProjectReference Include="..\WinMux.Platform\WinMux.Platform.csproj" />
+    <ProjectReference Include="..\WinMux.Connections\WinMux.Connections.csproj" />
   </ItemGroup>
 
 </Project>

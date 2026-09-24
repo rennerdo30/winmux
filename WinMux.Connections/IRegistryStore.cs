@@ -1,4 +1,4 @@
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// The little of the Windows registry that saved-session formats need.

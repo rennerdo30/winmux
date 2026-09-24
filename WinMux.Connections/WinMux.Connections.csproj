@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Other tools' saved sessions, read and written in place (ADR 0025). Its own assembly and not
+      part of WinMux.Core: Core is the layout tree, the session model and the config, and six
+      foreign-format parsers are none of those. They also bring a dependency Core has no business
+      carrying — a crypto library, for mRemoteNG's AES-GCM — and CoreIsPlatformFreeTests was right
+      to refuse it there rather than letting the boundary soften.
+
+      net10.0 with no OS suffix, as Core is. Five of the six formats are files and need nothing from
+      Windows; the registry the sixth uses arrives through IRegistryStore.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- mRemoteNG's nonce is sixteen bytes; .NET's own AesGcm accepts twelve and nothing else. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+  </ItemGroup>
+
+</Project>

@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// PuTTY's saved sessions, from <c>HKCU\Software\SimonTatham\PuTTY\Sessions</c>.

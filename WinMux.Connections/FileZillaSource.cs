@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Xml.Linq;
 
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// FileZilla's Site Manager, from <c>%APPDATA%\FileZilla\sitemanager.xml</c>.

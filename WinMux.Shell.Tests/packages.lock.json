@@ -392,6 +392,7 @@
           "Avalonia.Themes.Fluent": "[12.1.2, )",
           "FluentFTP": "[54.2.1, )",
           "SSH.NET": "[2026.0.0, )",
+          "WinMux.Connections": "[0.7.7, )",
           "WinMux.Core": "[0.7.7, )",
           "WinMux.Panes": "[0.7.7, )",
           "WinMux.Platform.Win32": "[0.7.7, )",
@@ -399,10 +400,15 @@
           "WinMux.Terminal": "[0.7.7, )"
         }
       },
+      "winmux.connections": {
+        "type": "Project",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "[2.7.0, )"
+        }
+      },
       "winmux.core": {
         "type": "Project",
         "dependencies": {
-          "BouncyCastle.Cryptography": "[2.7.0, )",
           "Tomlyn": "[2.10.1, )"
         }
       },
@@ -424,6 +430,7 @@
         "dependencies": {
           "System.Drawing.Common": "[9.0.0, )",
           "System.Security.Cryptography.ProtectedData": "[9.0.0, )",
+          "WinMux.Connections": "[0.7.7, )",
           "WinMux.Core": "[0.7.7, )",
           "WinMux.Platform": "[0.7.7, )"
         }

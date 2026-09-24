@@ -111,10 +111,15 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
+      "winmux.connections": {
+        "type": "Project",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "[2.7.0, )"
+        }
+      },
       "winmux.core": {
         "type": "Project",
         "dependencies": {
-          "BouncyCastle.Cryptography": "[2.7.0, )",
           "Tomlyn": "[2.10.1, )"
         }
       },

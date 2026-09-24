@@ -264,10 +264,15 @@
         "resolved": "2.10.1",
         "contentHash": "ykjOY3IpYmC4SpPcAZRTl/w2jTmhPMDydHq8xcV7tTBAQ22nKBsOkPqauIrZlMjHm03cmKfV23UOPscKp+J4Og=="
       },
+      "winmux.connections": {
+        "type": "Project",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "[2.7.0, )"
+        }
+      },
       "winmux.core": {
         "type": "Project",
         "dependencies": {
-          "BouncyCastle.Cryptography": "[2.7.0, )",
           "Tomlyn": "[2.10.1, )"
         }
       },
@@ -289,6 +294,7 @@
         "dependencies": {
           "System.Drawing.Common": "[9.0.0, )",
           "System.Security.Cryptography.ProtectedData": "[9.0.0, )",
+          "WinMux.Connections": "[0.7.7, )",
           "WinMux.Core": "[0.7.7, )",
           "WinMux.Platform": "[0.7.7, )"
         }

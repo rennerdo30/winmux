@@ -1,4 +1,4 @@
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// A setting a node either states or leaves to whatever is above it.

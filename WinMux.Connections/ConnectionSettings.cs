@@ -1,4 +1,4 @@
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>How a connection is made. The vocabulary the foreign tools share.</summary>
 public enum ConnectionProtocol

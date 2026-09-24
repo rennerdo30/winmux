@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
 
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// Undoing whatever the operating system did to protect a stored secret.

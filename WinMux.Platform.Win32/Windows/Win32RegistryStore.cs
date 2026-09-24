@@ -1,5 +1,5 @@
 using Microsoft.Win32;
-using WinMux.Core.Connections;
+using WinMux.Connections;
 
 namespace WinMux.Platform.Win32.Windows;
 

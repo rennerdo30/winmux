@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>
 /// An INI file, kept as it was written so it can be given back that way.

@@ -1,4 +1,4 @@
-namespace WinMux.Core.Connections;
+namespace WinMux.Connections;
 
 /// <summary>A secret found in another tool's file.</summary>
 /// <param name="Node">

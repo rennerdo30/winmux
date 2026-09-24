@@ -34,8 +34,8 @@
     <ProjectReference Include="..\WinMux.Platform.Win32\WinMux.Platform.Win32.csproj" />
     <ProjectReference Include="..\WinMux.Pty\WinMux.Pty.csproj" />
     <ProjectReference Include="..\WinMux.Terminal\WinMux.Terminal.csproj" />
-    <ProjectReference Include="..\WinMux.PaneHost\WinMux.PaneHost.csproj"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\WinMux.PaneHost\WinMux.PaneHost.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\WinMux.Connections\WinMux.Connections.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -49,9 +49,7 @@
     <EmbeddedResource Include="Cwd\Profiles\winmux.ps1" />
     <EmbeddedResource Include="Cwd\Profiles\winmux.cmd" />
     <EmbeddedResource Include="Cwd\Profiles\winmux.sh" />
-    <None Include="..\WinMux.Platform.Win32\ForeignApps\foreign-app-quirks.json"
-          Link="foreign-app-quirks.json"
-          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\WinMux.Platform.Win32\ForeignApps\foreign-app-quirks.json" Link="foreign-app-quirks.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Ask PaneHost where it actually built instead of guessing. The guess used to be
@@ -60,16 +58,13 @@
        the old path. A missing PaneHost.exe only surfaces much later, as a foreign-app pane that
        refuses to start, so this fails the build instead (CLAUDE.md section 8: no silent failure). -->
   <Target Name="ResolvePaneHostOutput">
-    <MSBuild Projects="..\WinMux.PaneHost\WinMux.PaneHost.csproj"
-             Targets="GetTargetPath"
-             Properties="Configuration=$(Configuration);Platform=$(Platform)">
+    <MSBuild Projects="..\WinMux.PaneHost\WinMux.PaneHost.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);Platform=$(Platform)">
       <Output TaskParameter="TargetOutputs" ItemName="PaneHostTarget" />
     </MSBuild>
     <ItemGroup>
       <PaneHostOutput Include="%(PaneHostTarget.RootDir)%(PaneHostTarget.Directory)WinMux.PaneHost.*" />
     </ItemGroup>
-    <Error Condition="'@(PaneHostOutput)' == ''"
-           Text="WinMux.PaneHost produced no output to copy beside WinMux.exe. Foreign-app panes cannot start without it." />
+    <Error Condition="'@(PaneHostOutput)' == ''" Text="WinMux.PaneHost produced no output to copy beside WinMux.exe. Foreign-app panes cannot start without it." />
   </Target>
 
   <Target Name="CopyPaneHost" AfterTargets="Build" DependsOnTargets="ResolvePaneHostOutput">
