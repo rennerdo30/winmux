@@ -126,7 +126,7 @@ public class FileZillaSourceTests : IDisposable
         var credentials = source.ReadCredentials(root);
 
         var found = Assert.Single(credentials);
-        Assert.Equal("web-01", found.Entry.Name);
+        Assert.Equal("web-01", found.Node.Name);
         Assert.Equal("secret-sauce", found.Secret);
     }
 

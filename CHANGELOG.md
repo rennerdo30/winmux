@@ -16,6 +16,13 @@ the ADRs say why.
   which folder supplied it, so a server connecting as the wrong user tells you where to go and
   change it. This is the model mRemoteNG and Remote Desktop Connection Manager get right, and the
   groundwork for reading their files ([ADR 0025](docs/adr/0025-foreign-connection-sources.md)).
+- **Six tools' saved sessions are read in place**, so each goes on working on the same files:
+  FileZilla, PuTTY, WinSCP, MobaXterm, mRemoteNG and Remote Desktop Connection Manager. mRemoteNG's
+  and RDCMan's folder inheritance comes across as inheritance rather than being flattened, and a
+  resolved value says which folder it came from. Stored passwords are decoded where the format
+  allows — PuTTY keeps none, mRemoteNG needs its file password, RDCMan's are readable only on the
+  account that saved them — and are offered to Windows Credential Manager rather than copied into
+  any WinMux file. RDCMan is read-only on purpose; everything else can be edited and saved back.
 - **FileZilla's Site Manager is read and written in place**, so FileZilla goes on working on the
   same file. Folders, sites, ports, remote directories and stored passwords; everything WinMux has
   no opinion about survives a save untouched, and the first save leaves the original beside it.

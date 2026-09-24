@@ -221,7 +221,7 @@ public class WinScpSourceTests : IDisposable
 
         var found = Assert.Single(source.ReadCredentials(root));
 
-        Assert.Equal("public mirror", found.Entry.Name);
+        Assert.Equal("public mirror", found.Node.Name);
         Assert.Equal("hunter2", found.Secret);
     }
 

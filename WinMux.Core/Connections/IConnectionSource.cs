@@ -1,9 +1,14 @@
 namespace WinMux.Core.Connections;
 
-/// <summary>A secret found in another tool's file, and how much trouble it was to read.</summary>
-/// <param name="Entry">The connection it belongs to.</param>
+/// <summary>A secret found in another tool's file.</summary>
+/// <param name="Node">
+/// What it belongs to. A <em>folder</em> as often as a host: in Remote Desktop Connection Manager
+/// and mRemoteNG the credential is usually stated once on a group and inherited by everything under
+/// it, which is the point of those tools. A type that could only name a host would force each
+/// source to either lose those or copy one secret onto fifty servers.
+/// </param>
 /// <param name="Secret">The password, in the clear.</param>
-public readonly record struct FoundCredential(ConnectionEntry Entry, string Secret);
+public readonly record struct FoundCredential(ConnectionNode Node, string Secret);
 
 /// <summary>What a source could not do, in words for the user.</summary>
 public sealed class ConnectionSourceException : Exception

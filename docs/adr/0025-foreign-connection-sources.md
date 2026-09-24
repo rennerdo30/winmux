@@ -97,9 +97,27 @@ first and says what it will copy.
 
 ## Status of the work
 
-- **Done:** the connection tree, inheritance and resolution, the source contract, and FileZilla as
-  the first source (hierarchy, credentials, read and write, preserving unknown elements).
-- **Next, in order:** PuTTY (registry, flat, no secrets), WinSCP, MobaXterm, then mRemoteNG and
-  RDCMan, which are the hierarchical ones and the reason inheritance exists.
-- **Not started:** the UI — a connections panel, the resolved-value display, and the one-click
-  convert.
+**All six sources are implemented.** Each has a round-trip test against a sample in that tool's own
+shape, and each password routine is checked against an encoder written from the format rather than
+against itself — a decoder that only agrees with its own mistakes would otherwise pass.
+
+| Source | Hierarchy | Writes | Secrets |
+|---|---|---|---|
+| FileZilla | folders | yes | base64, read on request |
+| PuTTY | none, and does not invent any | yes | none stored |
+| WinSCP | in the section name | yes | obfuscation, decoded |
+| MobaXterm | `SubRep` path | yes | not in this file |
+| mRemoteNG | containers, field-by-field inheritance | yes | AES-GCM, default key or one supplied |
+| RDCMan | groups, block-by-block inheritance | **no** | DPAPI, this account only |
+
+Two things fell out of building them that were not obvious when this was written:
+
+- **A credential belongs to a node, not to a host.** mRemoteNG and RDCMan both state one credential
+  on a folder and inherit it across everything under it, so a scan that looked only at connections
+  would find nothing at all in a well-organised file.
+- **RDCMan is read-only.** It is retired, undocumented, and its files carry elements whose meaning
+  is only inferred. Reading a format well enough to show it is not the same as knowing enough to
+  rewrite somebody's server list, and the difference is somebody's server list.
+
+**Not started:** the UI — a connections panel, the resolved-value display, and the one-click
+convert.

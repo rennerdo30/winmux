@@ -319,6 +319,11 @@
           "Microsoft.Win32.SystemEvents": "9.0.0"
         }
       },
+      "System.Security.Cryptography.ProtectedData": {
+        "type": "Transitive",
+        "resolved": "9.0.0",
+        "contentHash": "CJW+x/F6fmRQ7N6K8paasTw9PDZp4t7G76UjGNlSDgoHPF0h08vTzLYbLZpOLEJSg35d5wy2jCXGo84EN05DpQ=="
+      },
       "Terminal.Emulation": {
         "type": "Transitive",
         "resolved": "0.3.3",
@@ -387,16 +392,17 @@
           "Avalonia.Themes.Fluent": "[12.1.2, )",
           "FluentFTP": "[54.2.1, )",
           "SSH.NET": "[2026.0.0, )",
-          "WinMux.Core": "[0.7.0, )",
-          "WinMux.Panes": "[0.7.0, )",
-          "WinMux.Platform.Win32": "[0.7.0, )",
-          "WinMux.Pty": "[0.7.0, )",
-          "WinMux.Terminal": "[0.7.0, )"
+          "WinMux.Core": "[0.7.7, )",
+          "WinMux.Panes": "[0.7.7, )",
+          "WinMux.Platform.Win32": "[0.7.7, )",
+          "WinMux.Pty": "[0.7.7, )",
+          "WinMux.Terminal": "[0.7.7, )"
         }
       },
       "winmux.core": {
         "type": "Project",
         "dependencies": {
+          "BouncyCastle.Cryptography": "[2.7.0, )",
           "Tomlyn": "[2.10.1, )"
         }
       },
@@ -404,21 +410,22 @@
         "type": "Project",
         "dependencies": {
           "Avalonia": "[12.1.2, )",
-          "WinMux.Core": "[0.7.0, )"
+          "WinMux.Core": "[0.7.7, )"
         }
       },
       "winmux.platform": {
         "type": "Project",
         "dependencies": {
-          "WinMux.Core": "[0.7.0, )"
+          "WinMux.Core": "[0.7.7, )"
         }
       },
       "winmux.platform.win32": {
         "type": "Project",
         "dependencies": {
           "System.Drawing.Common": "[9.0.0, )",
-          "WinMux.Core": "[0.7.0, )",
-          "WinMux.Platform": "[0.7.0, )"
+          "System.Security.Cryptography.ProtectedData": "[9.0.0, )",
+          "WinMux.Core": "[0.7.7, )",
+          "WinMux.Platform": "[0.7.7, )"
         }
       },
       "winmux.pty": {
