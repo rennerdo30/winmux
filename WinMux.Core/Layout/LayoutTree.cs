@@ -124,6 +124,29 @@ public sealed class LayoutTree
     }
 
     /// <summary>
+    /// Add a tab to a stack that already exists, beside its active child.
+    ///
+    /// <para>
+    /// Distinct from <see cref="AddTab"/>, which says "beside <em>this pane</em>" and therefore
+    /// lands wherever that pane's parent happens to be. A stack's own "+" button means "another tab
+    /// <em>here</em>", and the two are not the same thing the moment a stack holds another stack or
+    /// a split: naming a pane inside the active child puts the new tab in that child's group rather
+    /// than in the one whose button was pressed.
+    /// </para>
+    /// </summary>
+    public PaneId AddTabToStack(StackNode stack, Pane newPane)
+    {
+        ArgumentNullException.ThrowIfNull(stack);
+        ArgumentNullException.ThrowIfNull(newPane);
+
+        var index = stack.ActiveIndex + 1;
+        stack.InsertChild(index, new LeafNode(newPane));
+        stack.ActiveIndex = index;
+        _focused = newPane.Id;
+        return newPane.Id;
+    }
+
+    /// <summary>
     /// Remove a pane. Returns false if it does not exist, or if it is the last pane in the tree —
     /// a window always has at least one pane, and closing the last one is the shell's decision,
     /// not the tree's.

@@ -667,12 +667,22 @@ internal sealed partial class MainWindow : Window
         await CloseFocusedAsync();
     }
 
-    private Task AddTabToStackAsync(StackNode stack)
+    /// <summary>
+    /// The "+" on a stack's own tab strip. The new tab goes in <em>that</em> stack.
+    ///
+    /// It used to name a pane inside the stack's active child and add a tab beside it, which is the
+    /// same thing only while that child is a single pane. With a tab group inside a tab group, the
+    /// outer strip's "+" put its new tab in the inner group.
+    /// </summary>
+    private async Task AddTabToStackAsync(StackNode stack)
     {
-        // Add beside the stack's active tab so the new one lands in this stack rather than
-        // wherever focus happens to be — the user clicked a specific "+".
-        var beside = stack.Active.Leaves().First().Pane.Id;
-        return AddTabAsync(Pane.Empty(), "new tab", beside);
+        var pane = Pane.Empty();
+        var runtime = await CreateNewRuntimeAsync(pane);
+        var id = _tree.AddTabToStack(stack, pane);
+        AddRuntime(pane, runtime);
+        _message = "new tab";
+        Relayout();
+        _runtimes.GetValueOrDefault(id)?.Focus();
     }
 
     private void SetTabPlacement(StackNode stack, TabStripPlacement placement)
