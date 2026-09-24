@@ -863,7 +863,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             {
                 // Told about growth before redrawing: while the user is reading history, new
                 // output must not drag the text upward under them.
-                _viewport.OnBufferGrew(_engine.TotalRows, _engine.ScrollbackCount);
+                _viewport.OnBufferChanged(_engine.TotalRows, _engine.ScrollbackCount);
                 InvalidateVisual();
             },
             DispatcherPriority.Render);

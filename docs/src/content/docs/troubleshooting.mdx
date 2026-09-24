@@ -40,6 +40,33 @@ A `cmd` pane that keeps restoring to `C:\Windows` instead of a share is a third,
 
 See [Network shares](/network-shares/) for all three.
 
+## WinMux closed on its own
+
+Every unhandled exception is written to `%LOCALAPPDATA%\WinMux\crash.log`, with the time, the
+process id, the WinMux version and the full stack. An ordinary exit writes a line there too, so a
+crash and a close can be told apart afterwards:
+
+```
+2026-09-24 05:41:32.384 +02:00  process exit, code 0  pid 39772  version 0.7.3
+2026-09-24 05:42:46.514 +02:00  unhandled exception on the UI thread  pid 30228  version 0.7.4
+```
+
+Two things to know before you go looking:
+
+- **Copy it before you carry on using WinMux.** The file is capped at 1 MB and is deleted, not
+  rotated, on the next write past that.
+- **An empty log is informative too.** The handlers catch managed exceptions; a stack overflow, an
+  access violation in native code or a `FailFast` bypasses them and leaves nothing. If the crash is
+  not in the log, look in Event Viewer under Windows Logs -> Application for a `.NET Runtime` or
+  `Application Error` entry naming `WinMux.exe`.
+
+If it is reproducible, `WINMUX_DEBUG_PTY=1` captures the pane's raw output for replay, and
+`WINMUX_DEBUG_KEYS=1` records what each key became. **The key log contains everything typed into a
+pane, passwords included** — turn it on deliberately and delete it afterwards.
+
+A crash log is the most useful thing you can attach to an
+[issue](https://github.com/rennerdo30/winmux/issues).
+
 ## The chrome looks wrong
 
 If Mica is unavailable, WinMux says so in the status bar on startup and uses an opaque window. That

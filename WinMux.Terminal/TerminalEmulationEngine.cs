@@ -143,20 +143,25 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
     {
         lock (sync)
         {
-            var source = terminal.GetRow(rowIndex);
-            if (destination.Length < source.Length)
-            {
-                throw new ArgumentException(
-                    $"Destination has {destination.Length} cells but row {rowIndex} requires {source.Length}.",
-                    nameof(destination));
-            }
+            // A row index and a destination size are both answers to questions asked of a buffer
+            // that the pty thread may already have changed -- entering the alternate screen discards
+            // the whole scrollback in one write. So neither is treated as a caller error: a row that
+            // is no longer there reads as empty, and a row wider than the destination is copied as
+            // far as it fits. The caller draws a blank line for one frame and the next repaint,
+            // which the Updated event has already scheduled, is correct.
+            if (rowIndex < 0 || rowIndex >= terminal.TotalRows) return default;
 
-            for (var column = 0; column < source.Length; column++)
+            var source = terminal.GetRow(rowIndex);
+            var length = Math.Min(Math.Min(source.Length, destination.Length), source.Cells.Length);
+
+            for (var column = 0; column < length; column++)
             {
                 destination[column] = ConvertCell(source.Cells[column]);
             }
 
-            return new TerminalRowInfo(source.Length, source.Wrapped);
+            // The reported length describes what is in the destination, never what was in the
+            // buffer, because every caller uses it to index the destination.
+            return new TerminalRowInfo(length, source.Wrapped);
         }
     }
 

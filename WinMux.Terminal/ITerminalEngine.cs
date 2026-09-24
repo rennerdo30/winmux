@@ -97,10 +97,22 @@ public interface ITerminalEngine
     /// <summary>
     /// Copies a row into caller-owned storage and returns its metadata. Rows are indexed from
     /// zero through <see cref="TotalRows"/> minus one: scrollback first, then the live screen.
+    ///
+    /// <para>
+    /// <b>This call is total, and deliberately so.</b> An engine is written to from the pty thread
+    /// while it is read from the UI thread, so an index or a buffer size obtained a moment ago can
+    /// already be wrong — entering the alternate screen discards the entire scrollback in a single
+    /// write. A row outside the buffer therefore reads as empty rather than throwing, and a row
+    /// wider than <paramref name="destination"/> is copied as far as it fits. The returned
+    /// <see cref="TerminalRowInfo.Length"/> always describes what was written into
+    /// <paramref name="destination"/>, so it is safe to index with.
+    /// </para>
+    /// <para>
+    /// It threw on both counts until 2026-09-24, which crashed the shell during a repaint whenever a
+    /// full-screen program started while the pane held scrollback. See
+    /// <c>docs/adr/0024-reading-a-terminal-while-it-is-written-to.md</c>.
+    /// </para>
     /// </summary>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="destination"/> is shorter than the row.
-    /// </exception>
     TerminalRowInfo CopyRow(int rowIndex, Span<TerminalCell> destination);
 
     /// <summary>Resolves an OSC 8 hyperlink id from a cell, or returns null when absent.</summary>

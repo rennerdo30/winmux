@@ -4,10 +4,10 @@
 
 ## Where we are
 
-**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.4 is released** —
-Claude Code now works in a terminal pane (rendering, Alt+V image paste, copy and paste), the updater
-installs and always restarts, and the session lives in `%APPDATA%\WinMux`. What is left needs a
-person, a second monitor or a decision — see *Waiting on you*.
+**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.4 is released, and
+0.7.5 is committed but not tagged** — it fixes a crash that 0.7.4 could reach within a minute of
+starting a full-screen program. What is left needs a person, a second monitor or a decision — see
+*Waiting on you*.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
 `WinMux.Panes`; the shell declares zero `DllImport` (ADR 0013); tab groups nest anywhere (ADR 0014);
@@ -16,7 +16,7 @@ The file browser speaks SFTP/FTP, copies between filesystems, drags and drops (A
 Terminal programs can raise Windows notifications (ADR 0022).
 
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-24: 902 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
+**Verified 2026-09-24: 907 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
 skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set (how to run a server: `RemoteLiveTests`).
 Releases: `v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
 
@@ -25,38 +25,49 @@ Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
 
 ## What just happened
 
-**2026-09-24 — Claude Code in a pane, found with the user's own debug build.**
-- **Rendering**: Claude Code asks `ESC[?u` at startup; the engine executed it as `ESC[u` (restore
-  cursor), so every later relative move landed rows off. Found by replaying an opt-in PTY capture
-  through the engine; fixed in the normalizer ([ADR 0018 addendum](docs/adr/0018-terminal-emulation-supply-chain.md)).
-- **Alt+V** sent `ESC V` (Alt+Shift+V) because Windows reports Alt+V's symbol as "V". Found in the
-  opt-in key log (`WINMUX_DEBUG_KEYS=1`). Both confirmed working on screen by the user.
-- **The updater and the session** ([ADR 0023](docs/adr/0023-session-location-and-in-place-updates.md)):
-  in-place, rolled-back, always-relaunching updates; session moved out of the working directory,
-  where an update could delete it. `UpdateScriptTests` runs the real script.
-- "Claude Code has no colours" was the verifier's own `NO_COLOR=1` leaking into the panes it
-  launched — see *Do not re-do*.
+**2026-09-24 (later) — the first crash the crash log ever caught, diagnosed from the log alone.**
+The user ran 0.7.4 on another machine and it disappeared; `%LOCALAPPDATA%\WinMux\crash.log` had the
+thread, the stack and the version, and a clean `process exit, code 0` on the run before, so there
+was nothing to reproduce blind. `IndexOutOfRangeException` out of `CopyRow`, inside a repaint.
+- **Cause, measured**: entering the alternate screen discards the whole scrollback in one write
+  (`TotalRows` 101 → 10 on a 40x10 engine holding 100 lines). `Render` had already read the
+  dimensions and was copying rows by their old absolute indices. The engine's lock made every *call*
+  atomic and a *frame* atomic in no way at all. Four other call sites read rows the same way.
+- **Fix**: reading a row is total — a row that is no longer there reads as empty, a row wider than
+  the destination is truncated, and the reported length always describes the destination
+  ([ADR 0024](docs/adr/0024-reading-a-terminal-while-it-is-written-to.md)). The rejected alternative,
+  an atomic frame API, is written down there with the reason.
+- **Second bug from the same write**: the viewport stayed parked above a scrollback that no longer
+  existed, where the cursor is deliberately not drawn — vim started after scrolling back had no
+  cursor in it. `OnBufferGrew` is now `OnBufferChanged` and clamps on a shrink.
+- Both guards were verified by putting the bugs back: four tests went red, the racing one in two
+  seconds.
+- The troubleshooting page now says where the crash log is, that it is capped at 1 MB and deleted
+  rather than rotated, and what an empty one means. It did not, which is why the user had to ask.
 
-**2026-09-23** — notifications (ADR 0022), terminal copy and paste (`TerminalInput`), the file browser
-(ADR 0021), a renamed pane keeping its name. `git log` has the detail.
+**2026-09-24 (earlier)** — Claude Code in a pane: `ESC[?u` misparsed as restore-cursor, Alt+V sending
+Alt+Shift+V, the updater installing in place and always restarting, the session moved to
+`%APPDATA%\WinMux` (ADRs 0018 addendum, 0023). **2026-09-23** — notifications (ADR 0022), terminal
+copy and paste, the file browser (ADR 0021). `git log` has the detail.
 
 ## The next action
 
-**Have the user install 0.7.4 by hand once** (0.7.3's installer is the broken one; unzip over the
-WinMux folder with WinMux closed), then confirm the next update — 0.7.5, whenever it comes — installs
-itself through the new script. Still unseen on screen: the notification toast (needs Windows
-notifications switched on) and Claude Code's own notification reaching WinMux.
+**Tag 0.7.5** (`git tag v0.7.5 && git push origin v0.7.5`) so the fix reaches the machine that
+crashed — tagging publishes, so it is the user's to run. **0.7.4 still has to be installed by hand
+once** on any machine on 0.7.3 or earlier, because the old version's broken installer is the one
+that runs; after that, the next update should install itself, and watching one do so is still
+unseen. Also unseen on screen: the notification toast.
 
 ## Waiting on you
 
 Only a person, a machine setting or a judgement can move these; nothing in the code waits on them.
 
-- **Install 0.7.4 by hand**, and later watch one update install itself.
+- **Tag `v0.7.5`**, and install 0.7.4 by hand anywhere still below it.
 - **The notification check**: Windows notifications on, Claude Code set up from Settings, a task in
   a pane, switch away — a toast naming the pane should appear.
 - **Run the mixed-DPI check.** One display at a different scale, then `scripts/verify-mixed-dpi.ps1`.
 - **Decide `Terminal.Emulation`.** [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md) — now
-  with a second engine defect behind it.
+  with a third engine defect behind it.
 
 ## Standing constraints
 
@@ -245,6 +256,10 @@ that a future session recognises them as answers rather than rediscovering them 
   via UNC paths" was asserted across several turns, written into a plan, and only checked afterwards
   — where it happened to be true. `\\localhost\C$` is reachable without elevation and makes the
   check a two-minute job on any Windows machine; there was never a reason not to do it first.
+- Do not compose a frame out of several individually-locked reads. Locking each member of
+  `TerminalEmulationEngine` makes every call atomic and the frame atomic in no way at all; the pty
+  thread writes between any two of them, and entering the alternate screen drops the entire
+  scrollback in one write. That crashed 0.7.4 from inside a repaint (ADR 0024).
 - Do not render a terminal row as one `FormattedText` with one brush. It looks correct on an
   uncoloured prompt and silently throws away every colour and attribute the engine parsed; a run
   per cell is the other wrong answer, at 12,000 text layouts a second on a wide row.

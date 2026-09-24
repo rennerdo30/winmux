@@ -89,13 +89,17 @@ public sealed class TerminalEmulationEngineTests
     }
 
     [Fact]
-    public void CopyRowRejectsUndersizedDestination()
+    public void CopyRowFillsAnUndersizedDestinationAndSaysHowMuchItWrote()
     {
+        // This threw ArgumentException until 2026-09-24. A destination sized from Columns can be
+        // one write behind the engine, and refusing the copy turned that into a crash rather than
+        // one narrow repaint, so it now truncates and reports the truncated length.
         var engine = new TerminalEmulationEngine(20, 3);
+        var destination = new TerminalCell[19];
 
-        var error = Assert.Throws<ArgumentException>(() => engine.CopyRow(0, new TerminalCell[19]));
+        var info = engine.CopyRow(0, destination);
 
-        Assert.Equal("destination", error.ParamName);
+        Assert.Equal(19, info.Length);
     }
 
     private static string ReadGrid(ITerminalEngine engine)

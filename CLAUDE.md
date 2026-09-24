@@ -455,6 +455,13 @@ target is Win32, so it lives behind `IAppCatalog` in `WinMux.Platform` and is im
   toolbar in it beside the app icon. Snap layouts come back through `ISnapLayoutService`, which
   claims the maximise button rectangle — and with it that button’s clicks and hover, which the
   system then drives. See the 2026-09-15 addendum to ADR 0016 before touching either.
+- **The terminal engine is written to from the pty thread while the UI reads it, and a lock per
+  member does not make a frame coherent.** `Render` read the dimensions and then copied rows by
+  absolute index; a program entering the alternate screen discards the whole scrollback in one write
+  between the two, and 0.7.4 crashed out of a repaint. Reading a row is therefore **total** — a row
+  that is gone reads as empty rather than throwing
+  ([ADR 0024](docs/adr/0024-reading-a-terminal-while-it-is-written-to.md)). Anything else that reads
+  the engine across several calls has the same problem and does not get to assume otherwise.
 - **Headless UI tests need `[assembly: AvaloniaTestApplication]`**, and `WinMux.Shell.Tests` went
   without it until 2026-09-23: every headless test ran with no theme and so no control templates, and
   a `ListBox` held items without ever showing a row. A test that looks for a row is the check.

@@ -93,18 +93,26 @@ internal sealed class TerminalViewport
     }
 
     /// <summary>
-    /// Account for output that has arrived since the last frame.
+    /// Account for what the buffer did since the last frame.
     ///
     /// While the user is reading history, new output must not drag the text upward under them:
     /// the offset grows by however many rows were added, which keeps the same absolute rows on
     /// screen. Following the output — the usual case — is left alone.
+    ///
+    /// <para>
+    /// The buffer can also lose rows, which this ignored until 2026-09-24: a program entering the
+    /// alternate screen discards the entire scrollback in one write. The view was then parked above
+    /// history that no longer existed — harmless for the rows drawn, which clamp to the top, but
+    /// <see cref="IsFollowing"/> stayed false and so the cursor was not drawn at all. Starting vim
+    /// after scrolling back gave a terminal with no cursor in it.
+    /// </para>
     /// </summary>
-    public void OnBufferGrew(int totalRows, int scrollbackRows)
+    public void OnBufferChanged(int totalRows, int scrollbackRows)
     {
         var added = totalRows - _lastTotalRows;
         _lastTotalRows = totalRows;
-        if (added <= 0 || ScrollOffset == 0) return;
-        ScrollOffset = Math.Clamp(ScrollOffset + added, 0, Math.Max(0, scrollbackRows));
+        if (ScrollOffset == 0) return;
+        ScrollOffset = Math.Clamp(ScrollOffset + Math.Max(0, added), 0, Math.Max(0, scrollbackRows));
     }
 
     public void BeginSelection(TerminalPosition at)

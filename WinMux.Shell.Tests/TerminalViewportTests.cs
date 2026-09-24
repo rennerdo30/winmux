@@ -65,23 +65,39 @@ public sealed class TerminalViewportTests
         // The property that makes scrollback usable on a busy terminal: the rows on screen stay
         // the same rows, and the view drifts further from the bottom instead.
         var viewport = new TerminalViewport();
-        viewport.OnBufferGrew(totalRows: 100, scrollbackRows: 75);
+        viewport.OnBufferChanged(totalRows: 100, scrollbackRows: 75);
         viewport.Scroll(20, 75);
         var before = viewport.TopRow(100, ScreenRows);
 
-        viewport.OnBufferGrew(totalRows: 130, scrollbackRows: 105);
+        viewport.OnBufferChanged(totalRows: 130, scrollbackRows: 105);
 
         Assert.Equal(before, viewport.TopRow(130, ScreenRows));
         Assert.Equal(50, viewport.ScrollOffset);
     }
 
     [Fact]
+    public void A_scrollback_that_vanishes_returns_the_view_to_the_live_screen()
+    {
+        // A program entering the alternate screen discards the whole scrollback in one write. The
+        // view cannot stay parked in history that is gone: IsFollowing would stay false, and the
+        // renderer draws no cursor while the view is in history — vim with no cursor in it.
+        var viewport = new TerminalViewport();
+        viewport.OnBufferChanged(totalRows: 100, scrollbackRows: 75);
+        viewport.Scroll(20, 75);
+        Assert.False(viewport.IsFollowing);
+
+        viewport.OnBufferChanged(totalRows: ScreenRows, scrollbackRows: 0);
+
+        Assert.True(viewport.IsFollowing, "the view stayed parked above a scrollback that no longer exists");
+    }
+
+    [Fact]
     public void Output_arriving_while_following_keeps_following()
     {
         var viewport = new TerminalViewport();
-        viewport.OnBufferGrew(100, 75);
+        viewport.OnBufferChanged(100, 75);
 
-        viewport.OnBufferGrew(130, 105);
+        viewport.OnBufferChanged(130, 105);
 
         Assert.True(viewport.IsFollowing);
         Assert.Equal(105, viewport.TopRow(130, ScreenRows));
@@ -189,12 +205,12 @@ public sealed class TerminalViewportTests
     {
         // The reason rows are absolute rather than relative to the screen.
         var viewport = new TerminalViewport();
-        viewport.OnBufferGrew(100, 75);
+        viewport.OnBufferChanged(100, 75);
         viewport.Scroll(30, 75);
         viewport.BeginSelection(new TerminalPosition(50, 0));
         viewport.ExtendSelection(new TerminalPosition(52, 10));
 
-        viewport.OnBufferGrew(200, 175);
+        viewport.OnBufferChanged(200, 175);
 
         Assert.Equal((new TerminalPosition(50, 0), new TerminalPosition(52, 10)), viewport.Selection);
     }
