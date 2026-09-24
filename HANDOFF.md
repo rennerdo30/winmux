@@ -4,10 +4,10 @@
 
 ## Where we are
 
-**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.6 is released** —
-it fixes a crash that 0.7.4 could reach within a minute of starting a full-screen program, and adds
-pinned tabs, clickable links and a reworked settings dialog. 0.7.5 is the crash fix on its own,
-tagged after 0.7.6. What is left needs a person, a second monitor or a
+**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.7 is released** —
+tabs drag between groups, a tab group's "+" adds to the right group, and selecting a tab no longer
+needs a second click while a pane is repainting. 0.7.6 added pinned tabs, clickable links and the
+reworked settings dialog; 0.7.5 is the crash fix on its own, tagged after 0.7.6. What is left needs a person, a second monitor or a
 decision — see *Waiting on you*.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
@@ -17,33 +17,32 @@ The file browser speaks SFTP/FTP, copies between filesystems, drags and drops (A
 Terminal programs can raise Windows notifications (ADR 0022).
 
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-24: 934 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
+**Verified 2026-09-24: 962 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
 skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set (how to run a server: `RemoteLiveTests`).
-Releases: `v0.7.6` and `v0.7.5` 2026-09-24; `v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
+Releases: `v0.7.7`, `v0.7.6` and `v0.7.5` 2026-09-24; `v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
 
 ## What just happened
 
-**2026-09-24 — a crash caught by the crash log, then three things the user asked for.**
+**2026-09-24 — a crash caught by the crash log, then everything the user asked for that day.**
 
-- **The crash.** 0.7.4 died on another machine; `%LOCALAPPDATA%\WinMux\crash.log` had the thread,
-  the stack and the version, so there was nothing to reproduce blind. Entering the alternate screen
-  discards the whole scrollback in one write (`TotalRows` 101 → 10, measured), and the repaint
-  already in flight was copying rows by their old indices. Reading a row is total now
-  ([ADR 0024](docs/adr/0024-reading-a-terminal-while-it-is-written-to.md)). The same write also left
-  the viewport parked above history that no longer existed, where the cursor is not drawn — vim
-  with no cursor in it.
-- **A pass over the settings dialog**, with the dialog actually on screen: Avalonia's headless
-  platform draws for real with `UseHeadlessDrawing = false` and `.UseSkia()`, and
-  `window.CaptureRenderedFrame()` writes a PNG. That found the three file paths wrapping into
-  right-aligned fragments, a profile list cutting its last row in half, and 2,150px of content in a
-  fixed 640px viewport that could not be resized.
-- **Pinned tabs**, asked for as "pin tabs so you cant close them". `Pane.IsPinned`, saved with the
-  session; `Ctrl+B .`; a pinned tab shows a pin where its close button was.
-- **Ctrl+click opens a URL in a terminal pane.** Reported as a regression and it is not one: the
-  engine has always parsed OSC 8 and the renderer has always discarded it. `TerminalLinkModel`.
+- **The crash (0.7.5).** 0.7.4 died on another machine and `%LOCALAPPDATA%\WinMux\crash.log` had the
+  thread, the stack and the version, so there was nothing to reproduce blind. Entering the alternate
+  screen discards the whole scrollback in one write (`TotalRows` 101 → 10, measured), and the repaint
+  already in flight was copying rows by their old indices
+  ([ADR 0024](docs/adr/0024-reading-a-terminal-while-it-is-written-to.md)).
+- **0.7.6**: a pass over the settings dialog with the dialog actually rendered (see *Do not re-do*
+  for how), pinned tabs (`Ctrl+B .`, saved with the session), and `Ctrl`+click to open a URL —
+  reported as a regression and not one: the engine has always parsed OSC 8 and the renderer has
+  always discarded it.
+- **0.7.7**: tabs drag between groups (`LayoutTree.MoveTabToStack` carries the same `Pane` across, so
+  its runtime never stops); a tab group's "+" adds to *that* group rather than to the group inside
+  it; and **selecting a tab no longer needs a second click while a pane is repainting** — a terminal
+  posts repaints at `Render`, Avalonia ranks that above `Input`, and a full-screen program posts them
+  faster than they drain, so the queued keyboard move never got a turn. Focus now runs the layout it
+  was waiting for instead of queueing behind it. `DispatcherPriorityTests` pins the mechanism.
 
 **2026-09-23/24 (earlier)** — Claude Code in a pane, the in-place updater, the session moved to
 `%APPDATA%\WinMux` (ADRs 0018 addendum, 0023); notifications (ADR 0022); the file browser (ADR 0021).
@@ -51,12 +50,12 @@ Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
 
 ## The next action
 
-**Watch one update install itself.** 0.7.6 is the first release published since the updater was
-rewritten (ADR 0023), so the 0.7.4 → 0.7.6 step is the first real exercise of it. **A machine on
-0.7.3 or earlier still needs one manual install**, because the old version's broken installer is
-the one that runs. Three things in 0.7.6 are still unseen on screen: a full-screen program started
-in a pane holding scrollback (the crash), `Ctrl`+click on a URL, and a pinned tab refusing to
-close.
+**Drag a tab from one group to another and watch what happens.** It is the one thing in 0.7.7 that
+no test can reach: the tree move and the drop arithmetic are covered, but Avalonia 12 replaced the
+whole drag API (`DataObject`/`DoDragDrop` → `DataTransfer`/`DoDragDropAsync`) and whether the drag
+*starts* — from a press kept until the pointer has travelled 6px — has only ever been reasoned about.
+A drag that cannot start writes "a tab drag could not start" to the crash log rather than failing
+silently. Also unseen: the notification toast, and one update installing itself.
 
 ## Waiting on you
 
