@@ -77,9 +77,21 @@ internal static class TabStripView
         items.Children.Add(Icon(Icons.Add(), "Add a tab to this group", () => commands.AddTab(strip.Stack), vertical));
         items.Children.Add(PlacementButton(strip, commands, vertical));
 
+        // The caret that shows where a dragged tab will land, drawn over the tabs and inside the
+        // same scrolled space so it stays on the gap when the strip is scrolled.
+        var caret = new Border
+        {
+            Background = Palette.AccentBrush,
+            CornerRadius = new CornerRadius(1),
+            IsVisible = false,
+            IsHitTestVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+
         var scroller = new ScrollViewer
         {
-            Content = items,
+            Content = new Panel { Children = { items, caret } },
             HorizontalScrollBarVisibility = vertical ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Hidden,
             VerticalScrollBarVisibility = vertical ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled,
             Padding = vertical ? new Thickness(6, 6) : new Thickness(6, 0),
@@ -95,7 +107,7 @@ internal static class TabStripView
 
         // The whole band accepts a drop, not only the tabs in it: a group of one tab has almost no
         // tab to aim at, and dropping into an empty part of the strip is what people try first.
-        AcceptDroppedTabs(band, items, tabs, strip, vertical, commands);
+        AcceptDroppedTabs(band, items, caret, tabs, strip, vertical, commands);
         return band;
     }
 
@@ -121,6 +133,7 @@ internal static class TabStripView
     private static void AcceptDroppedTabs(
         Border band,
         Panel items,
+        Border caret,
         IReadOnlyList<Control> tabs,
         LayoutTabStrip strip,
         bool vertical,
@@ -128,19 +141,57 @@ internal static class TabStripView
     {
         DragDrop.SetAllowDrop(band, true);
 
+        var resting = band.BorderBrush;
+
         static bool CarriesTab(DragEventArgs e) => e.DataTransfer.Contains(TabFormat);
 
         int IndexFor(DragEventArgs e) =>
             TabDropIndex.For([.. tabs.Select(tab => tab.Bounds)], e.GetPosition(items), vertical);
 
+        void Preview(int index)
+        {
+            if (TabDropIndex.CaretFor([.. tabs.Select(tab => tab.Bounds)], index, vertical) is not { } at)
+            {
+                caret.IsVisible = false;
+                return;
+            }
+
+            caret.Margin = new Thickness(at.X, at.Y, 0, 0);
+            caret.Width = at.Width;
+            caret.Height = at.Height;
+            caret.IsVisible = true;
+
+            // The band says which group is about to receive it, which the caret alone does not:
+            // with four strips on screen, a two-pixel line is easy to miss.
+            band.BorderBrush = Palette.AccentBrush;
+        }
+
+        void Clear()
+        {
+            caret.IsVisible = false;
+            band.BorderBrush = resting;
+        }
+
         band.AddHandler(DragDrop.DragOverEvent, (object? _, DragEventArgs e) =>
         {
-            e.DragEffects = CarriesTab(e) ? DragDropEffects.Move : DragDropEffects.None;
+            if (!CarriesTab(e))
+            {
+                e.DragEffects = DragDropEffects.None;
+                return;
+            }
+
+            e.DragEffects = DragDropEffects.Move;
+            Preview(IndexFor(e));
             e.Handled = true;
         });
 
+        // Both, because a drag can end by leaving as well as by dropping, and a caret left behind
+        // on a strip nothing was dropped on is a lie about where the tab went.
+        band.AddHandler(DragDrop.DragLeaveEvent, (object? _, DragEventArgs e) => Clear());
+
         band.AddHandler(DragDrop.DropEvent, (object? _, DragEventArgs e) =>
         {
+            Clear();
             if (!CarriesTab(e)) return;
             if (e.DataTransfer.TryGetValue(TabFormat) is not { } text || !Guid.TryParse(text, out var id)) return;
 
@@ -199,6 +250,12 @@ internal static class TabStripView
 
             var pane = strip.Stack.Children[pressed].Leaves().First().Pane.Id;
             var start = began;
+
+            // The tab being carried fades where it sits, so the strip shows the gesture from both
+            // ends: this one is being taken, and the caret says where it is going.
+            var lifted = pressed < tabs.Count ? tabs[pressed] : null;
+            if (lifted is not null) lifted.Opacity = 0.4;
+
             pressed = -1;
             began = null;
 
@@ -214,9 +271,16 @@ internal static class TabStripView
             // that cannot start should say so in its own words and leave the strip working.
             DragDrop.DoDragDropAsync(start, data, DragDropEffects.Move)
                 .ContinueWith(
-                    task => CrashLog.Write("a tab drag could not start", task.Exception),
+                    task =>
+                    {
+                        // A drop rebuilds the strip and this control with it, but a drag abandoned
+                        // with Escape or let go over nothing does not — and a tab left faded would
+                        // look broken for as long as the strip lived.
+                        if (lifted is not null) lifted.Opacity = 1;
+                        if (task.IsFaulted) CrashLog.Write("a tab drag could not start", task.Exception);
+                    },
                     CancellationToken.None,
-                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskContinuationOptions.None,
                     TaskScheduler.FromCurrentSynchronizationContext());
         }, RoutingStrategies.Tunnel);
 

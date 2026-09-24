@@ -7,6 +7,16 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## Unreleased
+
+### Added
+
+- **A tab drag shows where the tab will land.** An accent caret in the gap the drop will fill — on
+  the gap rather than on a tab, because "between which two" is the question a drag asks and
+  highlighting one tab cannot say before or after. The strip about to receive it takes the accent
+  on its edge, since a two-pixel line is easy to miss with four strips on screen, and the tab being
+  carried fades where it sits.
+
 ## 0.7.7 — 2026-09-24
 
 ### Added

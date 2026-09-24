@@ -50,3 +50,61 @@ public class TabDropIndexTests
         Assert.Equal(0, TabDropIndex.For(Across, new Point(-40, 14), vertical: false));
     }
 }
+
+/// <summary>Where the insertion caret is drawn, which is the whole of the drag's feedback.</summary>
+public class TabDropCaretTests
+{
+    private static readonly Rect[] Across =
+    [
+        new(0, 0, 60, 28),
+        new(60, 0, 180, 28),
+        new(240, 0, 80, 28),
+    ];
+
+    [Fact]
+    public void The_caret_sits_on_the_gap_between_two_tabs()
+    {
+        var caret = TabDropIndex.CaretFor(Across, index: 1, vertical: false);
+
+        Assert.NotNull(caret);
+        Assert.Equal(59, caret!.Value.X);          // centred on x = 60
+        Assert.Equal(2, caret.Value.Width);
+        Assert.Equal(28, caret.Value.Height);      // full height of the strip
+    }
+
+    [Fact]
+    public void A_caret_at_either_end_stays_inside_the_strip()
+    {
+        // Centred on the edge, half of it would be drawn outside the strip and clipped away, so a
+        // drop at the very front or the very back would show no caret at all.
+        var front = TabDropIndex.CaretFor(Across, index: 0, vertical: false)!.Value;
+        var back = TabDropIndex.CaretFor(Across, index: 3, vertical: false)!.Value;
+
+        Assert.Equal(0, front.X);
+        Assert.Equal(318, back.X);
+        Assert.True(back.Right <= 320);
+    }
+
+    [Fact]
+    public void A_vertical_strip_gets_a_horizontal_caret()
+    {
+        Rect[] down = [new(0, 0, 120, 28), new(0, 28, 120, 28)];
+
+        var caret = TabDropIndex.CaretFor(down, index: 1, vertical: true)!.Value;
+
+        Assert.Equal(27, caret.Y);
+        Assert.Equal(2, caret.Height);
+        Assert.Equal(120, caret.Width);
+    }
+
+    [Fact]
+    public void An_index_past_the_ends_is_clamped_rather_than_thrown()
+    {
+        Assert.NotNull(TabDropIndex.CaretFor(Across, index: 99, vertical: false));
+        Assert.NotNull(TabDropIndex.CaretFor(Across, index: -5, vertical: false));
+    }
+
+    [Fact]
+    public void A_strip_with_no_tabs_has_no_caret() =>
+        Assert.Null(TabDropIndex.CaretFor([], index: 0, vertical: false));
+}

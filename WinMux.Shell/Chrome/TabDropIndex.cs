@@ -45,4 +45,40 @@ internal static class TabDropIndex
         // Past the last tab, which is also what the empty part of a strip means.
         return tabs.Count;
     }
+
+    /// <summary>
+    /// The line to draw for an insertion at <paramref name="index"/>: where the tab will go.
+    ///
+    /// <para>
+    /// A caret in the gap rather than a highlight on a tab, because the question a drag asks is
+    /// "between which two", and highlighting one tab answers a different question — the user cannot
+    /// tell whether it means before or after.
+    /// </para>
+    /// </summary>
+    /// <returns>Null when the strip has no tabs to sit between.</returns>
+    public static Rect? CaretFor(IReadOnlyList<Rect> tabs, int index, bool vertical, double thickness = 2)
+    {
+        ArgumentNullException.ThrowIfNull(tabs);
+        if (tabs.Count == 0) return null;
+
+        var at = Math.Clamp(index, 0, tabs.Count);
+        var edge = at < tabs.Count
+            ? (vertical ? tabs[at].Y : tabs[at].X)
+            : (vertical ? tabs[^1].Bottom : tabs[^1].Right);
+
+        // Centred on the gap, then nudged inside the strip so a caret at either end is not half
+        // drawn outside it.
+        var start = edge - thickness / 2;
+        var first = tabs[0];
+        var last = tabs[^1];
+
+        if (vertical)
+        {
+            start = Math.Clamp(start, first.Y, Math.Max(first.Y, last.Bottom - thickness));
+            return new Rect(first.X, start, Math.Max(first.Width, last.Width), thickness);
+        }
+
+        start = Math.Clamp(start, first.X, Math.Max(first.X, last.Right - thickness));
+        return new Rect(start, first.Y, thickness, Math.Max(first.Height, last.Height));
+    }
 }
