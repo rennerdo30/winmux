@@ -14,6 +14,9 @@ public static class ShellActionNames
     public const string FocusDown = "focus-down";
 
     public const string ClosePane = "close-pane";
+
+    /// <summary>Pin or unpin the focused pane, so that closing a pane leaves it alone.</summary>
+    public const string TogglePin = "toggle-pin";
     public const string NewTab = "new-tab";
     public const string NewEmptyPane = "new-empty-pane";
     public const string RenamePane = "rename-pane";
@@ -63,6 +66,7 @@ public static class ShellActionNames
         FocusUp,
         FocusDown,
         ClosePane,
+        TogglePin,
         NewTab,
         NewEmptyPane,
         RenamePane,

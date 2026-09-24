@@ -9,6 +9,13 @@ the ADRs say why.
 
 ## 0.7.5 — 2026-09-24
 
+### Added
+
+- **Tabs can be pinned**, so that closing a pane leaves them alone. A pinned tab shows a pin where
+  its close button was — clicking it unpins — and `close-pane` refuses with a reason rather than
+  silently doing nothing. `Ctrl+B .`, or the tab's right-click menu, or `toggle-pin` from the
+  palette and the CLI. The pin is saved with the session.
+
 ### Fixed
 
 - **WinMux crashed when a full-screen program started in a pane that held scrollback.** Starting

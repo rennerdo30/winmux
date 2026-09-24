@@ -181,6 +181,7 @@ public static class TomlSessionReader
                 Id = id,
                 Kind = kind,
                 Title = title,
+                IsPinned = Optional(t, "pinned") is true,
                 Restore = new RestoreDescriptor
                 {
                     Kind = kind,

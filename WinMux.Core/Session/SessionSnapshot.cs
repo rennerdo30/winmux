@@ -69,6 +69,12 @@ public sealed record PaneSnapshot
     public required PaneKind Kind { get; init; }
     public string Title { get; init; } = string.Empty;
     public required RestoreDescriptor Restore { get; init; }
+
+    /// <summary>
+    /// Whether the pane refuses to be closed. Absent from files written before pinning existed,
+    /// which read as not pinned.
+    /// </summary>
+    public bool IsPinned { get; init; }
 }
 
 /// <summary>Thrown when a session file is structurally impossible. Never swallowed silently.</summary>

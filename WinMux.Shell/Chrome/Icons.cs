@@ -70,6 +70,16 @@ internal static class Icons
         new Line { StartPoint = new Point(4.5, 4.5), EndPoint = new Point(11.5, 11.5) },
         new Line { StartPoint = new Point(11.5, 4.5), EndPoint = new Point(4.5, 11.5) });
 
+    /// <summary>
+    /// A drawing pin seen from the side, leaning as Windows 11 draws its own: the head across the
+    /// top, the shaft down to a point. Upright it reads as an exclamation mark at 10px.
+    /// </summary>
+    public static Control Pin(double size = 10) => Draw(
+        size,
+        new Line { StartPoint = new Point(9.5, 2.5), EndPoint = new Point(13.5, 6.5) },
+        new ShapePath { Data = Geometry.Parse("M 10.5,3.5 L 7,7 L 4.5,8 L 8,11.5 L 9,9 L 12.5,5.5 Z") },
+        new Line { StartPoint = new Point(6.5, 9.5), EndPoint = new Point(3, 13) });
+
     /// <summary>A floppy-disk save.</summary>
     public static Control Save() => Draw(
         new ShapePath

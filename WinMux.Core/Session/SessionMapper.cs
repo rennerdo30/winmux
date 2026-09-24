@@ -31,6 +31,7 @@ public static class SessionMapper
                 Id = leaf.Pane.Id.Value,
                 Kind = leaf.Pane.Kind,
                 Title = leaf.Pane.Title,
+                IsPinned = leaf.Pane.IsPinned,
                 Restore = leaf.Pane.Restore,
             },
         },
@@ -75,7 +76,7 @@ public static class SessionMapper
                     throw new SessionFormatException(
                         $"Pane '{p.Id:D}' has kind '{p.Kind}' but its restore descriptor has kind " +
                         $"'{p.Restore.Kind}'. Provider selection would be ambiguous.");
-                var pane = new Pane(new PaneId(p.Id), p.Kind, p.Title, p.Restore);
+                var pane = new Pane(new PaneId(p.Id), p.Kind, p.Title, p.Restore) { IsPinned = p.IsPinned };
                 return new LeafNode(pane);
             }
 

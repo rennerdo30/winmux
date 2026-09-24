@@ -49,8 +49,10 @@ public sealed record KeymapConfiguration
         new("C", ShellActionNames.NewTab, scope),
         new("V", ShellActionNames.NewTabVertical, scope),
         new("E", ShellActionNames.NewEmptyPane, scope),
-        // tmux binds rename-window to `prefix ,`.
+        // tmux binds rename-window to `prefix ,`. Pinning gets the key beside it: renaming and
+        // pinning are the two things done *to* a tab rather than to what is inside it.
         new(",", ShellActionNames.RenamePane, scope),
+        new(".", ShellActionNames.TogglePin, scope),
         new("N", ShellActionNames.NextTab, scope),
         new("P", ShellActionNames.PreviousTab, scope),
         new("W", ShellActionNames.SaveSession, scope),

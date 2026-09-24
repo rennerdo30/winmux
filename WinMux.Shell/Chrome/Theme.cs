@@ -202,6 +202,9 @@ internal static class Theme
 
     /// <summary>A button that destroys something. Ordinary until the pointer is on it.</summary>
     public const string DangerButton = "danger-button";
+
+    /// <summary>The pin in a pinned tab's corner, where an unpinned tab keeps its close button.</summary>
+    public const string PinButton = "pin-button";
     public const string CaptionButton = "caption-button";
     public const string CaptionClose = "caption-close";
 
@@ -341,6 +344,11 @@ internal static class Theme
         {
             Setters = { new Setter(ContentPresenter.BackgroundProperty, Palette.DangerBrush) },
         });
+
+        // The pin is not a close button and must not be mistaken for one at a glance, so it is drawn
+        // in the accent rather than the faint grey, and does not redden on hover: unpinning is not
+        // destructive.
+        AddButton(styles, PinButton, Palette.AccentBrush, Palette.ControlRadius, new Thickness(6, 3));
 
         // Closing is the one destructive thing on a tab, so it says so on hover.
         styles.Add(new Style(x => x.OfType<Button>().Class(CloseButton).Class(":pointerover"))

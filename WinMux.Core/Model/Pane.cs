@@ -206,6 +206,18 @@ public sealed class Pane
     public string Title { get; set; }
     public RestoreDescriptor Restore { get; set; }
 
+    /// <summary>
+    /// Pinned panes are not closed by asking to close a pane.
+    ///
+    /// <para>
+    /// It guards against the accident, not against the user: the close button is gone from a pinned
+    /// tab and <c>close-pane</c> refuses with a reason, but unpinning is one click away and quitting
+    /// WinMux is unaffected. A pin that made a window impossible to close would be a trap rather
+    /// than a safeguard.
+    /// </para>
+    /// </summary>
+    public bool IsPinned { get; set; }
+
     public Pane(PaneId id, PaneKind kind, string title, RestoreDescriptor restore)
     {
         ArgumentNullException.ThrowIfNull(restore);

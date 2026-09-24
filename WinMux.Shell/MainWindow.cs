@@ -477,6 +477,7 @@ internal sealed partial class MainWindow : Window
             Activate: FocusPane,
             Rename: pane => Run(RenamePaneAsync(pane)),
             CloseTab: pane => Run(CloseTabAsync(pane)),
+            TogglePin: TogglePin,
             AddTab: stack => Run(AddTabToStackAsync(stack)),
             MoveStrip: SetTabPlacement,
             MoveTab: MoveTab,
@@ -638,6 +639,26 @@ internal sealed partial class MainWindow : Window
             () => _runtimes.GetValueOrDefault(target)?.Focus(),
             DispatcherPriority.Input);
     }
+
+    /// <summary>
+    /// Pin or unpin a pane. A pinned pane is left alone by <c>close-pane</c> and loses the close
+    /// button on its tab.
+    ///
+    /// Pinning is deliberately not a confirmation prompt. The thing worth preventing is the click
+    /// or the keystroke that closes the wrong tab, and a dialog on every close would charge every
+    /// tab for the one that mattered.
+    /// </summary>
+    private void TogglePin(PaneId id)
+    {
+        if (PaneOf(id) is not { } pane) return;
+
+        pane.IsPinned = !pane.IsPinned;
+        _message = pane.IsPinned ? $"pinned “{pane.Title}”" : $"unpinned “{pane.Title}”";
+        Relayout();
+        _session.RequestSave();
+    }
+
+    private Pane? PaneOf(PaneId id) => _tree.Panes.FirstOrDefault(p => p.Id == id);
 
     /// <summary>Closing a tab is closing its pane, and goes through the same path.</summary>
     private async Task CloseTabAsync(PaneId pane)
@@ -864,6 +885,7 @@ internal sealed partial class MainWindow : Window
         _actions.Register(ShellActionNames.FocusUp, () => MoveFocus(FocusDirection.Up));
         _actions.Register(ShellActionNames.FocusDown, () => MoveFocus(FocusDirection.Down));
         _actions.RegisterAsync(ShellActionNames.ClosePane, _ => new ValueTask(CloseFocusedAsync()));
+        _actions.Register(ShellActionNames.TogglePin, () => TogglePin(_tree.Focused));
         _actions.RegisterAsync(ShellActionNames.NewTab, _ => new ValueTask(AddTabAsync()));
         _actions.RegisterAsync(ShellActionNames.NewTabVertical, _ => new ValueTask(AddVerticalTabAsync()));
         _actions.RegisterAsync(ShellActionNames.RenamePane, _ => new ValueTask(RenamePaneAsync(_tree.Focused)));
@@ -1636,6 +1658,15 @@ internal sealed partial class MainWindow : Window
     {
         if (_paneCloseInProgress) { _message = "a pane is already closing"; UpdateStatus(); return; }
         if (_tree.Panes.Count() == 1) { _message = "cannot close the last pane"; UpdateStatus(); return; }
+
+        // Before the runtime is asked to close: a pinned pane must not get as far as being told to
+        // shut down and then be kept, which would leave a dead program in a live pane.
+        if (PaneOf(_tree.Focused) is { IsPinned: true } pinned)
+        {
+            _message = $"“{pinned.Title}” is pinned — unpin it to close it";
+            UpdateStatus();
+            return;
+        }
 
         var id = _tree.Focused;
         _paneCloseInProgress = true;

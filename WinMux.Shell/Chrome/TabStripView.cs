@@ -24,6 +24,7 @@ internal sealed record TabStripCommands(
     Action<PaneId> Activate,
     Action<PaneId> Rename,
     Action<PaneId> CloseTab,
+    Action<PaneId> TogglePin,
     Action<StackNode> AddTab,
     Action<StackNode, TabStripPlacement> MoveStrip,
     Action<int> MoveTab,
@@ -195,6 +196,7 @@ internal static class TabStripView
     {
         var leaves = child.Leaves().ToArray();
         var target = leaves[0].Pane.Id;
+        var pinned = leaves[0].Pane.IsPinned;
 
         // A tab may hold a whole split, not just one pane. Saying so beats showing the first title
         // and quietly implying the other panes are not there.
@@ -212,19 +214,28 @@ internal static class TabStripView
             FontSize = Palette.BodySize,
         };
 
-        var close = new Button
+        // A pinned tab shows a pin where its close button was. Leaving a close button that refuses
+        // would be worse than removing it — the control would still say the tab can be closed, and
+        // the refusal would read as a bug. Clicking the pin unpins, so the way back out is where the
+        // way in was.
+        var corner = new Button
         {
-            Content = Icons.Close(10),
+            Content = pinned ? Icons.Pin(10) : Icons.Close(10),
             Margin = new Thickness(6, 0, -2, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            [ToolTip.TipProperty] = "Close this tab",
+            [ToolTip.TipProperty] = pinned ? "Pinned. Click to unpin." : "Close this tab",
         };
-        close.Classes.Add(Theme.CloseButton);
-        close.Click += (_, e) => { e.Handled = true; commands.CloseTab(target); };
+        corner.Classes.Add(pinned ? Theme.PinButton : Theme.CloseButton);
+        corner.Click += (_, e) =>
+        {
+            e.Handled = true;
+            if (pinned) commands.TogglePin(target);
+            else commands.CloseTab(target);
+        };
 
         var row = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(close, Dock.Right);
-        row.Children.Add(close);
+        DockPanel.SetDock(corner, Dock.Right);
+        row.Children.Add(corner);
         row.Children.Add(label);
 
         var tab = new Button
@@ -247,6 +258,7 @@ internal static class TabStripView
             ItemsSource = new[]
             {
                 Item("Rename\u2026", () => commands.Rename(target)),
+                Item(pinned ? "Unpin tab" : "Pin tab", () => commands.TogglePin(target)),
                 Item("Close tab", () => commands.CloseTab(target)),
             },
         };
