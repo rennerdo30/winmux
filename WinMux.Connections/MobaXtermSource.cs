@@ -134,7 +134,8 @@ public sealed class MobaXtermSource : IConnectionSource
                 var fields = value.Split('%');
                 if (fields.Length < 3) continue;
 
-                var entry = new ConnectionEntry(fields[0].Trim(), SettingsOf(fields));
+                // The key is the session's name; the value is entirely settings.
+                var entry = new ConnectionEntry(key.Trim(), SettingsOf(fields));
                 _lines[entry] = (section, key, fields);
                 folder.Add(entry);
             }
@@ -157,7 +158,6 @@ public sealed class MobaXtermSource : IConnectionSource
             // The original fields, with only the ones WinMux understands replaced. Everything past
             // them — colours, fonts, X11 forwarding, macros — goes back exactly as it was.
             var fields = (string[])line.Fields.Clone();
-            fields[NameField] = entry.Name;
             if (fields.Length > HostField && entry.Settings.Host.TryGet(out var host)) fields[HostField] = host;
             if (fields.Length > PortField && entry.Settings.Port.TryGet(out var port))
             {
@@ -166,8 +166,16 @@ public sealed class MobaXtermSource : IConnectionSource
 
             if (fields.Length > UserField && entry.Settings.User.TryGet(out var user)) fields[UserField] = user;
 
-            document.Write(line.Section, line.Key, string.Join('%', fields));
-            _lines[entry] = line with { Fields = fields };
+            // A rename is a rename of the key, because that is where the name lives.
+            var key = line.Key;
+            if (!string.Equals(key, entry.Name, StringComparison.Ordinal) &&
+                document.RenameKey(line.Section, key, entry.Name))
+            {
+                key = entry.Name;
+            }
+
+            document.Write(line.Section, key, string.Join('%', fields));
+            _lines[entry] = line with { Key = key, Fields = fields };
         }
 
         Backup();
@@ -206,15 +214,21 @@ public sealed class MobaXtermSource : IConnectionSource
     }
 
     /// <summary>
-    /// A session line is <c>name%kind%host%port%user%…</c>, where the kind field looks like
-    /// <c>#109#0</c>: an icon number and then the protocol. MobaXterm's numbering puts SSH at 0,
-    /// telnet at 1, RDP at 4, FTP at 6 and SFTP at 7.
+    /// A session is <c>name=#109#0%host%port%user%…</c>: the <em>key</em> is the name, and the
+    /// value starts with the kind — an icon number and then the protocol. MobaXterm's numbering
+    /// puts SSH at 0, telnet at 1, RDP at 4, FTP at 6 and SFTP at 7.
+    ///
+    /// <para>
+    /// This was read one field out until 2026-09-24, with the name taken from the value, so every
+    /// bookmark was called "#109#0" and its host was its port. The sample it was written against
+    /// was invented rather than taken from a real MobaXterm.ini — which is why the tests agreed
+    /// with it.
+    /// </para>
     /// </summary>
-    private const int NameField = 0;
-    private const int KindField = 1;
-    private const int HostField = 2;
-    private const int PortField = 3;
-    private const int UserField = 4;
+    private const int KindField = 0;
+    private const int HostField = 1;
+    private const int PortField = 2;
+    private const int UserField = 3;
 
     private static ConnectionSettings SettingsOf(string[] fields)
     {

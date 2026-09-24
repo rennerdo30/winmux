@@ -103,6 +103,28 @@ public sealed class IniDocument
         _lines.Insert(at, $"{key}={value}");
     }
 
+    /// <summary>
+    /// Rename a key, keeping its value. Returns false when it is not there.
+    ///
+    /// MobaXterm keeps a session's name in the key rather than in the value, so renaming one is
+    /// this rather than a write.
+    /// </summary>
+    public bool RenameKey(string section, string from, string to)
+    {
+        if (BoundsOf(section) is not { } range) return false;
+
+        for (var i = range.Start; i < range.End; i++)
+        {
+            if (Split(_lines[i]) is not { } pair) continue;
+            if (!pair.Key.Equals(from, StringComparison.OrdinalIgnoreCase)) continue;
+
+            _lines[i] = $"{to}={pair.Value}";
+            return true;
+        }
+
+        return false;
+    }
+
     /// <summary>Rename a section, keeping everything in it. Returns false when it is not there.</summary>
     public bool RenameSection(string from, string to)
     {

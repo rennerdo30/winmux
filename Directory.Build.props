@@ -13,7 +13,7 @@
     that this project has not earned yet.
   -->
   <PropertyGroup>
-    <Version>0.7.8-test.3</Version>
+    <Version>0.7.8-test.4</Version>
     <Product>WinMux</Product>
     <Company>WinMux</Company>
     <Authors>WinMux contributors</Authors>

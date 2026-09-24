@@ -7,6 +7,18 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## 0.7.8-test.4 — 2026-09-24
+
+A **test build**, published as a prerelease.
+
+### Fixed
+
+- **Every MobaXterm bookmark was called `#109#0`, with its port for a host.** A session's name is
+  the ini *key* and the value is entirely settings; it was being read as though the name were the
+  first field, so everything after it was one place out. The sample the parser was written against
+  had been invented rather than taken from a real `MobaXterm.ini`, so the tests agreed with the
+  mistake — the sample is now the real shape, and it fails the old parser.
+
 ## 0.7.8-test.3 — 2026-09-24
 
 A **test build**, published as a prerelease.

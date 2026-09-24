@@ -12,6 +12,15 @@ public class MobaXtermSourceTests : IDisposable
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), "winmux-moba-" + Guid.NewGuid().ToString("N"));
 
+    /// <summary>
+    /// MobaXterm's real shape, and the reason this file was rewritten: the earlier sample was
+    /// invented, put the session name in the value, and the parser was written to agree with it.
+    /// Both were wrong in the same direction, so the tests passed and every bookmark on a real
+    /// machine came out called "#109#0" with its port for a host.
+    ///
+    /// The name is the <em>key</em>. The value is <c>#icon#protocol%host%port%user%…</c> followed by
+    /// dozens of terminal settings.
+    /// </summary>
     private const string Sample = """
         [Misc]
         Theme=Dark
@@ -19,18 +28,18 @@ public class MobaXtermSourceTests : IDisposable
         [Bookmarks]
         SubRep=
         ImgNum=42
-        0=jump box%#109#0%jump.example.com%22%root%%-1%-1%%%22%%0%0%0%%%-1%0%0%0%
+        jump box=#109#0%jump.example.com%22%root%%-1%-1%%%22%%0%0%0%%%-1%0%0%0%
 
         [Bookmarks_2]
         SubRep=Production
         ImgNum=41
-        0=web-01%#109#0%files.example.com%2222%deploy%%-1%-1%%%22%%0%0%0%%%-1%0%0%0%0%0%1%
-        1=desk-01%#109#4%10.0.0.50%3389%CORP\admin%%-1%-1%%%3389%%0%0%0%
+        web-01=#109#0%files.example.com%2222%deploy%%-1%-1%%%22%%0%0%0%%%-1%0%0%0%0%0%1%
+        desk-01=#109#4%10.0.0.50%3389%CORP\admin%%-1%-1%%%3389%%0%0%0%
 
         [Bookmarks_3]
         SubRep=Production\Databases
         ImgNum=41
-        0=db-01%#109#0%db.example.com%22%postgres%%-1%-1%%%22%%0%0%0%
+        db-01=#109#0%db.example.com%22%postgres%%-1%-1%%%22%%0%0%0%
         """;
 
     private string Write(string text = Sample)
@@ -108,10 +117,10 @@ public class MobaXtermSourceTests : IDisposable
 
         source.Write(root);
 
-        var line = File.ReadAllLines(path).First(text => text.StartsWith("0=web-01 (renamed)", StringComparison.Ordinal));
+        var line = File.ReadAllLines(path).First(text => text.StartsWith("web-01 (renamed)=", StringComparison.Ordinal));
 
         Assert.Equal(
-            "0=web-01 (renamed)%#109#0%files2.example.com%2222%deploy%%-1%-1%%%22%%0%0%0%%%-1%0%0%0%0%0%1%",
+            "web-01 (renamed)=#109#0%files2.example.com%2222%deploy%%-1%-1%%%22%%0%0%0%%%-1%0%0%0%0%0%1%",
             line);
     }
 
