@@ -119,3 +119,30 @@ nested shell under WSL, where neither the nested bash reports nor any Windows PE
 - **The reporter mangled Linux paths into `\tmp\winmux-spike4`** by folding separators inside the
   same function used for display. Comparison and presentation are now separate: `Canonical` for
   hit/miss, raw for the human.
+
+## Addendum, 2026-09-24 — "deepest descendant" means deepest *console* descendant
+
+Reported from use: "running claude code can cause our saved workdir to change… often on a session
+resume the workdir is then somehow in a chrome dir".
+
+Strategy 2 walks to the deepest process under the pane's own, on the reasoning that a nested shell
+is deeper than the shell that started it. The reasoning holds for shells and fails for windows. A
+program in a pane can start one, and that window's process tree has nothing to do with the pane:
+Claude Code starts Chrome, Chrome starts a renderer per tab, and a renderer is deeper than any shell
+will ever be. Its working directory is wherever Chrome was installed, so that is what was saved, and
+the pane came back in `C:\Program Files\Google\Chrome\Application`.
+
+The tie-break made it worse rather than better. Equally deep descendants are resolved by highest
+process id, and a browser's renderers are both the deepest processes and the newest ones.
+
+**The walk now stops at the first process that is not a console application**, and does not look
+underneath it — pruned rather than skipped, because a console helper started by a window is still
+part of that window's business. `IProcessInspector.IsConsoleProcess` answers it, from the Subsystem
+field of the PE optional header, cached by image path because it is a property of the file.
+
+Unknown answers are *yes*. Being wrong that way costs one pane the wrong directory; being wrong the
+other way discards strategy 2 entirely, and the table above measures it carrying 60% of pwsh panes
+and 100% of cmd.
+
+The earlier `conhost.exe`/`OpenConsole.exe` exclusion list stays. It solves a different problem —
+console infrastructure that is a console application by definition — and this replaces none of it.

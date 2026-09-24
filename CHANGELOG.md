@@ -37,6 +37,12 @@ the ADRs say why.
 
 ### Fixed
 
+- **A session could restore a pane into Chrome's program folder.** Capturing a pane's working
+  directory walks to the deepest process under it, and a program in a pane can start a window:
+  Claude Code starts Chrome, Chrome starts a renderer per tab, and a renderer is deeper than any
+  shell — so the captured directory became wherever Chrome is installed. The walk now stops at the
+  first process that is not a console application and does not look underneath it. Priority 1 is
+  session persistence, and this was losing it quietly.
 - **"Tab group" added another tab to the group the pane was already in**, instead of making a
   group. The toolbar button has always said "turn the focused pane into a tab group" and did
   exactly that once — on every press after the first it added a tab to the group it had made.

@@ -33,4 +33,24 @@ public interface IProcessInspector
     /// problem to solve — it reports what the OS says, and the caller weighs it.
     /// </summary>
     string? TryReadWorkingDirectory(int processId, out string error);
+
+    /// <summary>
+    /// Whether this process is a console application — something that could be running in the
+    /// terminal, as opposed to a window it happened to launch.
+    ///
+    /// <para>
+    /// The deepest-descendant walk needs this to know where a pane's process tree stops being about
+    /// the pane. Claude Code starts Chrome, Chrome starts a renderer per tab, and the renderer is
+    /// far deeper than any shell — so "the deepest descendant" became a browser process whose
+    /// working directory is its own installation folder, and a session restored into
+    /// <c>\Google\Chrome\Application</c>.
+    /// </para>
+    ///
+    /// <para>
+    /// Unknown answers are <see langword="true"/>. Being wrong here costs the wrong directory in one
+    /// pane; being wrong the other way costs the deepest-descendant strategy entirely, and ADR 0004
+    /// measured that strategy carrying 60% of pwsh panes and 100% of cmd.
+    /// </para>
+    /// </summary>
+    bool IsConsoleProcess(int processId);
 }

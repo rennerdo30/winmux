@@ -147,6 +147,18 @@ public sealed class CachedProcessInspectorTests
         public bool Throw { get; set; }
         public SemaphoreSlim? Block { get; set; }
 
+        private int _consoleCalls;
+
+        public HashSet<int> Windowed { get; } = [];
+
+        public int ConsoleCalls => Volatile.Read(ref _consoleCalls);
+
+        public bool IsConsoleProcess(int processId)
+        {
+            Interlocked.Increment(ref _consoleCalls);
+            return !Windowed.Contains(processId);
+        }
+
         public int SnapshotCalls => Volatile.Read(ref _snapshotCalls);
         public int DirectoryCalls => Volatile.Read(ref _directoryCalls);
 

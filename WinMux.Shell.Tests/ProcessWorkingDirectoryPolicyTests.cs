@@ -163,6 +163,11 @@ public sealed class ProcessWorkingDirectoryPolicyTests
         public Dictionary<int, string> Directories { get; } = [];
         public Dictionary<int, string> Errors { get; } = [];
         public string? SnapshotError { get; init; }
+
+        /// <summary>Process ids that are windowed applications. Everything else is a console one.</summary>
+        public HashSet<int> Windowed { get; } = [];
+
+        public bool IsConsoleProcess(int processId) => !Windowed.Contains(processId);
         public bool ThrowOnSnapshot { get; init; }
         public int SnapshotCount { get; private set; }
 
@@ -185,5 +190,130 @@ public sealed class ProcessWorkingDirectoryPolicyTests
             error = Errors.TryGetValue(processId, out var reason) ? reason : "no PEB";
             return null;
         }
+    }
+}
+
+/// <summary>
+/// The walk stops where the pane stops.
+///
+/// <para>
+/// Reported on 2026-09-24: "running claude code can cause our saved workdir to change… often on a
+/// session resume the workdir is then somehow in a chrome dir". Claude Code starts Chrome, Chrome
+/// starts a renderer per tab, and a renderer sits deeper in the tree than any shell — so "the
+/// deepest descendant" stopped being the program in the pane and became a browser, whose working
+/// directory is wherever it was installed. Priority 1 is session persistence, and this quietly
+/// restored panes into Chrome's program folder.
+/// </para>
+/// </summary>
+public sealed class ProcessWalkStopsAtWindowsTests
+{
+    private static ProcessSnapshotEntry P(int id, int parent, string name) => new(id, parent, name);
+
+    /// <summary>The reported tree: a shell, Claude Code, and the browser it started.</summary>
+    private static FakeInspectorForWalk ChromeUnderClaude()
+    {
+        var inspector = new FakeInspectorForWalk
+        {
+            Tree =
+            [
+                P(100, 1, "cmd.exe"),
+                P(200, 100, "node.exe"),
+                P(300, 200, "chrome.exe"),
+                P(400, 300, "chrome.exe"),   // renderer, deeper than anything real
+                P(500, 400, "chrome.exe"),   // and another
+            ],
+        };
+
+        inspector.Directories[100] = @"C:\work\winmux";
+        inspector.Directories[200] = @"C:\work\winmux";
+        inspector.Directories[300] = @"C:\Program Files\Google\Chrome\Application";
+        inspector.Directories[400] = @"C:\Program Files\Google\Chrome\Application";
+        inspector.Directories[500] = @"C:\Program Files\Google\Chrome\Application";
+        inspector.Windowed.Add(300);
+        inspector.Windowed.Add(400);
+        inspector.Windowed.Add(500);
+        return inspector;
+    }
+
+    [Fact]
+    public void A_browser_a_program_started_is_not_the_pane()
+    {
+        var inspector = ChromeUnderClaude();
+
+        var result = new ProcessWorkingDirectoryResolver(inspector).Resolve(100, disablePebForWsl: false);
+
+        Assert.Equal(@"C:\work\winmux", result.Path);
+    }
+
+    [Fact]
+    public void Nor_is_anything_the_browser_starts()
+    {
+        // Pruned rather than skipped. A console helper under a window is still under a window, and
+        // the window is where the pane's process tree stopped being about the pane.
+        var inspector = ChromeUnderClaude();
+        inspector.Tree.Add(P(600, 500, "crashpad_handler.exe"));
+        inspector.Directories[600] = @"C:\Program Files\Google\Chrome\Application";
+
+        var deepest = ProcessWorkingDirectoryResolver.FindDeepestDescendant(
+            100, inspector.Tree, inspector.IsConsoleProcess);
+
+        Assert.Equal(200, deepest?.ProcessId);
+    }
+
+    [Fact]
+    public void A_nested_shell_is_still_found()
+    {
+        // The case the deepest-descendant walk exists for, and the one a blunter fix would break:
+        // ADR 0004 measured it carrying 60% of pwsh panes and 100% of cmd.
+        var inspector = new FakeInspectorForWalk
+        {
+            Tree = [P(100, 1, "cmd.exe"), P(200, 100, "pwsh.exe"), P(300, 200, "cmd.exe")],
+        };
+        inspector.Directories[100] = @"C:\start";
+        inspector.Directories[300] = @"C:\deep";
+
+        var result = new ProcessWorkingDirectoryResolver(inspector).Resolve(100, disablePebForWsl: false);
+
+        Assert.Equal(@"C:\deep", result.Path);
+    }
+
+    [Fact]
+    public void Not_knowing_is_treated_as_a_console_process()
+    {
+        // The inspector answers true when it cannot tell, and this pins that the walk honours it:
+        // losing the strategy is a worse failure than the one it was hardened against.
+        var inspector = new FakeInspectorForWalk
+        {
+            Tree = [P(100, 1, "cmd.exe"), P(200, 100, "mystery.exe")],
+        };
+        inspector.Directories[100] = @"C:\start";
+        inspector.Directories[200] = @"C:\deep";
+
+        var result = new ProcessWorkingDirectoryResolver(inspector).Resolve(100, disablePebForWsl: false);
+
+        Assert.Equal(@"C:\deep", result.Path);
+    }
+
+    internal sealed class FakeInspectorForWalk : IProcessInspector
+    {
+        public List<ProcessSnapshotEntry> Tree { get; init; } = [];
+        public Dictionary<int, string> Directories { get; } = [];
+        public HashSet<int> Windowed { get; } = [];
+
+        public IReadOnlyList<ProcessSnapshotEntry> SnapshotProcesses(out string? error)
+        {
+            error = null;
+            return Tree;
+        }
+
+        public string? TryReadWorkingDirectory(int processId, out string error)
+        {
+            error = string.Empty;
+            if (Directories.TryGetValue(processId, out var path)) return path;
+            error = "no directory";
+            return null;
+        }
+
+        public bool IsConsoleProcess(int processId) => !Windowed.Contains(processId);
     }
 }

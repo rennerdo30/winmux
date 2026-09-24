@@ -35,6 +35,8 @@ internal sealed class CachedProcessInspector : IProcessInspector
     private readonly TimeSpan _ttl;
     private readonly Lock _gate = new();
 
+    private readonly Dictionary<int, bool> _console = [];
+
     private IReadOnlyList<ProcessSnapshotEntry> _processes = [];
     private string? _error;
     private long _capturedAtMs = long.MinValue;
@@ -85,6 +87,30 @@ internal sealed class CachedProcessInspector : IProcessInspector
     public string? TryReadWorkingDirectory(int processId, out string error) =>
         _inner.TryReadWorkingDirectory(processId, out error);
 
+    /// <summary>
+    /// Passed through, and cached per process for as long as this pane's walk lasts. The answer is
+    /// a property of the image, which cannot change under a running process, and the walk asks
+    /// about the same few processes on every capture.
+    /// </summary>
+    public bool IsConsoleProcess(int processId)
+    {
+        lock (_gate)
+        {
+            if (_console.TryGetValue(processId, out var cached)) return cached;
+        }
+
+        var answer = _inner.IsConsoleProcess(processId);
+
+        lock (_gate)
+        {
+            // A pid is reused eventually, so the map is emptied with the snapshot it belongs to
+            // rather than growing for the life of the window.
+            _console[processId] = answer;
+        }
+
+        return answer;
+    }
+
     private bool IsStale() =>
         Environment.TickCount64 - _capturedAtMs > (long)_ttl.TotalMilliseconds;
 
@@ -134,6 +160,10 @@ internal sealed class CachedProcessInspector : IProcessInspector
             {
                 _processes = processes;
                 _error = error;
+
+                // Emptied with the snapshot it belongs to: Windows reuses process ids, and a stale
+                // "this one is a console application" would outlive the process it described.
+                _console.Clear();
             }
             else
             {

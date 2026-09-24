@@ -73,3 +73,67 @@ public sealed class Win32ProcessInspectorTests
         }
     }
 }
+
+/// <summary>
+/// Telling a console application from a windowed one, which is how the working-directory walk knows
+/// where a pane's process tree stops being about the pane.
+///
+/// Checked against files every Windows has rather than against whatever is running, so the test
+/// says the same thing on a developer's desktop and on a CI runner with no desktop at all.
+/// </summary>
+public class ConsoleImageTests
+{
+    private static string System32(string name) =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), name);
+
+    [Theory]
+    [InlineData("cmd.exe")]
+    [InlineData("where.exe")]
+    [InlineData("tasklist.exe")]
+    public void A_console_application_is_recognised(string name) =>
+        Assert.True(Win32ProcessInspector.IsConsoleImage(System32(name)));
+
+    // Not mspaint.exe: on Windows 11 it is a stub for the Store application and does not answer
+    // for itself. notepad.exe is the same kind of shim and does still report subsystem 2, which is
+    // the reminder that this is a property of the file in front of you and not of the product name.
+    [Theory]
+    [InlineData("notepad.exe")]
+    [InlineData("charmap.exe")]
+    public void A_windowed_application_is_not(string name) =>
+        Assert.False(Win32ProcessInspector.IsConsoleImage(System32(name)));
+
+    [Fact]
+    public void Explorer_is_a_window_even_though_it_is_not_in_system32() =>
+        Assert.False(Win32ProcessInspector.IsConsoleImage(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe")));
+
+    [Fact]
+    public void A_file_that_is_not_an_executable_is_treated_as_a_console_process()
+    {
+        // Unknown means yes: being wrong this way costs one pane the wrong directory, and being
+        // wrong the other way throws away the strategy for every pane (ADR 0004).
+        var text = Path.Combine(Path.GetTempPath(), $"winmux-not-a-pe-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(text, "not an executable");
+        try
+        {
+            Assert.True(Win32ProcessInspector.IsConsoleImage(text));
+        }
+        finally
+        {
+            File.Delete(text);
+        }
+    }
+
+    [Fact]
+    public void A_file_that_is_not_there_is_treated_as_a_console_process() =>
+        Assert.True(Win32ProcessInspector.IsConsoleImage(
+            Path.Combine(Path.GetTempPath(), $"winmux-missing-{Guid.NewGuid():N}.exe")));
+
+    [Fact]
+    public void The_running_test_process_is_a_console_application() =>
+        Assert.True(new Win32ProcessInspector().IsConsoleProcess(Environment.ProcessId));
+
+    [Fact]
+    public void A_process_that_does_not_exist_is_not_claimed_to_be_a_window() =>
+        Assert.True(new Win32ProcessInspector().IsConsoleProcess(int.MaxValue - 1));
+}

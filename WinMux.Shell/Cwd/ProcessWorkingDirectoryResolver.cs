@@ -21,6 +21,14 @@ public sealed record ProcessWorkingDirectoryResult(
 /// Strategy 2 of CLAUDE.md section 4: walk to the deepest process in a pane's tree and ask the OS
 /// what its working directory is, falling back to the root process. See ADR 0004.
 ///
+/// <para>
+/// "Deepest" means deepest <em>console</em> descendant. A program in a pane can start a window, and
+/// that window's process tree has nothing to do with the pane: Claude Code starts Chrome, Chrome
+/// starts a renderer per tab, and a renderer is deeper than any shell — so the captured directory
+/// became Chrome's installation folder and the session restored a pane into it. The walk stops at
+/// the first process that is not a console application and does not look underneath it.
+/// </para>
+///
 /// After the Phase 5 extraction this class is pure policy — which process to ask, in what order,
 /// and what to make of a refusal. The OS calls live behind <see cref="IProcessInspector"/>, which is
 /// what lets the rules that actually cost measurement (skip console infrastructure, prefer the
@@ -65,7 +73,7 @@ public sealed class ProcessWorkingDirectoryResolver
                     : $"Could not inspect process {rootProcessId}: {snapshotError}");
             }
 
-            var deepest = FindDeepestDescendant(rootProcessId, snapshot);
+            var deepest = FindDeepestDescendant(rootProcessId, snapshot, _processes.IsConsoleProcess);
             var errors = new List<string>();
 
             if (deepest is { } descendant)
@@ -94,9 +102,14 @@ public sealed class ProcessWorkingDirectoryResolver
         }
     }
 
+    /// <param name="isConsole">
+    /// Whether a process could be running in the terminal. The walk stops at anything else and does
+    /// not look under it — see the remarks on <see cref="IProcessInspector.IsConsoleProcess"/>.
+    /// </param>
     internal static ProcessSnapshotEntry? FindDeepestDescendant(
         int rootProcessId,
-        IReadOnlyList<ProcessSnapshotEntry> processes)
+        IReadOnlyList<ProcessSnapshotEntry> processes,
+        Func<int, bool>? isConsole = null)
     {
         var byParent = processes
             .GroupBy(process => process.ParentProcessId)
@@ -120,6 +133,11 @@ public sealed class ProcessWorkingDirectoryResolver
                 {
                     continue;
                 }
+
+                // Pruned, not skipped. A window a program opened is not part of the pane, and
+                // neither is anything it goes on to start: Chrome's renderers are children of
+                // Chrome, and they are deeper than any shell will ever be.
+                if (isConsole is not null && !isConsole(child.ProcessId)) continue;
 
                 var depth = current.Depth + 1;
                 descendants.Add((child, depth));
