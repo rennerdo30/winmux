@@ -38,7 +38,7 @@ public sealed class IniDocument
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            throw new ConnectionSourceException($"{path} could not be read: {exception.Message}", exception);
+            throw new ConnectionSourceException(SourceFile.Describe(path, exception), exception);
         }
     }
 

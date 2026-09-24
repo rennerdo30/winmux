@@ -16,13 +16,13 @@ namespace WinMux.Shell.Chrome;
 
 /// <summary>What a tab strip can ask the shell to do. The strip itself owns no state.</summary>
 /// <param name="Activate">Bring a tab forward and focus it.</param>
-/// <param name="Rename">Give the tab's pane a name of the user's choosing.</param>
+/// <param name="Rename">Name what the tab holds — the pane, or the group when it holds one.</param>
 /// <param name="CloseTab">Close a tab, by the same path as closing any pane.</param>
 /// <param name="AddTab">Add a tab to this stack.</param>
 /// <param name="MoveStrip">Put this stack's tabs on a different edge.</param>
 internal sealed record TabStripCommands(
     Action<PaneId> Activate,
-    Action<PaneId> Rename,
+    Action<LayoutNode> Rename,
     Action<PaneId> CloseTab,
     Action<PaneId> TogglePin,
     Action<PaneId, StackNode, int> MoveTabToGroup,
@@ -351,11 +351,18 @@ internal static class TabStripView
         var target = leaves[0].Pane.Id;
         var pinned = leaves[0].Pane.IsPinned;
 
-        // A tab may hold a whole split, not just one pane. Saying so beats showing the first title
-        // and quietly implying the other panes are not there.
-        var title = leaves.Length == 1
-            ? leaves[0].Pane.Title
-            : $"{leaves[0].Pane.Title}  +{leaves.Length - 1}";
+        // A group the user named is called that. Otherwise a tab holding a whole split describes
+        // itself by what is in it, which beats showing the first title and quietly implying the
+        // other panes are not there.
+        //
+        // Before groups could be named, the derived form was the only form -- so renaming a tab
+        // that held a group renamed its first *pane*, and the group could not be called anything
+        // but whatever that pane happened to be called.
+        var title = child.Title.Length > 0
+            ? child.Title
+            : leaves.Length == 1
+                ? leaves[0].Pane.Title
+                : $"{leaves[0].Pane.Title}  +{leaves.Length - 1}";
         if (string.IsNullOrWhiteSpace(title)) title = "untitled";
 
         var label = new TextBlock
@@ -424,13 +431,13 @@ internal static class TabStripView
 
         // Double-click to rename is the convention every tabbed application uses, and it costs
         // nothing: the first click of the pair has already activated the tab.
-        tab.DoubleTapped += (_, e) => { e.Handled = true; commands.Rename(target); };
+        tab.DoubleTapped += (_, e) => { e.Handled = true; commands.Rename(child); };
 
         tab.ContextMenu = new ContextMenu
         {
             ItemsSource = new[]
             {
-                Item("Rename\u2026", () => commands.Rename(target)),
+                Item("Rename\u2026", () => commands.Rename(child)),
                 Item(pinned ? "Unpin tab" : "Pin tab", () => commands.TogglePin(target)),
                 Item("Close tab", () => commands.CloseTab(target)),
             },

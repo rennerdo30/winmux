@@ -481,7 +481,7 @@ internal sealed partial class MainWindow : Window
 
         var commands = new TabStripCommands(
             Activate: FocusPane,
-            Rename: pane => Run(RenamePaneAsync(pane)),
+            Rename: node => Run(RenameTabAsync(node)),
             CloseTab: pane => Run(CloseTabAsync(pane)),
             TogglePin: TogglePin,
             MoveTabToGroup: MoveTabToGroup,
@@ -569,6 +569,60 @@ internal sealed partial class MainWindow : Window
     /// tmux binds this to `prefix ,` and so do we, because the people most likely to want it are
     /// the people who already have that in their fingers.
     /// </summary>
+    /// <summary>
+    /// Name what a tab holds.
+    ///
+    /// <para>
+    /// A tab over a single pane names the pane, as it always has. A tab over a group or a split
+    /// names <em>that node</em>, which it could not do before: the tab showed its first pane's
+    /// title and renaming it renamed that pane, so a group of six machines called "CAD" could not
+    /// be called anything but whatever its first machine was called — and renaming the outer tab
+    /// silently renamed the inner one, because they were the same pane.
+    /// </para>
+    /// </summary>
+    private Task RenameTabAsync(LayoutNode node) => node is LeafNode leaf
+        ? RenamePaneAsync(leaf.Pane.Id)
+        : RenameGroupAsync(node);
+
+    private async Task RenameGroupAsync(LayoutNode node)
+    {
+        var derived = node.Leaves().FirstOrDefault()?.Pane.Title ?? "group";
+
+        var prompt = new PromptWindow(
+            node is StackNode ? "Rename tab group" : "Rename split",
+            "What should this group be called? Without a name it is described by what is inside " +
+            "it, and the name is saved with the session.",
+            node.Title,
+            clearLabel: node.Title.Length > 0 ? "Describe it by its contents" : null);
+
+        await prompt.ShowDialog(this);
+
+        if (prompt.Cleared)
+        {
+            node.Title = string.Empty;
+            _message = $"the group will be described by its contents again ({derived})";
+        }
+        else if (prompt.Result is { } name)
+        {
+            if (name.Length == 0)
+            {
+                _message = "a group name cannot be empty";
+                UpdateStatus();
+                return;
+            }
+
+            node.Title = name;
+            _message = $"renamed the group to \"{name}\"";
+        }
+        else
+        {
+            return;
+        }
+
+        Relayout();
+        _session.RequestSave();
+    }
+
     internal async Task RenamePaneAsync(PaneId target)
     {
         if (_tree.GetPane(target) is not { } pane)

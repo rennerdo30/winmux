@@ -11,7 +11,8 @@ internal sealed record FlatNode(
     IReadOnlyList<string> Children,
     IReadOnlyList<double>? Ratios,
     int? ActiveIndex,
-    TabStripPlacement? TabStrip = null);
+    TabStripPlacement? TabStrip = null,
+    string Title = "");
 
 internal sealed record FlatTree(string RootId, IReadOnlyList<FlatNode> Nodes, IReadOnlyList<PaneSnapshot> Panes);
 
@@ -58,7 +59,7 @@ internal static class Flattener
                     var childIds = children.Select(Visit).ToArray();
                     nodes[placeholder] = new FlatNode(
                         id, NodeKinds.Split, null, node.Direction, childIds,
-                        node.Ratios?.ToArray() ?? Even(childIds.Length), null);
+                        node.Ratios?.ToArray() ?? Even(childIds.Length), null, null, node.Title);
                     return id;
                 }
 
@@ -70,7 +71,7 @@ internal static class Flattener
                     var childIds = children.Select(Visit).ToArray();
                     nodes[placeholder] = new FlatNode(
                         id, NodeKinds.Stack, null, null, childIds, null, node.ActiveIndex ?? 0,
-                        node.TabStrip);
+                        node.TabStrip, node.Title);
                     return id;
                 }
 
@@ -120,6 +121,7 @@ internal static class Flattener
                             Direction = node.Direction
                                 ?? throw new SessionFormatException($"Split node \"{id}\" has no direction."),
                             Ratios = node.Ratios,
+                            Title = node.Title,
                             Children = node.Children.Select(Build).ToArray(),
                         };
 
@@ -129,6 +131,7 @@ internal static class Flattener
                             Kind = NodeKinds.Stack,
                             ActiveIndex = node.ActiveIndex ?? 0,
                             TabStrip = node.TabStrip,
+                            Title = node.Title,
                             Children = node.Children.Select(Build).ToArray(),
                         };
 

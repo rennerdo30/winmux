@@ -65,6 +65,10 @@ public static class TomlSessionWriter
         Kv(sb, NodeKeyWidth, "id", Str(node.Id));
         Kv(sb, NodeKeyWidth, "kind", Str(node.Kind));
 
+        // Only when the user named it. A group describes itself by its contents otherwise, and a
+        // derived name written to the file would freeze what should follow what is inside.
+        if (!string.IsNullOrEmpty(node.Title)) Kv(sb, NodeKeyWidth, "title", Str(node.Title));
+
         switch (node.Kind)
         {
             case NodeKinds.Leaf:

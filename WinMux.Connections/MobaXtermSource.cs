@@ -35,11 +35,62 @@ public sealed class MobaXtermSource : IConnectionSource
 
     public MobaXtermSource(string? path = null) => _path = path ?? DefaultPath();
 
+    /// <summary>
+    /// Where MobaXterm keeps it, asked of Windows rather than assembled from the user's profile.
+    ///
+    /// <para>
+    /// <c>MyDocuments</c>, not <c>UserProfile</c> + "Documents". Those are the same folder only on
+    /// an English install that nobody has redirected: this missed a real MobaXterm sitting in
+    /// <c>…\OneDrive\Dokumente\MobaXterm</c>, wrong about the language and wrong about the
+    /// redirection. Windows knows where Documents is and will say so.
+    /// </para>
+    /// </summary>
     public static string DefaultPath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        "Documents",
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
         "MobaXterm",
         "MobaXterm.ini");
+
+    /// <summary>
+    /// Every place a MobaXterm.ini is likely to be, best first.
+    ///
+    /// <para>
+    /// Documents is where the installed build keeps it, and Documents may be redirected to
+    /// OneDrive. On the machine that turned this up, <c>MyDocuments</c> still answered with the
+    /// local folder while the file was under <c>OneDrive\Dokumente</c> — so OneDrive's own folders
+    /// are looked in as well.
+    /// </para>
+    ///
+    /// <para>
+    /// By looking, not by knowing the word for "Documents". A list of translations covers the
+    /// languages somebody thought of and misses the rest; one directory listing covers all of them.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<string> LikelyPaths()
+    {
+        var places = new List<string> { DefaultPath() };
+
+        if (Environment.GetEnvironmentVariable("OneDrive") is { Length: > 0 } oneDrive)
+        {
+            places.Add(Path.Combine(oneDrive, "MobaXterm", "MobaXterm.ini"));
+
+            try
+            {
+                foreach (var folder in Directory.EnumerateDirectories(oneDrive))
+                {
+                    places.Add(Path.Combine(folder, "MobaXterm", "MobaXterm.ini"));
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // A OneDrive that cannot be listed is one fewer place to look, not a failure.
+            }
+        }
+
+        places.Add(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MobaXterm", "MobaXterm.ini"));
+
+        return [.. places.Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
 
     public string DisplayName => "MobaXterm";
 

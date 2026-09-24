@@ -7,6 +7,28 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## 0.7.8-test.3 — 2026-09-24
+
+A **test build**, published as a prerelease.
+
+### Fixed
+
+- **A tab group could not be named anything but its first pane's title.** A tab holding a group or
+  a split showed the first pane's name, so renaming that tab renamed *that pane* — and the inner
+  tab with it, because it was the same pane. Groups and splits now have names of their own, saved
+  with the session; a group nobody has named still describes itself by its contents.
+- **MobaXterm was not found when Documents is redirected to OneDrive.** The path was assembled as
+  the user profile plus the literal word "Documents", which is right only on an English install
+  nobody has redirected. Windows is asked where Documents is, and OneDrive's own folders are looked
+  through by listing them rather than by guessing the word in each language.
+- **A file that lives in the cloud and is not on the machine says so**, with what to do about it,
+  instead of relaying "the cloud file provider is not running".
+
+### Changed
+
+- The saved-connections window: the list and the details each in a surface of their own, a bigger
+  heading, room between the facts, and Enter opens what is selected.
+
 ## 0.7.8-test.2 — 2026-09-24
 
 A **test build**, published as a prerelease. Adds the connections window to test.1.

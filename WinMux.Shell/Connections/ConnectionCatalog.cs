@@ -46,8 +46,8 @@ public sealed class ConnectionCatalog
             // on it reported nothing at all.
             new WinScpSource(registry),
             new WinScpSource(),
-            new MobaXtermSource(),
             new MRemoteNgSource(),
+            .. MobaXtermSource.LikelyPaths().Select(path => new MobaXtermSource(path)),
         ]);
     }
 

@@ -41,6 +41,7 @@ public static class SessionMapper
             Kind = NodeKinds.Split,
             Direction = split.Direction,
             Ratios = split.Ratios.ToArray(),
+            Title = split.Title,
             Children = split.Children.Select(ToSnapshot).ToArray(),
         },
 
@@ -49,6 +50,7 @@ public static class SessionMapper
             Kind = NodeKinds.Stack,
             ActiveIndex = stack.ActiveIndex,
             TabStrip = stack.TabStrip,
+            Title = stack.Title,
             Children = stack.Children.Select(ToSnapshot).ToArray(),
         },
 
@@ -89,13 +91,16 @@ public static class SessionMapper
                 if (ratios is not null && ratios.Length != children.Count)
                     throw new SessionFormatException(
                         $"A split node has {ratios.Length} ratios for {children.Count} children.");
-                return new SplitNode(direction, children, ratios);
+                return new SplitNode(direction, children, ratios) { Title = node.Title };
             }
 
             case NodeKinds.Stack:
             {
                 var children = RequireChildren(node, minimum: 2);
-                return new StackNode(children, node.ActiveIndex ?? 0, node.TabStrip ?? TabStripPlacement.Top);
+                return new StackNode(children, node.ActiveIndex ?? 0, node.TabStrip ?? TabStripPlacement.Top)
+                {
+                    Title = node.Title,
+                };
             }
 
             default:

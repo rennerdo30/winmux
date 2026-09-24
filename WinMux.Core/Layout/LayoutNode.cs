@@ -48,6 +48,23 @@ public abstract class LayoutNode
     /// <summary>Null only for the root. Maintained by the containers, never set by callers.</summary>
     public LayoutNode? Parent { get; internal set; }
 
+    /// <summary>
+    /// A name the user gave this node, or empty to be described by what is inside it.
+    ///
+    /// <para>
+    /// A tab holding a split or another tab group had no name of its own, so its tab showed the
+    /// first pane's title and renaming that tab renamed <em>that pane</em> — which also renamed the
+    /// inner tab, because it is the same pane. A group of six machines called "CAD" could not be
+    /// called anything but whatever its first machine was called.
+    /// </para>
+    ///
+    /// <para>
+    /// Empty rather than null when unset, and empty means "describe yourself": the derived name
+    /// follows the contents, which is what a group nobody has named should do.
+    /// </para>
+    /// </summary>
+    public string Title { get; set; } = string.Empty;
+
     /// <summary>Every leaf beneath this node, including those hidden in inactive stack tabs.</summary>
     public abstract IEnumerable<LeafNode> Leaves();
 
@@ -162,7 +179,8 @@ public sealed class SplitNode : LayoutNode
 
     public override IEnumerable<LeafNode> Leaves() => _children.SelectMany(c => c.Leaves());
 
-    public override LayoutNode Clone() => new SplitNode(Direction, _children.Select(c => c.Clone()), _ratios);
+    public override LayoutNode Clone() =>
+        new SplitNode(Direction, _children.Select(c => c.Clone()), _ratios) { Title = Title };
 
     public override string ToString() => $"Split({Direction}, {_children.Count})";
 }
@@ -253,7 +271,8 @@ public sealed class StackNode : LayoutNode
 
     public override IEnumerable<LeafNode> Leaves() => _children.SelectMany(c => c.Leaves());
 
-    public override LayoutNode Clone() => new StackNode(_children.Select(c => c.Clone()), _activeIndex, TabStrip);
+    public override LayoutNode Clone() =>
+        new StackNode(_children.Select(c => c.Clone()), _activeIndex, TabStrip) { Title = Title };
 
     public override string ToString() => $"Stack({_children.Count}, active={_activeIndex}, tabs={TabStrip})";
 }

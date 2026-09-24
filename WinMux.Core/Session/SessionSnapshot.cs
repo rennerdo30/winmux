@@ -61,6 +61,12 @@ public sealed record NodeSnapshot
     /// and absent for the conventional top strip, so old sessions load unchanged.
     /// </summary>
     public TabStripPlacement? TabStrip { get; init; }
+
+    /// <summary>
+    /// A name the user gave a split or a tab group. Empty means it is described by its contents,
+    /// which is what every file written before groups could be named says.
+    /// </summary>
+    public string Title { get; init; } = string.Empty;
 }
 
 public sealed record PaneSnapshot

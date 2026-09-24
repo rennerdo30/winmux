@@ -168,7 +168,7 @@ public sealed class MRemoteNgSource : IConnectionSource
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
                                              or System.Xml.XmlException)
         {
-            throw new ConnectionSourceException($"{_path} could not be read: {exception.Message}", exception);
+            throw new ConnectionSourceException(SourceFile.Describe(_path, exception), exception);
         }
     }
 

@@ -153,3 +153,51 @@ public class MobaXtermSourceTests : IDisposable
     public void MobaXterm_must_not_be_written_underneath() =>
         Assert.False(new MobaXtermSource(Write()).CanWriteWhileOtherToolRuns);
 }
+
+/// <summary>
+/// Where MobaXterm's configuration is looked for.
+///
+/// A real MobaXterm was missed on a machine whose Documents folder is redirected to OneDrive and
+/// localised into German: the path was being assembled as the user profile plus the literal word
+/// "Documents", which is the right folder only on an English install nobody has redirected.
+/// </summary>
+public class MobaXtermPathTests
+{
+    [Fact]
+    public void Documents_is_asked_of_windows_rather_than_assembled()
+    {
+        // MyDocuments follows redirection and localisation; UserProfile + "Documents" does neither.
+        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+        Assert.StartsWith(documents, MobaXtermSource.DefaultPath(), StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith(Path.Combine("MobaXterm", "MobaXterm.ini"), MobaXtermSource.DefaultPath(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_usual_place_is_looked_at_first()
+    {
+        Assert.Equal(MobaXtermSource.DefaultPath(), MobaXtermSource.LikelyPaths()[0]);
+    }
+
+    [Fact]
+    public void OneDrives_own_folders_are_looked_in_too()
+    {
+        // A machine can have Documents redirected while the folder id still answers with the local
+        // path — which is exactly what happened on the machine this came from. OneDrive's folders
+        // are enumerated rather than guessed at, so the one called "Dokumente" is found without
+        // anybody having listed the German for it.
+        var oneDrive = Environment.GetEnvironmentVariable("OneDrive");
+        if (string.IsNullOrEmpty(oneDrive) || !Directory.Exists(oneDrive)) return;
+
+        var looked = MobaXtermSource.LikelyPaths();
+
+        foreach (var folder in Directory.EnumerateDirectories(oneDrive))
+        {
+            Assert.Contains(Path.Combine(folder, "MobaXterm", "MobaXterm.ini"), looked);
+        }
+    }
+
+    [Fact]
+    public void The_same_place_is_not_looked_at_twice() =>
+        Assert.Equal(MobaXtermSource.LikelyPaths().Count, MobaXtermSource.LikelyPaths().Distinct(StringComparer.OrdinalIgnoreCase).Count());
+}

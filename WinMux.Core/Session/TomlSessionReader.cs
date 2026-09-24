@@ -132,14 +132,15 @@ public static class TomlSessionReader
                     TomlNames.ParseDirection(String(t, "direction", at), at),
                     StringList(t, "children", at),
                     DoubleList(t, "ratios", at),
-                    null),
+                    null, null, OptionalString(t, "title", at) ?? string.Empty),
 
                 NodeKinds.Stack => new FlatNode(
                     id, kind, null, null,
                     StringList(t, "children", at),
                     null,
                     (int)Integer(t, "active", at),
-                    OptionalString(t, "tabs", at) is { } tabs ? TomlNames.ParseTabStrip(tabs, at) : null),
+                    OptionalString(t, "tabs", at) is { } tabs ? TomlNames.ParseTabStrip(tabs, at) : null,
+                    OptionalString(t, "title", at) ?? string.Empty),
 
                 _ => throw new SessionFormatException(
                     $"Unknown node kind \"{kind}\" at {at}. Expected \"leaf\", \"split\" or \"stack\"."),

@@ -69,9 +69,13 @@ internal sealed class ConnectionsWindow : Window
         _heading = new TextBlock
         {
             Text = "Nothing selected",
+            FontSize = Palette.SubtitleSize,
             FontWeight = FontWeight.SemiBold,
             Foreground = Palette.TextBrush,
             TextWrapping = TextWrapping.Wrap,
+
+            // A 20px face needs a line box built for one, or its ascenders clip.
+            LineHeight = 26,
         };
 
         _note = new TextBlock
@@ -82,12 +86,17 @@ internal sealed class ConnectionsWindow : Window
             TextWrapping = TextWrapping.Wrap,
         };
 
-        _tree.Background = Palette.SurfaceBrush;
-        _tree.CornerRadius = Palette.ControlRadius;
+        _tree.Background = Brushes.Transparent;
+        _tree.BorderThickness = new Thickness(0);
+        _tree.Padding = new Thickness(Palette.GapSmall / 2);
         _tree.SelectionChanged += (_, _) => ShowSelected();
         _tree.DoubleTapped += (_, _) => OpenSelected();
 
         _open = Dialog("Open in a pane", OpenSelected);
+
+        // Enter opens what is selected, which is what a list of servers implies and what
+        // double-clicking one already does.
+        _open.IsDefault = true;
         _import = Dialog("Import into WinMux", ImportSelected);
         _passwords = Dialog("Save passwords…", () => _ = SavePasswordsAsync());
 
@@ -105,41 +114,79 @@ internal sealed class ConnectionsWindow : Window
 
     private Control Build(Button close)
     {
-        var left = new DockPanel { LastChildFill = true };
         var caption = new TextBlock
         {
             Text = _results.Count == 0
                 ? "No saved connections were found on this machine."
-                : "From " + string.Join(", ", _results.Select(result => result.Source.DisplayName)),
+                : "Found in " + string.Join(", ", _results.Select(result => result.Source.DisplayName).Distinct()),
             Foreground = Palette.MutedTextBrush,
             FontSize = Palette.CaptionSize,
             LineHeight = 16,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, Palette.GapSmall),
+            Margin = new Thickness(2, 0, 0, Palette.GapSmall),
         };
+
+        // The list in a surface of its own, as the profile list in Settings is, so the two halves of
+        // the window read as two things rather than as controls floating on a background.
+        var listCard = new Border
+        {
+            Background = Palette.SurfaceBrush,
+            BorderBrush = Palette.EdgeBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = Palette.ControlRadius,
+            Child = _tree,
+        };
+
+        var left = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(caption, Dock.Top);
         left.Children.Add(caption);
-        left.Children.Add(_tree);
+        left.Children.Add(listCard);
 
-        var right = new StackPanel { Spacing = Palette.GapSmall };
-        right.Children.Add(_heading);
-        right.Children.Add(_note);
-        right.Children.Add(_details);
+        var facts = new Border
+        {
+            Background = Palette.SurfaceBrush,
+            BorderBrush = Palette.EdgeBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = Palette.ControlRadius,
+            Padding = new Thickness(Palette.GapLarge, Palette.GapMedium),
+            Child = _details,
+        };
+
+        var right = new StackPanel
+        {
+            Spacing = Palette.GapSmall,
+            Children = { _heading, _note, facts },
+        };
 
         var body = new Grid
         {
-            ColumnDefinitions = [new ColumnDefinition(1.1, GridUnitType.Star), new ColumnDefinition(1, GridUnitType.Star)],
+            ColumnDefinitions =
+            [
+                new ColumnDefinition(1.1, GridUnitType.Star),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(1, GridUnitType.Star),
+            ],
             Margin = new Thickness(Palette.GapLarge),
         };
-        Grid.SetColumn(left, 0);
+
+        var divider = new Border
+        {
+            Width = 1,
+            Background = Palette.EdgeBrush,
+            Margin = new Thickness(Palette.GapLarge, 0),
+        };
+
         var scroller = new ScrollViewer
         {
             Content = right,
-            Margin = new Thickness(Palette.GapLarge, 0, 0, 0),
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
         };
-        Grid.SetColumn(scroller, 1);
+
+        Grid.SetColumn(left, 0);
+        Grid.SetColumn(divider, 1);
+        Grid.SetColumn(scroller, 2);
         body.Children.Add(left);
+        body.Children.Add(divider);
         body.Children.Add(scroller);
 
         var buttons = new StackPanel
@@ -285,7 +332,9 @@ internal sealed class ConnectionsWindow : Window
 
         var node = row.Node!;
         _heading.Text = node.Name.Length > 0 ? node.Name : "(unnamed)";
-        _note.Text = $"{node.Path}\n{row.Result.Source.DisplayName} — {row.Result.Source.Location}";
+        _note.Text = node.Parent is null
+            ? row.Result.Source.Location
+            : $"{node.Path}{Environment.NewLine}{row.Result.Source.Location}";
 
         _open.IsEnabled = node is ConnectionEntry entry && ConnectionCatalog.ToProfile(entry) is not null;
         _import.IsEnabled = node is ConnectionFolder or ConnectionEntry;
