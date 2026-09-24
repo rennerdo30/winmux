@@ -40,7 +40,7 @@ the ADRs say why.
 
 ## 0.7.5 — 2026-09-24
 
-*Never published: 0.7.6 followed the same day and contains everything below.*
+*Tagged after 0.7.6, which contains it. Use 0.7.6 unless you want this fix on its own.*
 
 ### Fixed
 

@@ -6,8 +6,8 @@
 
 **Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.6 is released** —
 it fixes a crash that 0.7.4 could reach within a minute of starting a full-screen program, and adds
-pinned tabs, clickable links and a reworked settings dialog. 0.7.5 was the crash fix alone and was
-superseded before it was ever published. What is left needs a person, a second monitor or a
+pinned tabs, clickable links and a reworked settings dialog. 0.7.5 is the crash fix on its own,
+tagged after 0.7.6. What is left needs a person, a second monitor or a
 decision — see *Waiting on you*.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
@@ -19,7 +19,7 @@ Terminal programs can raise Windows notifications (ADR 0022).
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
 **Verified 2026-09-24: 934 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
 skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set (how to run a server: `RemoteLiveTests`).
-Releases: `v0.7.6` 2026-09-24; `v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
+Releases: `v0.7.6` and `v0.7.5` 2026-09-24; `v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
