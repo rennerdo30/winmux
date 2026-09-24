@@ -71,6 +71,12 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     private readonly TerminalViewport _viewport = new();
     private bool _dragging;
 
+    /// <summary>The link under the pointer while Ctrl is held, and the absolute row it sits on.</summary>
+    private (TerminalLink Link, int Row)? _hoveredLink;
+
+    /// <summary>One hand, not one per pointer move. A Cursor owns a native handle.</summary>
+    private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
+
     private IReadOnlyList<TerminalMatch> _matches = [];
     private int _currentMatch = -1;
     private string _searchQuery = "";
@@ -234,6 +240,22 @@ internal sealed class TerminalPaneControl : Control, IDisposable
                 new Rect(Inset + span.Start * CellWidth, Inset + row * CellHeight,
                     (span.End - span.Start) * CellWidth, CellHeight),
                 0);
+        }
+
+        // The hovered link, underlined in the accent. A hand cursor alone says *something* here is
+        // clickable; the underline says which characters, which matters when two URLs sit on one
+        // line or a URL runs into the prose after it.
+        if (_hoveredLink is { } hovered)
+        {
+            var screenRow = hovered.Row - firstRow;
+            if (screenRow >= 0 && screenRow < visibleRows)
+            {
+                var y = Inset + (screenRow + 1) * CellHeight - 1.5;
+                context.DrawLine(
+                    new Pen(Chrome.Palette.AccentBrush, 1),
+                    new Point(Inset + hovered.Link.Start * CellWidth, y),
+                    new Point(Inset + hovered.Link.End * CellWidth, y));
+            }
         }
 
         DrawScrollbar(context, visibleRows);
@@ -463,10 +485,81 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (!_dragging) return;
+
+        if (!_dragging)
+        {
+            // Only while Ctrl is held, which is the terminal convention and what keeps an ordinary
+            // drag over a URL a selection rather than a misfired navigation.
+            TrackLink(e.KeyModifiers.HasFlag(KeyModifiers.Control) ? e.GetPosition(this) : null);
+            return;
+        }
+
+        TrackLink(null);
         _viewport.ExtendSelection(PositionAt(e.GetPosition(this)));
         InvalidateVisual();
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// Remember the link under <paramref name="point"/>, underline it and offer a hand.
+    ///
+    /// Null clears it, which is what leaving the control, starting a drag, or letting go of Ctrl
+    /// all mean: a pane still showing a hand over text that will not open is worse than one that
+    /// never offered.
+    /// </summary>
+    private void TrackLink(Point? point)
+    {
+        var found = point is { } p ? LinkAt(PositionAt(p)) : null;
+        if (found?.Link.Url == _hoveredLink?.Link.Url && found?.Row == _hoveredLink?.Row) return;
+
+        _hoveredLink = found;
+        Cursor = found is null ? null : HandCursor;
+        ToolTip.SetTip(this, found?.Link.Url);
+        InvalidateVisual();
+    }
+
+    /// <summary>The link at an absolute position, whether marked with OSC 8 or written in the text.</summary>
+    private (TerminalLink Link, int Row)? LinkAt(TerminalPosition at)
+    {
+        var columns = _engine.Columns;
+        if (columns <= 0) return null;
+
+        var cells = new TerminalCell[columns];
+        var info = _engine.CopyRow(at.Row, cells);
+        if (info.Length == 0) return null;
+
+        return TerminalLinkModel.At(cells.AsSpan(0, Math.Min(info.Length, columns)), at.Column, _engine.GetHyperlink)
+            is { } link
+            ? (link, at.Row)
+            : null;
+    }
+
+    /// <summary>
+    /// Hand a link to the system browser.
+    ///
+    /// <c>UseShellExecute</c> is what makes the string a request to the shell rather than a program
+    /// to run — and it is also why <see cref="TerminalLinkModel.IsOpenable"/> is checked again here
+    /// rather than trusted from the caller. The text came out of whatever is running in the pane.
+    /// </summary>
+    private void OpenLink(string url)
+    {
+        if (!TerminalLinkModel.IsOpenable(url)) return;
+
+        try
+        {
+            using var _ = System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            // A browser that will not start is not worth taking the pane down for.
+        }
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        TrackLink(null);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -521,6 +614,15 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         if (!point.Properties.IsLeftButtonPressed) return;
 
         var at = PositionAt(point.Position);
+
+        // Ctrl+click opens; a plain click never does. Output is not a web page, and a terminal
+        // where clicking a word could launch something would be a terminal nobody could click in.
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && LinkAt(at) is { } target)
+        {
+            OpenLink(target.Link.Url);
+            e.Handled = true;
+            return;
+        }
         switch (e.ClickCount)
         {
             case 2:

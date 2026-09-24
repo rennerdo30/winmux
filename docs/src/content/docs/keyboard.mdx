@@ -56,6 +56,17 @@ Multi-line pastes arrive as one paste when the program asks for bracketed paste,
 does not run line by line. `Alt` combinations, `Shift+Tab`, function keys and modified arrows
 (`Ctrl+Left` and so on) reach the program as a terminal program expects them.
 
+### Links
+
+**`Ctrl`+click a URL to open it.** Hold `Ctrl` and the link under the pointer is underlined and the
+cursor becomes a hand, so you can see what will open before you commit to it. Both kinds work: a
+link a program marked up with OSC 8, and a plain `http://` or `https://` sitting in ordinary output.
+
+A plain click never opens anything — it starts a selection, as it should in a terminal. **Only
+`http` and `https` open.** A pane shows the output of whatever is running in it, and a `file:` URL
+is a local path while a registered custom scheme is a program with an argument somebody else chose;
+neither is something a click on a word should reach.
+
 ## In a file-browser pane
 
 These need no prefix; they act on the selection in the pane that has focus. `Ctrl`+click and

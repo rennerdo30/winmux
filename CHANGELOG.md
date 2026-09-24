@@ -11,6 +11,11 @@ the ADRs say why.
 
 ### Added
 
+- **URLs in a terminal pane open on `Ctrl`+click.** Hold `Ctrl` and the link under the pointer is
+  underlined with a hand cursor. Both kinds work — a link a program marked up with OSC 8, which
+  the engine had been parsing and the renderer had been discarding, and a plain `http://` or
+  `https://` in ordinary output. Only `http` and `https` ever open: a pane shows untrusted program
+  output, and a `file:` URL or a custom scheme would make a click on a word a way to run something.
 - **Tabs can be pinned**, so that closing a pane leaves them alone. A pinned tab shows a pin where
   its close button was — clicking it unpins — and `close-pane` refuses with a reason rather than
   silently doing nothing. `Ctrl+B .`, or the tab's right-click menu, or `toggle-pin` from the
