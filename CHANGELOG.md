@@ -11,6 +11,16 @@ the ADRs say why.
 
 ### Added
 
+- **Connections can live in folders, and take their settings from them.** A host states only what
+  differs from its folder — username, domain, gateway, credentials — and a resolved value says
+  which folder supplied it, so a server connecting as the wrong user tells you where to go and
+  change it. This is the model mRemoteNG and Remote Desktop Connection Manager get right, and the
+  groundwork for reading their files ([ADR 0025](docs/adr/0025-foreign-connection-sources.md)).
+- **FileZilla's Site Manager is read and written in place**, so FileZilla goes on working on the
+  same file. Folders, sites, ports, remote directories and stored passwords; everything WinMux has
+  no opinion about survives a save untouched, and the first save leaves the original beside it.
+  Passwords are read on request and offered to Windows Credential Manager — never copied into a
+  WinMux file.
 - **An empty pane offers to become a tab group.** Making a pane a tab group is a decision about
   the shape around it rather than about what goes in it, and it was reachable only from the toolbar
   — a long way from the pane that is asking the question.
