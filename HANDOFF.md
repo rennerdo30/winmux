@@ -4,69 +4,57 @@
 
 ## Where we are
 
-**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.7 is released** —
-tabs drag between groups, a tab group's "+" adds to the right group, and selecting a tab no longer
-needs a second click while a pane is repainting. 0.7.6 added pinned tabs, clickable links and the
-reworked settings dialog; 0.7.5 is the crash fix on its own, tagged after 0.7.6. What is left needs a person, a second monitor or a
-decision — see *Waiting on you*.
+**Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. The last stable release is
+0.7.7; `v0.7.8-test.4` is published as a prerelease and is what the user is testing.** 0.7.8 is not
+stable yet because most of what is in it has been on screen for minutes rather than days.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
-`WinMux.Panes`; the shell declares zero `DllImport` (ADR 0013); tab groups nest anywhere (ADR 0014);
-any installed app can be a profile (ADR 0015); the window wears its own Windows 11 caption (ADR 0016).
-The file browser speaks SFTP/FTP, copies between filesystems, drags and drops (ADRs 0020, 0021).
-Terminal programs can raise Windows notifications (ADR 0022).
+`WinMux.Panes`; the shell declares zero `DllImport` (ADR 0013); tab groups nest anywhere and now
+have names of their own (ADR 0014); any installed app can be a profile (ADR 0015); the window wears
+its own Windows 11 caption (ADR 0016). The file browser speaks SFTP/FTP (ADRs 0020, 0021). Terminal
+programs can raise Windows notifications (ADR 0022) and mark their tab when they do.
+**`WinMux.Connections` reads six other tools' saved sessions in place** — FileZilla, PuTTY, WinSCP,
+MobaXterm, mRemoteNG, RDCMan — with folder inheritance kept rather than flattened
+([ADR 0025](docs/adr/0025-foreign-connection-sources.md)).
 
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-24: 962 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
-skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set (how to run a server: `RemoteLiveTests`).
-Releases: `v0.7.7`, `v0.7.6` and `v0.7.5` 2026-09-24; `v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
+**Verified 2026-09-24: 1,128 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests,
+which skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set.
+Releases: `v0.7.8-test.1` to `-test.4` (prereleases), `v0.7.7`, `v0.7.6`, `v0.7.5` all 2026-09-24;
+`v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
 
 Run it: `run.cmd`, or `scripts/run.ps1 -Session examples/tabs-and-splits.toml`.
 Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
 
 ## What just happened
 
-**2026-09-24 — a crash caught by the crash log, then everything the user asked for that day.**
+**2026-09-24 — a long session driven almost entirely by the user running the thing and reporting
+what broke.** Every item below started as a screenshot or a sentence from them.
 
-- **The crash (0.7.5).** 0.7.4 died on another machine and `%LOCALAPPDATA%\WinMux\crash.log` had the
-  thread, the stack and the version, so there was nothing to reproduce blind. Entering the alternate
-  screen discards the whole scrollback in one write (`TotalRows` 101 → 10, measured), and the repaint
-  already in flight was copying rows by their old indices
-  ([ADR 0024](docs/adr/0024-reading-a-terminal-while-it-is-written-to.md)).
-- **0.7.6**: a pass over the settings dialog with the dialog actually rendered (see *Do not re-do*
-  for how), pinned tabs (`Ctrl+B .`, saved with the session), and `Ctrl`+click to open a URL —
-  reported as a regression and not one: the engine has always parsed OSC 8 and the renderer has
-  always discarded it.
-- **0.7.7**: tabs drag between groups (`LayoutTree.MoveTabToStack` carries the same `Pane` across, so
-  its runtime never stops); a tab group's "+" adds to *that* group rather than to the group inside
-  it; and **selecting a tab no longer needs a second click while a pane is repainting** — a terminal
-  posts repaints at `Render`, Avalonia ranks that above `Input`, and a full-screen program posts them
-  faster than they drain, so the queued keyboard move never got a turn. Focus now runs the layout it
-  was waiting for instead of queueing behind it. `DispatcherPriorityTests` pins the mechanism.
-
-**2026-09-23/24 (earlier)** — Claude Code in a pane, the in-place updater, the session moved to
-`%APPDATA%\WinMux` (ADRs 0018 addendum, 0023); notifications (ADR 0022); the file browser (ADR 0021).
-`git log` has the detail.
+- **0.7.5/0.7.6/0.7.7**, all released: the alternate-screen crash
+  ([ADR 0024](docs/adr/0024-reading-a-terminal-while-it-is-written-to.md)); pinned tabs; `Ctrl`+click
+  on a URL; the settings dialog reworked; tabs dragging between groups with a drop caret; a pane
+  that wants you marking its tab; the tab-group button making a group; and selecting a tab no longer
+  needing a second click — a terminal posts repaints at `Render`, which outranks `Input`, so the
+  queued keyboard move was starved (`DispatcherPriorityTests`).
+- **The connection sources** (ADR 0025) and the window that opens them, then four rounds of the user
+  finding what was wrong with them: MobaXterm missed entirely because Documents was redirected to
+  OneDrive *and* localised; a cloud placeholder reported as "the cloud file provider is not
+  running"; every MobaXterm bookmark called `#109#0` because the parser and its sample were invented
+  together and agreed with each other; an installed WinSCP invisible because only the portable file
+  was looked for.
+- **`WinMux.Connections` was split out of Core** when `CoreIsPlatformFreeTests` refused a crypto
+  dependency. The guard was right and widening its allow-list would have been the wrong answer.
 
 ## The next action
 
-**Drag a tab from one group to another and watch what happens.** It is the one thing in 0.7.7 that
-no test can reach: the tree move and the drop arithmetic are covered, but Avalonia 12 replaced the
-whole drag API (`DataObject`/`DoDragDrop` → `DataTransfer`/`DoDragDropAsync`) and whether the drag
-*starts* — from a press kept until the pointer has travelled 6px — has only ever been reasoned about.
-A drag that cannot start writes "a tab drag could not start" to the crash log rather than failing
-silently. Also unseen: the notification toast, and one update installing itself.
+**Decide whether 0.7.8 goes stable.** Everything in the prerelease has been used briefly and the
+last four rounds each found something, so the discovery rate has not tailed off. The connections
+window in particular has been seen against exactly one real machine's data.
 
-## Waiting on you
-
-Only a person, a machine setting or a judgement can move these; nothing in the code waits on them.
-
-- **Install by hand anywhere still on 0.7.3 or earlier**, then watch one update install itself.
-- **The notification check**: Windows notifications on, Claude Code set up from Settings, a task in
-  a pane, switch away — a toast naming the pane should appear.
-- **Run the mixed-DPI check.** One display at a different scale, then `scripts/verify-mixed-dpi.ps1`.
-- **Decide `Terminal.Emulation`.** [ADR 0018](docs/adr/0018-terminal-emulation-supply-chain.md) — now
-  with a third engine defect behind it.
+Then: RDCMan has no discovery path — an `.rdg` lives wherever its owner put it, so the window needs
+an "Open a file…" before that source is reachable at all. WinSCP's registry form reads but does not
+write. Neither has an interface yet.
 
 ## Standing constraints
 
@@ -126,6 +114,14 @@ that a future session recognises them as answers rather than rediscovering them 
 - Do not put palette or modal chrome over the pane canvas; native windows paint above it.
 
 **Testing the UI**
+- **Do not write a parser and its sample together.** The MobaXterm reader had ten tests and they
+  all passed against a sample invented to match the parser: both put the session name in the value,
+  and both were wrong. A real `MobaXterm.ini` has the name in the *key*. Take the sample from a real
+  file, or at least from the format's documentation — never from the code being tested.
+- **Ask Windows where a known folder is; never assemble one.** `UserProfile` + `"Documents"` is the
+  right path only on an English install nobody has redirected. A real MobaXterm sat in
+  `OneDrive\Dokumente`, and `MyDocuments` *still* answered with the local folder, so OneDrive's
+  subfolders are enumerated rather than guessed at by name in four languages.
 - **To see what a WinMux window actually looks like, render it, do not screenshot it.** Avalonia's
   headless platform draws for real with `.UseSkia()` and
   `new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }`, after which
