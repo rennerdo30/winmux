@@ -6,8 +6,8 @@
 
 **Phases 0–5 are complete; Phase 6 (the GUI) has every planned feature in. 0.7.4 is released, and
 0.7.5 is committed but not tagged** — it fixes a crash that 0.7.4 could reach within a minute of
-starting a full-screen program. What is left needs a person, a second monitor or a decision — see
-*Waiting on you*.
+starting a full-screen program, and adds pinned tabs and clickable links. What is left needs a
+person, a second monitor or a decision — see *Waiting on you*.
 
 WinMux runs terminal, foreign-application, file-browser and empty panes, all as providers behind
 `WinMux.Panes`; the shell declares zero `DllImport` (ADR 0013); tab groups nest anywhere (ADR 0014);
@@ -16,7 +16,7 @@ The file browser speaks SFTP/FTP, copies between filesystems, drags and drops (A
 Terminal programs can raise Windows notifications (ADR 0022).
 
 Gate: `dotnet build WinMux.slnx -c Release -warnaserror` and `dotnet test WinMux.slnx -c Release`.
-**Verified 2026-09-24: 907 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
+**Verified 2026-09-24: 934 passed, 6 skipped, 0 warnings.** The 6 are the live SFTP/FTP tests, which
 skip unless `WINMUX_TEST_SFTP`/`WINMUX_TEST_FTP` are set (how to run a server: `RemoteLiveTests`).
 Releases: `v0.7.4` 2026-09-24; `v0.7.1`–`v0.7.3` 2026-09-23; `v0.7.0` 2026-09-16.
 
@@ -25,38 +25,36 @@ Package it: `publish.cmd` → `dist/WinMux-<version>-win-x64/` and a zip.
 
 ## What just happened
 
-**2026-09-24 (later) — the first crash the crash log ever caught, diagnosed from the log alone.**
-The user ran 0.7.4 on another machine and it disappeared; `%LOCALAPPDATA%\WinMux\crash.log` had the
-thread, the stack and the version, and a clean `process exit, code 0` on the run before, so there
-was nothing to reproduce blind. `IndexOutOfRangeException` out of `CopyRow`, inside a repaint.
-- **Cause, measured**: entering the alternate screen discards the whole scrollback in one write
-  (`TotalRows` 101 → 10 on a 40x10 engine holding 100 lines). `Render` had already read the
-  dimensions and was copying rows by their old absolute indices. The engine's lock made every *call*
-  atomic and a *frame* atomic in no way at all. Four other call sites read rows the same way.
-- **Fix**: reading a row is total — a row that is no longer there reads as empty, a row wider than
-  the destination is truncated, and the reported length always describes the destination
-  ([ADR 0024](docs/adr/0024-reading-a-terminal-while-it-is-written-to.md)). The rejected alternative,
-  an atomic frame API, is written down there with the reason.
-- **Second bug from the same write**: the viewport stayed parked above a scrollback that no longer
-  existed, where the cursor is deliberately not drawn — vim started after scrolling back had no
-  cursor in it. `OnBufferGrew` is now `OnBufferChanged` and clamps on a shrink.
-- Both guards were verified by putting the bugs back: four tests went red, the racing one in two
-  seconds.
-- The troubleshooting page now says where the crash log is, that it is capped at 1 MB and deleted
-  rather than rotated, and what an empty one means. It did not, which is why the user had to ask.
+**2026-09-24 — a crash caught by the crash log, then three things the user asked for.**
 
-**2026-09-24 (earlier)** — Claude Code in a pane: `ESC[?u` misparsed as restore-cursor, Alt+V sending
-Alt+Shift+V, the updater installing in place and always restarting, the session moved to
-`%APPDATA%\WinMux` (ADRs 0018 addendum, 0023). **2026-09-23** — notifications (ADR 0022), terminal
-copy and paste, the file browser (ADR 0021). `git log` has the detail.
+- **The crash.** 0.7.4 died on another machine; `%LOCALAPPDATA%\WinMux\crash.log` had the thread,
+  the stack and the version, so there was nothing to reproduce blind. Entering the alternate screen
+  discards the whole scrollback in one write (`TotalRows` 101 → 10, measured), and the repaint
+  already in flight was copying rows by their old indices. Reading a row is total now
+  ([ADR 0024](docs/adr/0024-reading-a-terminal-while-it-is-written-to.md)). The same write also left
+  the viewport parked above history that no longer existed, where the cursor is not drawn — vim
+  with no cursor in it.
+- **A pass over the settings dialog**, with the dialog actually on screen: Avalonia's headless
+  platform draws for real with `UseHeadlessDrawing = false` and `.UseSkia()`, and
+  `window.CaptureRenderedFrame()` writes a PNG. That found the three file paths wrapping into
+  right-aligned fragments, a profile list cutting its last row in half, and 2,150px of content in a
+  fixed 640px viewport that could not be resized.
+- **Pinned tabs**, asked for as "pin tabs so you cant close them". `Pane.IsPinned`, saved with the
+  session; `Ctrl+B .`; a pinned tab shows a pin where its close button was.
+- **Ctrl+click opens a URL in a terminal pane.** Reported as a regression and it is not one: the
+  engine has always parsed OSC 8 and the renderer has always discarded it. `TerminalLinkModel`.
+
+**2026-09-23/24 (earlier)** — Claude Code in a pane, the in-place updater, the session moved to
+`%APPDATA%\WinMux` (ADRs 0018 addendum, 0023); notifications (ADR 0022); the file browser (ADR 0021).
+`git log` has the detail.
 
 ## The next action
 
-**Tag 0.7.5** (`git tag v0.7.5 && git push origin v0.7.5`) so the fix reaches the machine that
-crashed — tagging publishes, so it is the user's to run. **0.7.4 still has to be installed by hand
-once** on any machine on 0.7.3 or earlier, because the old version's broken installer is the one
-that runs; after that, the next update should install itself, and watching one do so is still
-unseen. Also unseen on screen: the notification toast.
+**Try 0.7.5 from `dist/` and then tag it** (`git tag v0.7.5 && git push origin v0.7.5`) — tagging
+publishes, so it stays the user's to run. Three things want a look on screen first: a full-screen
+program started in a pane holding scrollback (the crash), `Ctrl`+click on a URL, and pinning a tab
+and then trying to close it. **0.7.4 still has to be installed by hand once** on any machine on
+0.7.3 or earlier, because the old version's broken installer is the one that runs.
 
 ## Waiting on you
 
@@ -127,6 +125,14 @@ that a future session recognises them as answers rather than rediscovering them 
 - Do not put palette or modal chrome over the pane canvas; native windows paint above it.
 
 **Testing the UI**
+- **To see what a WinMux window actually looks like, render it, do not screenshot it.** Avalonia's
+  headless platform draws for real with `.UseSkia()` and
+  `new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }`, after which
+  `window.CaptureRenderedFrame()!.Save(path)` writes a PNG from inside the process — no DPI
+  virtualisation, no foreground window, no keystrokes going anywhere. Two things are needed or the
+  image is misleading rather than wrong: `Palette.Apply(...)` and `Styles.Add(Chrome.Theme.Build())`,
+  which `Program.Initialize` does and `HeadlessTestApp` deliberately does not. Without them every
+  palette brush is transparent and the capture shows buttons on a white void.
 - Do not trust a headless test that never looks for a row. Until 2026-09-23 the test assembly had no
   `[assembly: AvaloniaTestApplication]`, so there was no theme and no templates, and a `ListBox` held
   its items while realising none — invisible to every test that only read the model back.
