@@ -7,7 +7,13 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
-## Unreleased
+## 0.7.8-test.1 — 2026-09-24
+
+A **test build**, published as a prerelease so it is not offered to anyone on the stable channel.
+Everything below is in it and none of it has been used in anger.
+
+The connection sources have no interface yet — the six readers and their tests are in the build,
+but there is nothing on screen that opens them. Nothing else here depends on that.
 
 ### Added
 
