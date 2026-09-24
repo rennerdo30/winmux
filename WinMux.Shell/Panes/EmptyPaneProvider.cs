@@ -24,7 +24,7 @@ internal sealed record EmptyPaneCommands(
     Action<PaneId, PaneKind> OpenPaneKind,
     Action<PaneId, ProfileKind> Connect,
     Action<PaneId> MakeTabGroup,
-    Action ShowSavedConnections);
+    Action<PaneId> ShowSavedConnections);
 
 /// <summary>
 /// A pane with nothing in it, offering everything that could go in it.
@@ -166,7 +166,7 @@ internal sealed class EmptyPaneRuntime : IPaneRuntime
 
         // Somebody who already has two hundred servers in PuTTY or mRemoteNG should not have to
         // type one of them in again to find out that WinMux can open it.
-        extras.Children.Add(Secondary("Saved connections…", commands.ShowSavedConnections));
+        extras.Children.Add(Secondary("Saved connections…", () => commands.ShowSavedConnections(_pane.Id)));
 
         var content = new StackPanel
         {

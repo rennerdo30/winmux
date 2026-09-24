@@ -68,6 +68,24 @@ public abstract class LayoutNode
     /// <summary>Every leaf beneath this node, including those hidden in inactive stack tabs.</summary>
     public abstract IEnumerable<LeafNode> Leaves();
 
+    /// <summary>
+    /// The leaf this node is currently showing, found by following each tab group's active tab
+    /// down.
+    ///
+    /// <para>
+    /// Not the same as the first leaf, and the difference is what makes a nested tab group keep its
+    /// place. Selecting an outer tab used to focus the first leaf underneath it, and focusing a leaf
+    /// reveals it by setting every tab group above it to show it — so leaving an inner group and
+    /// coming back put it on its first tab, every time, whatever you had been looking at.
+    /// </para>
+    ///
+    /// <para>
+    /// A split has no active child, because all of its children are on screen at once, so the first
+    /// is taken. Only tab groups hide things, and only they have somewhere to come back to.
+    /// </para>
+    /// </summary>
+    public abstract LeafNode ActiveLeaf();
+
     /// <summary>Deep copy, with parents rewired. Used for snapshots and undo.</summary>
     public abstract LayoutNode Clone();
 
@@ -89,6 +107,8 @@ public sealed class LeafNode : LayoutNode
     public LeafNode(Pane pane) => Pane = pane ?? throw new ArgumentNullException(nameof(pane));
 
     public override IEnumerable<LeafNode> Leaves() { yield return this; }
+
+    public override LeafNode ActiveLeaf() => this;
 
     public override LayoutNode Clone() => new LeafNode(Pane);
 
@@ -178,6 +198,8 @@ public sealed class SplitNode : LayoutNode
     public int IndexOf(LayoutNode child) => _children.IndexOf(child);
 
     public override IEnumerable<LeafNode> Leaves() => _children.SelectMany(c => c.Leaves());
+
+    public override LeafNode ActiveLeaf() => _children[0].ActiveLeaf();
 
     public override LayoutNode Clone() =>
         new SplitNode(Direction, _children.Select(c => c.Clone()), _ratios) { Title = Title };
@@ -270,6 +292,8 @@ public sealed class StackNode : LayoutNode
     public int IndexOf(LayoutNode child) => _children.IndexOf(child);
 
     public override IEnumerable<LeafNode> Leaves() => _children.SelectMany(c => c.Leaves());
+
+    public override LeafNode ActiveLeaf() => Active.ActiveLeaf();
 
     public override LayoutNode Clone() =>
         new StackNode(_children.Select(c => c.Clone()), _activeIndex, TabStrip) { Title = Title };

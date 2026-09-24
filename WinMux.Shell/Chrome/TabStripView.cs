@@ -348,6 +348,10 @@ internal static class TabStripView
         string? waiting)
     {
         var leaves = child.Leaves().ToArray();
+
+        // Two different questions, and they used to share one answer. `target` is what this tab
+        // *is* — pinning and closing must mean the same pane whichever inner tab happens to be
+        // showing — while selecting the tab should land on whatever it was last showing.
         var target = leaves[0].Pane.Id;
         var pinned = leaves[0].Pane.IsPinned;
 
@@ -427,7 +431,7 @@ internal static class TabStripView
         };
         tab.Classes.Add(Theme.Tab);
         if (isActive) tab.Classes.Add(Theme.ActiveTab);
-        tab.Click += (_, _) => commands.Activate(target);
+        tab.Click += (_, _) => commands.Activate(child.ActiveLeaf().Pane.Id);
 
         // Double-click to rename is the convention every tabbed application uses, and it costs
         // nothing: the first click of the pair has already activated the tab.

@@ -7,6 +7,28 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## 0.7.8-test.5 — 2026-09-24
+
+A **test build**, published as a prerelease.
+
+### Fixed
+
+- **Selecting a tab still took two clicks while a full-screen program was running.** The earlier fix
+  was aimed at the wrong job. Avalonia delivers *input* as dispatcher jobs below `Render`, so a pane
+  posting one repaint per engine update was starving the click itself rather than only what the
+  click would do. A pane now has at most one repaint queued, however fast the program writes.
+- **A tab group's name vanished when it dropped to one tab.** Closing the second tab collapses the
+  group into the pane that is left, and the name went with the group. It is handed over — unless
+  that pane has a name of its own.
+- **Opening a saved connection from an empty pane made a new pane** instead of filling the one that
+  asked, unlike everything else an empty pane offers.
+
+### Changed
+
+- **A tab group inside a tab group keeps its place.** Leaving an inner group and coming back used to
+  land on its first tab: selecting the outer tab focused the first leaf underneath it, and focusing a
+  leaf reveals it by setting every group above it to show it — so returning was itself what reset it.
+
 ## 0.7.8-test.4 — 2026-09-24
 
 A **test build**, published as a prerelease.

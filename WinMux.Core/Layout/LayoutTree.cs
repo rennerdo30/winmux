@@ -337,8 +337,23 @@ public sealed class LayoutTree
     }
 
     /// <summary>Dissolve a container that is down to one child, hoisting the child in its place.</summary>
+    /// <summary>
+    /// Replace a group or split that is down to one child with that child.
+    ///
+    /// <para>
+    /// The name comes with it. A tab group called "CAD" whose second tab is closed becomes the one
+    /// pane that is left, and without this that tab would suddenly be called whatever that pane is
+    /// called — the name the user gave the group would be gone with no sign that anything had
+    /// discarded it. Only when the child has no name of its own; a named pane keeps its own name.
+    /// </para>
+    /// </summary>
     private void Collapse(LayoutNode container, LayoutNode onlyChild)
     {
+        if (container.Title.Length > 0 && onlyChild.Title.Length == 0)
+        {
+            onlyChild.Title = container.Title;
+        }
+
         onlyChild.Parent = null;
         Replace(container, onlyChild);
     }
@@ -505,7 +520,9 @@ public sealed class LayoutTree
         int count = stack.Children.Count;
         int next = ((stack.ActiveIndex + delta) % count + count) % count;
         stack.ActiveIndex = next;
-        _focused = stack.Active.Leaves().First().Pane.Id;
+        // The tab's own active leaf, not its first: a tab holding another tab group comes back to
+        // whatever was showing in it rather than to its first tab.
+        _focused = stack.Active.ActiveLeaf().Pane.Id;
         return true;
     }
 

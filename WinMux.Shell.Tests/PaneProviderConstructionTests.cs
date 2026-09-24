@@ -37,7 +37,7 @@ public sealed class PaneProviderConstructionTests
         });
 
     private static EmptyPaneCommands NoCommands() => new(
-        (_, _) => { }, _ => { }, _ => { }, _ => { }, (_, _) => { }, (_, _) => { }, _ => { }, () => { });
+        (_, _) => { }, _ => { }, _ => { }, _ => { }, (_, _) => { }, (_, _) => { }, _ => { }, _ => { });
 
     private static readonly LaunchProfile[] SomeProfiles =
     [

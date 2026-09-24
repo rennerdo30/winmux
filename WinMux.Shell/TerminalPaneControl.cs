@@ -956,19 +956,25 @@ internal sealed class TerminalPaneControl : Control, IDisposable
                   Settings.ShellSettings.Current.TerminalFontSize);
     });
 
+    /// <summary>
+    /// One queued repaint at a time. See <see cref="CoalescedRepaint"/> for why that is not merely
+    /// an optimisation: input is delivered as dispatcher jobs below Render, so a pane that posts
+    /// repaints faster than they drain starves the user's own clicks.
+    /// </summary>
+    private CoalescedRepaint? _repaint;
+
     private void OnEngineUpdated()
     {
         if (_disposed != 0) return;
 
-        Dispatcher.UIThread.Post(
-            () =>
-            {
-                // Told about growth before redrawing: while the user is reading history, new
-                // output must not drag the text upward under them.
-                _viewport.OnBufferChanged(_engine.TotalRows, _engine.ScrollbackCount);
-                InvalidateVisual();
-            },
-            DispatcherPriority.Render);
+        // Told about growth before redrawing: while the user is reading history, new output must
+        // not drag the text upward under them.
+        (_repaint ??= new CoalescedRepaint(() =>
+        {
+            if (_disposed != 0) return;
+            _viewport.OnBufferChanged(_engine.TotalRows, _engine.ScrollbackCount);
+            InvalidateVisual();
+        })).Request();
     }
 
     private void OnEngineTitleChanged(string title)

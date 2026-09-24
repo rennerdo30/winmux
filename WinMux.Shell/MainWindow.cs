@@ -173,7 +173,7 @@ internal sealed partial class MainWindow : Window
                         FocusPane(pane);
                         Run(AddTabGroupAsync(Pane.Empty(), "new tab group"));
                     },
-                    () => Run(ShowConnectionsAsync())),
+                    pane => Run(ShowConnectionsAsync(pane))),
                 () => Settings.ShellProfiles.All,
                 PlatformServices.AppIcons,
                 OfferablePaneKinds),
@@ -580,9 +580,25 @@ internal sealed partial class MainWindow : Window
     /// silently renamed the inner one, because they were the same pane.
     /// </para>
     /// </summary>
-    private Task RenameTabAsync(LayoutNode node) => node is LeafNode leaf
-        ? RenamePaneAsync(leaf.Pane.Id)
-        : RenameGroupAsync(node);
+    private async Task RenameTabAsync(LayoutNode node)
+    {
+        if (node is not LeafNode leaf)
+        {
+            await RenameGroupAsync(node);
+            return;
+        }
+
+        await RenamePaneAsync(leaf.Pane.Id);
+
+        // A leaf can be carrying a group's name, because a group that loses its second tab hands
+        // its name to the pane that is left. Renaming that tab must show the new name rather than
+        // set the pane's and go on displaying the old group's.
+        if (node.Title.Length > 0)
+        {
+            node.Title = string.Empty;
+            Relayout();
+        }
+    }
 
     private async Task RenameGroupAsync(LayoutNode node)
     {
@@ -1880,7 +1896,11 @@ internal sealed partial class MainWindow : Window
     /// shell's problem and not a dialog that opens empty: six readers that nothing could open would
     /// be a capability with no interface, and one that opens and shows nothing is barely better.
     /// </summary>
-    private async Task ShowConnectionsAsync()
+    /// <param name="into">
+    /// An empty pane that asked for this, which the chosen connection replaces. Null when it came
+    /// from the toolbar, where there is no pane to replace and a new one is right.
+    /// </param>
+    private async Task ShowConnectionsAsync(PaneId? into = null)
     {
         var catalogue = Connections.ConnectionCatalog.Standard(PlatformServices.Registry, PlatformServices.Unprotect);
         var results = await Task.Run(catalogue.Read);
@@ -1914,7 +1934,17 @@ internal sealed partial class MainWindow : Window
                 error is null ? StatusMessageKind.Info : StatusMessageKind.Error);
         }
 
-        if (dialog.Chosen is { } profile) await OpenProfileAsync(profile, split: false);
+        if (dialog.Chosen is not { } profile) return;
+
+        // Opened *in* the empty pane that asked, rather than beside it. An empty pane is a pane
+        // waiting to be told what it is, and every other thing it offers replaces it in place.
+        if (into is { } pane && _tree.GetPane(pane) is { Kind.Value: "empty" })
+        {
+            await ReplacePaneAsync(pane, ProfilePaneFactory.Create(profile, null), "opened " + profile.Name);
+            return;
+        }
+
+        await OpenProfileAsync(profile, split: false);
     }
 
     private async Task ShowSettingsAsync()

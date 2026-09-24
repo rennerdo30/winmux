@@ -131,3 +131,79 @@ public class NamedGroupTests
         Assert.Equal("CAD", group.Clone().Title);
     }
 }
+
+/// <summary>
+/// What happens to a group's name when the group stops being one.
+///
+/// Reported as "if only one subtab is present somehow the name of the upper tab changes": closing a
+/// group's second tab collapses it into the pane that is left, and the name the user gave the group
+/// went with the group — so the tab was suddenly called whatever that pane was called, with nothing
+/// saying anything had been discarded.
+/// </summary>
+public class CollapsedGroupNameTests
+{
+    private static (LayoutTree Tree, StackNode Group, Pane First, Pane Second) Group()
+    {
+        var first = Pane.Terminal("inner-1");
+        var second = Pane.Terminal("inner-2");
+        var other = Pane.Terminal("beside");
+
+        var group = new StackNode([new LeafNode(first), new LeafNode(second)], activeIndex: 0);
+        var root = new SplitNode(SplitDirection.Columns, [group, new LeafNode(other)]);
+        return (new LayoutTree(root, first.Id), group, first, second);
+    }
+
+    [Fact]
+    public void A_named_group_hands_its_name_to_the_pane_that_is_left()
+    {
+        var (tree, group, first, second) = Group();
+        group.Title = "CAD";
+
+        tree.Close(second.Id);
+
+        var leaf = tree.Root.Leaves().First(node => node.Pane.Id == first.Id);
+        Assert.Equal("CAD", leaf.Title);
+    }
+
+    [Fact]
+    public void An_unnamed_group_hands_over_nothing()
+    {
+        var (tree, _, first, second) = Group();
+
+        tree.Close(second.Id);
+
+        Assert.Equal(string.Empty, tree.Root.Leaves().First(node => node.Pane.Id == first.Id).Title);
+    }
+
+    [Fact]
+    public void A_pane_that_has_its_own_name_keeps_it()
+    {
+        // The group's name is a fallback for a pane that has none, not something that overwrites
+        // a name the user typed on the pane itself.
+        var (tree, group, first, second) = Group();
+        group.Title = "CAD";
+        tree.Root.Leaves().First(node => node.Pane.Id == first.Id).Title = "kept";
+
+        tree.Close(second.Id);
+
+        Assert.Equal("kept", tree.Root.Leaves().First(node => node.Pane.Id == first.Id).Title);
+    }
+
+    [Fact]
+    public void A_named_split_hands_its_name_over_too()
+    {
+        var left = Pane.Terminal("left");
+        var right = Pane.Terminal("right");
+        var other = Pane.Terminal("beside");
+        var split = new SplitNode(SplitDirection.Columns, [new LeafNode(left), new LeafNode(right)])
+        {
+            Title = "Workbench",
+        };
+        var root = new SplitNode(SplitDirection.Rows, [split, new LeafNode(other)]);
+        var tree = new LayoutTree(root, left.Id);
+
+        tree.Close(right.Id);
+
+        Assert.Equal("Workbench", tree.Root.Leaves().First(node => node.Pane.Id == left.Id).Title);
+    }
+}
