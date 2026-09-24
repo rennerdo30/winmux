@@ -478,13 +478,10 @@ internal sealed partial class MainWindow : Window
             Rename: pane => Run(RenamePaneAsync(pane)),
             CloseTab: pane => Run(CloseTabAsync(pane)),
             TogglePin: TogglePin,
+            MoveTabToGroup: MoveTabToGroup,
             AddTab: stack => Run(AddTabToStackAsync(stack)),
             MoveStrip: SetTabPlacement,
-            MoveTab: MoveTab,
-            MoveTabTo: (pane, index) =>
-            {
-                if (_tree.MoveTabTo(pane, index)) Relayout();
-            });
+            MoveTab: MoveTab);
 
         foreach (var strip in arrangement.TabStrips)
         {
@@ -674,6 +671,22 @@ internal sealed partial class MainWindow : Window
     }
 
     private Pane? PaneOf(PaneId id) => _tree.Panes.FirstOrDefault(p => p.Id == id);
+
+    /// <summary>
+    /// A tab dropped on a tab strip — the one it came from, or any other.
+    ///
+    /// The pane travels with its runtime still running, because the tree carries the same
+    /// <see cref="Pane"/> across rather than making a new one: a terminal keeps its shell and its
+    /// scrollback, a file browser keeps its directory.
+    /// </summary>
+    private void MoveTabToGroup(PaneId pane, StackNode target, int index)
+    {
+        if (!_tree.MoveTabToStack(pane, target, index)) return;
+
+        Relayout();
+        FocusActivePaneAfterLayout();
+        _session.RequestSave();
+    }
 
     /// <summary>Closing a tab is closing its pane, and goes through the same path.</summary>
     private async Task CloseTabAsync(PaneId pane)

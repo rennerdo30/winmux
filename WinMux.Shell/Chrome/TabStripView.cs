@@ -25,10 +25,10 @@ internal sealed record TabStripCommands(
     Action<PaneId> Rename,
     Action<PaneId> CloseTab,
     Action<PaneId> TogglePin,
+    Action<PaneId, StackNode, int> MoveTabToGroup,
     Action<StackNode> AddTab,
     Action<StackNode, TabStripPlacement> MoveStrip,
-    Action<int> MoveTab,
-    Action<PaneId, int> MoveTabTo);
+    Action<int> MoveTab);
 
 /// <summary>
 /// One stack's tabs, drawn in the band the layout engine reserved for them.
@@ -72,7 +72,7 @@ internal static class TabStripView
             items.Children.Add(tab);
         }
 
-        EnableDragToReorder(items, tabs, strip, vertical, commands);
+        EnableDragAndDrop(items, tabs, strip, vertical, commands);
 
         items.Children.Add(Icon(Icons.Add(), "Add a tab to this group", () => commands.AddTab(strip.Stack), vertical));
         items.Children.Add(PlacementButton(strip, commands, vertical));
@@ -85,27 +85,87 @@ internal static class TabStripView
             Padding = vertical ? new Thickness(6, 6) : new Thickness(6, 0),
         };
 
-        return new Border
+        var band = new Border
         {
             Background = Palette.SurfaceBrush,
             BorderBrush = Palette.EdgeBrush,
             BorderThickness = ContentEdge(strip.Placement, stackHasFocus),
             Child = scroller,
         };
+
+        // The whole band accepts a drop, not only the tabs in it: a group of one tab has almost no
+        // tab to aim at, and dropping into an empty part of the strip is what people try first.
+        AcceptDroppedTabs(band, items, tabs, strip, vertical, commands);
+        return band;
     }
 
     /// <summary>
-    /// Let a tab be dragged along the strip to reorder it.
+    /// The format the dragged tab travels in: a pane id in its string form.
     ///
-    /// A tab strip in 2026 that cannot be dragged reads as broken, whatever keys exist for it. The
-    /// drop index is worked out from the tab rectangles rather than from how far the pointer moved,
+    /// An application format, so it is offered to this process and not to the desktop — dragging a
+    /// tab is not an offer to paste a GUID into whatever else is open.
+    /// </summary>
+    private static readonly DataFormat<string> TabFormat =
+        DataFormat.CreateStringApplicationFormat("winmux-tab");
+
+    /// <summary>
+    /// Let a tab be dropped on this strip, whichever strip it came from.
+    ///
+    /// <para>
+    /// The index is worked out from the tab rectangles rather than from the distance dragged,
     /// because tabs are not all the same width — a title of "build" and one of "npm run watch"
     /// differ by a factor of three, and a distance-based guess lands on the wrong one constantly.
-    ///
-    /// The threshold matters: without it, every click on a tab is a one-pixel drag, and selecting a
-    /// tab would sometimes silently reorder the strip.
+    /// Past the last tab means the end, which is what dropping on the empty part of a strip means.
+    /// </para>
     /// </summary>
-    private static void EnableDragToReorder(
+    private static void AcceptDroppedTabs(
+        Border band,
+        Panel items,
+        IReadOnlyList<Control> tabs,
+        LayoutTabStrip strip,
+        bool vertical,
+        TabStripCommands commands)
+    {
+        DragDrop.SetAllowDrop(band, true);
+
+        static bool CarriesTab(DragEventArgs e) => e.DataTransfer.Contains(TabFormat);
+
+        int IndexFor(DragEventArgs e) =>
+            TabDropIndex.For([.. tabs.Select(tab => tab.Bounds)], e.GetPosition(items), vertical);
+
+        band.AddHandler(DragDrop.DragOverEvent, (object? _, DragEventArgs e) =>
+        {
+            e.DragEffects = CarriesTab(e) ? DragDropEffects.Move : DragDropEffects.None;
+            e.Handled = true;
+        });
+
+        band.AddHandler(DragDrop.DropEvent, (object? _, DragEventArgs e) =>
+        {
+            if (!CarriesTab(e)) return;
+            if (e.DataTransfer.TryGetValue(TabFormat) is not { } text || !Guid.TryParse(text, out var id)) return;
+
+            commands.MoveTabToGroup(new PaneId(id), strip.Stack, IndexFor(e));
+            e.DragEffects = DragDropEffects.Move;
+            e.Handled = true;
+        });
+    }
+
+    /// <summary>
+    /// Let a tab be dragged, to anywhere that takes tabs.
+    ///
+    /// <para>
+    /// A real drag session rather than pointer capture, because the destination is usually a
+    /// different control: reordering inside one strip and moving a tab to the group in the next
+    /// split are the same gesture, and only one of them ends where it began. The strip that
+    /// receives it does the arithmetic — see <see cref="AcceptDroppedTabs"/>.
+    /// </para>
+    ///
+    /// <para>
+    /// The threshold matters. Without it every click on a tab is a one-pixel drag, and selecting a
+    /// tab would sometimes reorder the strip instead.
+    /// </para>
+    /// </summary>
+    private static void EnableDragAndDrop(
         Panel items,
         IReadOnlyList<Control> tabs,
         LayoutTabStrip strip,
@@ -114,43 +174,56 @@ internal static class TabStripView
     {
         const double Threshold = 6;
 
-        if (tabs.Count < 2) return;
-
-        var dragging = -1;
+        var pressed = -1;
         var origin = default(Point);
-        var armed = false;
+
+        // The press itself is kept, because starting a drag needs the event that began it and a
+        // drag must not begin until the pointer has travelled far enough to mean one.
+        PointerPressedEventArgs? began = null;
 
         items.AddHandler(InputElement.PointerPressedEvent, (object? _, PointerPressedEventArgs e) =>
         {
             origin = e.GetPosition(items);
-            dragging = IndexAt(tabs, origin, vertical);
-            armed = false;
+            pressed = IndexAt(tabs, origin, vertical);
+            began = e;
         }, RoutingStrategies.Tunnel);
 
         items.AddHandler(InputElement.PointerMovedEvent, (object? _, PointerEventArgs e) =>
         {
-            if (dragging < 0) return;
+            if (pressed < 0 || pressed >= strip.Stack.Children.Count || began is null) return;
+            if (!e.GetCurrentPoint(items).Properties.IsLeftButtonPressed) { pressed = -1; return; }
 
             var position = e.GetPosition(items);
             var travelled = vertical ? Math.Abs(position.Y - origin.Y) : Math.Abs(position.X - origin.X);
-            if (!armed && travelled < Threshold) return;
-            armed = true;
+            if (travelled < Threshold) return;
 
-            var target = IndexAt(tabs, position, vertical);
-            if (target < 0 || target == dragging) return;
+            var pane = strip.Stack.Children[pressed].Leaves().First().Pane.Id;
+            var start = began;
+            pressed = -1;
+            began = null;
 
-            var pane = strip.Stack.Children[dragging].Leaves().First().Pane.Id;
-            commands.MoveTabTo(pane, target);
+            using var data = new DataTransfer();
+            data.Add(DataTransferItem.Create(TabFormat, pane.Value.ToString("D")));
 
-            // The strip is rebuilt by the relayout that follows, so this gesture ends here and the
-            // next move starts against fresh controls.
-            dragging = -1;
+            // Not awaited: the drag runs until the drop, and by the time it finishes this strip has
+            // very likely been rebuilt by the relayout the drop caused. Nothing here survives to
+            // look at the result, and the drop handler is what acts on it.
+            //
+            // Observed, though. A fire-and-forget task that throws surfaces as an unobserved task
+            // exception, which the crash log records without any idea where it came from; a drag
+            // that cannot start should say so in its own words and leave the strip working.
+            DragDrop.DoDragDropAsync(start, data, DragDropEffects.Move)
+                .ContinueWith(
+                    task => CrashLog.Write("a tab drag could not start", task.Exception),
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.FromCurrentSynchronizationContext());
         }, RoutingStrategies.Tunnel);
 
         items.AddHandler(InputElement.PointerReleasedEvent, (object? _, PointerReleasedEventArgs e) =>
         {
-            dragging = -1;
-            armed = false;
+            pressed = -1;
+            began = null;
         }, RoutingStrategies.Tunnel);
     }
 

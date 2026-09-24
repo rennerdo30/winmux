@@ -9,6 +9,13 @@ the ADRs say why.
 
 ## Unreleased
 
+### Added
+
+- **A tab can be dragged from one tab group to another**, not only along its own strip. The pane
+  travels with its runtime still running — a terminal keeps its shell and its scrollback — because
+  the same pane is carried across rather than rebuilt. Dropping on the empty part of a strip puts
+  the tab at the end, and a group left holding one tab collapses.
+
 ### Fixed
 
 - **Selecting a tab often needed a second click while a full-screen program was running.** A

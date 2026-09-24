@@ -180,6 +180,86 @@ public sealed class LayoutTree
         return true;
     }
 
+    /// <summary>
+    /// Move a pane out of wherever it is and into <paramref name="target"/>, at
+    /// <paramref name="index"/>.
+    ///
+    /// <para>
+    /// This is a tab dragged from one group onto another. The pane itself is carried across
+    /// untouched — the same <see cref="Pane"/>, so the shell's runtime for it keeps running and
+    /// nothing is torn down and rebuilt. Where it came from is tidied exactly as closing would tidy
+    /// it: a group or a split left holding one child collapses into that child.
+    /// </para>
+    ///
+    /// <para>
+    /// Refused, returning false, when the pane is not in the tree, when <paramref name="target"/> is
+    /// not in this tree, or when the target sits <em>inside</em> the pane being moved — a node
+    /// cannot become its own descendant, and the tree would be a ring rather than a tree.
+    /// </para>
+    /// </summary>
+    public bool MoveTabToStack(PaneId pane, StackNode target, int index)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+
+        var leaf = Find(pane);
+        if (leaf is null || leaf.Parent is null) return false;
+        if (!ReferenceEquals(RootOf(target), _root)) return false;
+
+        // Already where it is being asked to go, so removing and reinserting would only renumber
+        // the tabs around it.
+        var from = target.IndexOf(leaf);
+        if (from >= 0 && (index == from || index == from + 1))
+        {
+            target.ActiveIndex = from;
+            _focused = pane;
+            return true;
+        }
+
+        // The target must survive the removal below. A stack that holds this leaf and nothing else
+        // collapses into it, and inserting into a node no longer in the tree loses the pane.
+        if (ReferenceEquals(leaf.Parent, target) && target.Children.Count <= 1) return false;
+        if (IsWithin(target, leaf)) return false;
+
+        var parent = leaf.Parent;
+        switch (parent)
+        {
+            case SplitNode split:
+                split.RemoveChildAt(split.IndexOf(leaf));
+                if (split.Children.Count == 1) Collapse(split, split.Children[0]);
+                break;
+
+            case StackNode stack:
+                stack.RemoveChildAt(stack.IndexOf(leaf));
+                if (stack.Children.Count == 1) Collapse(stack, stack.Children[0]);
+                break;
+        }
+
+        var at = Math.Clamp(index, 0, target.Children.Count);
+        target.InsertChild(at, new LeafNode(leaf.Pane));
+        target.ActiveIndex = at;
+        _focused = pane;
+        EnsureFocusVisible();
+        return true;
+    }
+
+    /// <summary>Whether <paramref name="node"/> is <paramref name="ancestor"/> or sits under it.</summary>
+    private static bool IsWithin(LayoutNode node, LayoutNode ancestor)
+    {
+        for (var walk = node; walk is not null; walk = walk.Parent)
+        {
+            if (ReferenceEquals(walk, ancestor)) return true;
+        }
+
+        return false;
+    }
+
+    private static LayoutNode RootOf(LayoutNode node)
+    {
+        var walk = node;
+        while (walk.Parent is { } parent) walk = parent;
+        return walk;
+    }
+
     /// <summary>Which pane should take focus when <paramref name="leaf"/> goes away.</summary>
     private PaneId? NeighbourFor(LeafNode leaf)
     {

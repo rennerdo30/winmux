@@ -24,10 +24,10 @@ public sealed class PinnedTabTests
             Rename: _ => { },
             CloseTab: Closed.Add,
             TogglePin: Pinned.Add,
+            MoveTabToGroup: (_, _, _) => { },
             AddTab: _ => { },
             MoveStrip: (_, _) => { },
-            MoveTab: _ => { },
-            MoveTabTo: (_, _) => { });
+            MoveTab: _ => { });
     }
 
     private static (Control Strip, Pane First, Recorder Log) BuildStrip(bool pinFirst)
