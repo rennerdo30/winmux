@@ -648,19 +648,18 @@ internal sealed partial class FileBrowserPaneRuntime : IPaneRuntime, ITerminalHa
             _rendering = false;
         }
 
-        // Posted rather than called: the rows have just been replaced and the new ones are not laid
-        // out yet, so focusing here lands on a control that does not exist on screen and silently
-        // does nothing. At Input priority this runs after layout, which is when there is something
-        // to focus.
-        if (hadFocus)
+        // The rows have just been replaced and the new ones are not laid out yet, so focusing here
+        // would land on a control that does not exist on screen and silently do nothing. The layout
+        // is therefore run rather than waited for.
+        //
+        // It waited, at Input priority, until 2026-09-24. The dispatcher is shared by every pane in
+        // the window, and a terminal running a full-screen program posts repaints at Render faster
+        // than they drain, so anything queued below Render can wait indefinitely — see
+        // MainWindow.FocusActivePaneAfterLayout and DispatcherPriorityTests.
+        if (hadFocus && Volatile.Read(ref _disposed) == 0)
         {
-            Dispatcher.UIThread.Post(
-                () =>
-                {
-                    if (Volatile.Read(ref _disposed) != 0) return;
-                    FocusList();
-                },
-                DispatcherPriority.Input);
+            _list.UpdateLayout();
+            FocusList();
         }
     }
 

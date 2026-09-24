@@ -7,6 +7,21 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## Unreleased
+
+### Fixed
+
+- **Selecting a tab often needed a second click while a full-screen program was running.** A
+  terminal pane posts a repaint whenever its engine updates, at a higher dispatcher priority than
+  the job that moved the keyboard to the newly selected pane — and Claude Code, vim or a build
+  posts them faster than they drain, so that job waited for a gap that never came. The tab switched
+  and the keyboard did not. Focus no longer waits in a queue: the layout it was waiting for is run
+  directly. The same starvation could hold up the file browser restoring focus to its list, because
+  every pane in a window shares one dispatcher.
+- **A tab group's `+` added its tab to the group inside it** when that group's active tab was
+  itself a tab group or a split. It asked for a tab *beside a pane*, which is the same thing only
+  while the active tab is a single pane.
+
 ## 0.7.6 — 2026-09-24
 
 ### Added

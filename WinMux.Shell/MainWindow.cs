@@ -631,13 +631,28 @@ internal sealed partial class MainWindow : Window
     ///
     /// Switching to a tab holding a single terminal used to leave the keyboard pointing at the pane
     /// that was there before, so the first thing typed went somewhere else entirely.
+    ///
+    /// <para>
+    /// It was a posted job at <c>DispatcherPriority.Input</c> until 2026-09-24, and that is a queue
+    /// a busy pane can starve: a terminal posts a repaint at <c>Render</c> on every engine update,
+    /// and a full-screen program — Claude Code, vim, a build — posts them faster than the dispatcher
+    /// drains them. Input never gets a turn. The tab switched, because the relayout is synchronous,
+    /// and the keyboard did not, so selecting a tab looked like it needed a second click.
+    /// <c>DispatcherPriorityTests</c> pins that behaviour.
+    /// </para>
+    ///
+    /// <para>
+    /// So the layout is now run rather than waited for. <c>UpdateLayout</c> measures and arranges
+    /// immediately, which is the only thing the wait was ever for, and the focus follows in the
+    /// same call — no queue, nothing to starve, and nothing that depends on where Avalonia ranks
+    /// one priority against another.
+    /// </para>
     /// </summary>
     private void FocusActivePaneAfterLayout()
     {
         var target = _tree.Focused;
-        Dispatcher.UIThread.Post(
-            () => _runtimes.GetValueOrDefault(target)?.Focus(),
-            DispatcherPriority.Input);
+        UpdateLayout();
+        _runtimes.GetValueOrDefault(target)?.Focus();
     }
 
     /// <summary>
