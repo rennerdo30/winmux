@@ -979,7 +979,13 @@ internal sealed partial class MainWindow : Window
         _actions.Register(ShellActionNames.ShowPalette, ShowPalette);
         _actions.Register(ShellActionNames.FindInPane, ShowSearch);
         _actions.Register(ShellActionNames.ShowOpenWindows, ShowWindowTray);
-        _actions.Register(ShellActionNames.CheckForUpdates, () => Run(CheckForUpdatesAsync(announceWhenCurrent: true)));
+        _actions.Register(ShellActionNames.CheckForUpdates, () =>
+        {
+            // Asked for by name, so anything declined earlier is offered again: a check that
+            // answers with silence because of an hour-old decision is a check that did nothing.
+            _updateOffer.Reset();
+            Run(CheckForUpdatesAsync(announceWhenCurrent: true));
+        });
         _actions.Register(ShellActionNames.InstallUpdate, () => Run(InstallUpdateAsync()));
         _actions.Register(ShellActionNames.OpenDocumentation, OpenDocumentation);
         _actions.Register(ShellActionNames.MoveTabEarlier, () => MoveTab(-1));
@@ -1181,7 +1187,12 @@ internal sealed partial class MainWindow : Window
     /// before anything else happens, because the whole point of WinMux is that the layout survives;
     /// an update that lost it would be the worst possible advertisement for the feature.
     /// </summary>
-    private async Task InstallUpdateAsync()
+    /// <param name="alreadyConfirmed">
+    /// The user has just said yes to this exact version in the offer. Not a field, because a field
+    /// would outlive the dialog: someone who declines the offer and reaches for "Install update"
+    /// an hour later must still be asked.
+    /// </param>
+    private async Task InstallUpdateAsync(bool alreadyConfirmed = false)
     {
         if (_pendingUpdate is not { Release: { } release } decision)
         {
@@ -1191,7 +1202,9 @@ internal sealed partial class MainWindow : Window
             release = decision.Release!;
         }
 
-        var confirmed = await NoticeWindow.ConfirmAsync(
+        // Already agreed to in the offer, when that is where this came from. Asking the same
+        // question twice in a row teaches people to click through both.
+        var confirmed = alreadyConfirmed || await NoticeWindow.ConfirmAsync(
             this,
             $"Install WinMux {release.Version}?",
             "WinMux will download the release, check it against its published checksum, and restart. " +
@@ -1225,6 +1238,41 @@ internal sealed partial class MainWindow : Window
         Close();
     }
 
+    /// <summary>
+    /// Say that an update exists, in a window.
+    ///
+    /// <para>
+    /// It was a line in the status bar reading "Ctrl+B then : and \"Install update\"", six seconds
+    /// after startup, while the user is looking at their panes. Reported as the update check not
+    /// returning an "update available" window — and it never had: the check works, and always did,
+    /// but the only thing it produced was a sentence nobody was looking at and an instruction
+    /// nobody should have to follow to accept an update they have already been offered.
+    /// </para>
+    ///
+    /// <para>
+    /// Once per version per run. An application that asks again every time it checks is one people
+    /// learn to dismiss without reading, which is the same as not asking.
+    /// </para>
+    /// </summary>
+    private async Task OfferUpdateAsync(ReleaseVersion version)
+    {
+        if (!_updateOffer.ShouldOffer(version)) return;
+
+        var take = await NoticeWindow.ConfirmAsync(
+            this,
+            $"WinMux {version} is available",
+            $"You are running {UpdateService.Current}. Installing downloads the release, checks it " +
+            "against its published checksum and restarts — your session is saved first and restored " +
+            "afterwards, but programs running in panes are closed and started again.",
+            "Install now",
+            "Not now");
+
+        if (take) await InstallUpdateAsync(alreadyConfirmed: true);
+    }
+
+    /// <summary>So the offer is made once per version rather than on every check.</summary>
+    private readonly Update.UpdateOffer _updateOffer = new();
+
     /// <summary>The documentation site, which is where anything longer than a tooltip lives.</summary>
     private void OpenDocumentation()
     {
@@ -1249,7 +1297,8 @@ internal sealed partial class MainWindow : Window
             switch (decision.Outcome)
             {
                 case UpdateOutcome.UpdateAvailable when decision.Release is { } release:
-                    ShowMessage($"WinMux {release.Version} is available — Ctrl+B then : and \"Install update\"");
+                    ShowMessage($"WinMux {release.Version} is available");
+                    await OfferUpdateAsync(release.Version);
                     break;
 
                 case UpdateOutcome.UpdateNotInstallable when decision.Release is { } unavailable:

@@ -47,6 +47,11 @@ the ADRs say why.
 
 ### Fixed
 
+- **An available update never appeared in a window.** The check has always worked — it just wrote
+  one line in the status bar, six seconds after startup, telling you to press `Ctrl+B` then `:` and
+  pick "Install update". It now asks, once per version, with the version you are on and what
+  installing does. Asking for a check by name offers again, so a decision made an hour ago does not
+  make a check answer with silence.
 - **A session could restore a pane into Chrome's program folder.** Capturing a pane's working
   directory walks to the deepest process under it, and a program in a pane can start a window:
   Claude Code starts Chrome, Chrome starts a renderer per tab, and a renderer is deeper than any
