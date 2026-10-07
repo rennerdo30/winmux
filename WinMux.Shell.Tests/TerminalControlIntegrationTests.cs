@@ -3,6 +3,7 @@ using System.Text;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using WinMux.Pty;
 using WinMux.Terminal;
@@ -12,6 +13,42 @@ namespace WinMux.Shell.Tests;
 /// <summary>Exercise real control event routing and VT parsing against a recording PTY, without processes.</summary>
 public sealed class TerminalControlIntegrationTests
 {
+    [Theory]
+    [InlineData(Key.C, KeyModifiers.Control, "\u0003")]
+    [InlineData(Key.V, KeyModifiers.Control, "\u0016")]
+    [InlineData(Key.B, KeyModifiers.Control, "\u0002")]
+    [InlineData(Key.F, KeyModifiers.Control, "\u0006")]
+    [InlineData(Key.Escape, KeyModifiers.None, "\u001b")]
+    [InlineData(Key.V, KeyModifiers.Alt, "\u001bv")]
+    [InlineData(Key.PageUp, KeyModifiers.Control | KeyModifiers.Shift, "\u001b[5;6~")]
+    public Task Application_keys_reach_the_PTY_even_with_selected_text(Key key, KeyModifiers modifiers, string bytes) => Headless.RunSync(() =>
+    {
+        using var terminal = new Fixture();
+        terminal.Output("selected text");
+        terminal.Viewport.BeginSelection(new TerminalPosition(0, 0));
+        terminal.Viewport.ExtendSelection(new TerminalPosition(0, 5));
+        terminal.Pty.Writes.Clear();
+        terminal.Control.RaiseEvent(new KeyEventArgs
+        {
+            RoutedEvent = InputElement.KeyDownEvent, Key = key, KeyModifiers = modifiers,
+        });
+        Assert.Equal(bytes, Assert.Single(terminal.Pty.Writes));
+    });
+
+    [Fact]
+    public Task Plain_CtrlV_is_application_input_even_when_the_clipboard_contains_text() => Headless.RunAsync(async () =>
+    {
+        using var terminal = new Fixture();
+        var clipboard = terminal.Window.Clipboard!;
+        await clipboard.SetTextAsync("clipboard text");
+        terminal.Control.RaiseEvent(new KeyEventArgs
+        {
+            RoutedEvent = InputElement.KeyDownEvent, Key = Key.V, KeyModifiers = KeyModifiers.Control,
+        });
+        Assert.Equal("\u0016", Assert.Single(terminal.Pty.Writes));
+        await clipboard.ClearAsync();
+    });
+
     [Fact]
     public Task Wheel_events_reach_a_mouse_reporting_application_as_SGR_input() => Headless.RunSync(() =>
     {

@@ -680,41 +680,19 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
         _suppressedText = null;
 
-        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
-            e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.C)
+        if ((e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.C) ||
+            (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.Insert))
         {
             _ = CopySelectionAsync();
             e.Handled = true;
             return;
         }
 
-        // Plain Ctrl+C copies when something is selected and interrupts when nothing is — Windows
-        // Terminal's rule, and the one a Windows user's hands already follow. Sending the interrupt
-        // regardless meant selecting Claude Code's answer and pressing Ctrl+C cancelled Claude.
-        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.C && _viewport.HasSelection)
-        {
-            TerminalDebugLog.Write("  -> Ctrl+C with a selection: copying");
-            _ = CopySelectionAsync();
-            _viewport.ClearSelection();
-            InvalidateVisual();
-            e.Handled = true;
-            return;
-        }
-
-        // Plain Ctrl+V pastes text. When the clipboard holds no text — an image, say — the key goes
-        // through as Ctrl+V, so a program that reads the clipboard itself (Claude Code pasting a
-        // screenshot) still can.
-        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.V)
-        {
-            TerminalDebugLog.Write("  -> Ctrl+V: paste text, or pass ^V through");
-            _ = PasteOrPassThroughAsync();
-            e.Handled = true;
-            return;
-        }
+        // Plain Ctrl+C and Ctrl+V belong to the application, regardless of selection or clipboard.
 
         // Shift+PageUp/Down and Ctrl+Shift+Home/End move the view. Unshifted PageUp belongs to the
         // program in the pane — less and vim both use it — so it is never intercepted.
-        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key is Key.PageUp or Key.PageDown)
+        if (e.KeyModifiers == KeyModifiers.Shift && e.Key is Key.PageUp or Key.PageDown)
         {
             var page = Math.Max(1, _engine.Rows - 1);
             if (_viewport.Scroll(e.Key == Key.PageUp ? page : -page, _engine.ScrollbackCount))
@@ -723,7 +701,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             return;
         }
 
-        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && e.KeyModifiers.HasFlag(KeyModifiers.Shift) &&
+        if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
             e.Key is Key.Home or Key.End)
         {
             var moved = e.Key == Key.Home
@@ -734,17 +712,15 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             return;
         }
 
-        if (e.Key == Key.Escape && _viewport.HasSelection)
+        if (e.Key == Key.Escape && e.KeyModifiers == KeyModifiers.None && _viewport.HasSelection)
         {
             _viewport.ClearSelection();
             InvalidateVisual();
-            e.Handled = true;
-            return;
+            // Clear the visual selection, then still send Escape to the application.
         }
 
-        if ((e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
-             e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.V) ||
-            (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.Insert))
+        if ((e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.V) ||
+            (e.KeyModifiers == KeyModifiers.Shift && e.Key == Key.Insert))
         {
             _ = PasteAsync();
             e.Handled = true;
@@ -1216,20 +1192,6 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         if (clipboard is null) return;
         var text = await clipboard.TryGetTextAsync();
         if (!string.IsNullOrEmpty(text)) await PasteTextAsync(text);
-    }
-
-    private async Task PasteOrPassThroughAsync()
-    {
-        if (TerminalDebugLog.Enabled) await LogClipboardAsync("Ctrl+V");
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        var text = clipboard is null ? null : await clipboard.TryGetTextAsync();
-        if (!string.IsNullOrEmpty(text))
-        {
-            await PasteTextAsync(text);
-            return;
-        }
-
-        await WriteInputAsync(new byte[] { 0x16 });
     }
 
     private static string Show(string? text) =>
