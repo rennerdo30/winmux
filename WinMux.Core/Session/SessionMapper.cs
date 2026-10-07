@@ -50,6 +50,7 @@ public static class SessionMapper
             Kind = NodeKinds.Stack,
             ActiveIndex = stack.ActiveIndex,
             TabStrip = stack.TabStrip,
+            TabStripWidth = stack.TabStripWidth,
             Title = stack.Title,
             Children = stack.Children.Select(ToSnapshot).ToArray(),
         },
@@ -96,10 +97,14 @@ public static class SessionMapper
 
             case NodeKinds.Stack:
             {
+                if (node.TabStripWidth is { } width &&
+                    (width < StackNode.MinimumTabStripWidth || width > StackNode.MaximumTabStripWidth))
+                    throw new SessionFormatException($"A stack's tab_width must be between {StackNode.MinimumTabStripWidth} and {StackNode.MaximumTabStripWidth}.");
                 var children = RequireChildren(node, minimum: 2);
                 return new StackNode(children, node.ActiveIndex ?? 0, node.TabStrip ?? TabStripPlacement.Top)
                 {
                     Title = node.Title,
+                    TabStripWidth = node.TabStripWidth,
                 };
             }
 

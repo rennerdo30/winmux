@@ -62,6 +62,9 @@ public sealed record NodeSnapshot
     /// </summary>
     public TabStripPlacement? TabStrip { get; init; }
 
+    /// <summary>Optional per-stack vertical strip width; old files retain surface defaults.</summary>
+    public int? TabStripWidth { get; init; }
+
     /// <summary>
     /// A name the user gave a split or a tab group. Empty means it is described by its contents,
     /// which is what every file written before groups could be named says.

@@ -196,6 +196,8 @@ internal static class Theme
     public const string ToolbarButton = "toolbar-button";
     public const string IconButton = "icon-button";
     public const string Tab = "tab";
+    public const string VerticalTab = "vertical-tab";
+    public const string VerticalTabCorner = "vertical-tab-corner";
     public const string ActiveTab = "active-tab";
     public const string CloseButton = "close-button";
     public const string DialogButton = "dialog-button";
@@ -349,6 +351,37 @@ internal static class Theme
         // in the accent rather than the faint grey, and does not redden on hover: unpinning is not
         // destructive.
         AddButton(styles, PinButton, Palette.AccentBrush, Palette.ControlRadius, new Thickness(6, 3));
+
+        // Side tabs are list rows. Keep the label at the same inset and the pin/close at
+        // the same right edge; a full-size nested button otherwise makes each row 46px tall.
+        styles.Add(new Style(x => x.OfType<Button>().Class(VerticalTab))
+        {
+            Setters =
+            {
+                new Setter(Layoutable.HeightProperty, Palette.ControlHeight),
+                new Setter(TemplatedControl.PaddingProperty, new Thickness(8, 4)),
+                new Setter(TemplatedControl.CornerRadiusProperty, Palette.ControlRadius),
+            },
+        });
+        foreach (var selector in new Func<Style>[]
+        {
+            () => new Style(x => x.OfType<Button>().Class(VerticalTabCorner)),
+            () => new Style(x => x.OfType<Button>().Class(VerticalTabCorner).Template().OfType<ContentPresenter>()),
+        })
+        {
+            var style = selector();
+            style.Setters.Add(new Setter(Layoutable.MinHeightProperty, 0.0));
+            styles.Add(style);
+        }
+        styles.Add(new Style(x => x.OfType<Button>().Class(VerticalTabCorner))
+        {
+            Setters =
+            {
+                new Setter(Layoutable.WidthProperty, 24.0),
+                new Setter(Layoutable.HeightProperty, 24.0),
+                new Setter(TemplatedControl.PaddingProperty, new Thickness(4, 2)),
+            },
+        });
 
         // Closing is the one destructive thing on a tab, so it says so on hover.
         styles.Add(new Style(x => x.OfType<Button>().Class(CloseButton).Class(":pointerover"))

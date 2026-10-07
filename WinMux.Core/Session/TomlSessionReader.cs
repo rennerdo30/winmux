@@ -140,7 +140,8 @@ public static class TomlSessionReader
                     null,
                     (int)Integer(t, "active", at),
                     OptionalString(t, "tabs", at) is { } tabs ? TomlNames.ParseTabStrip(tabs, at) : null,
-                    OptionalString(t, "title", at) ?? string.Empty),
+                    OptionalString(t, "title", at) ?? string.Empty,
+                    ReadTabWidth(t, at)),
 
                 _ => throw new SessionFormatException(
                     $"Unknown node kind \"{kind}\" at {at}. Expected \"leaf\", \"split\" or \"stack\"."),
@@ -150,6 +151,15 @@ public static class TomlSessionReader
                 throw new SessionFormatException($"Duplicate node id \"{id}\" at {at}.");
         }
         return result;
+    }
+
+    private static int? ReadTabWidth(TomlTable table, string where)
+    {
+        if (Optional(table, "tab_width") is null) return null;
+        var width = Integer(table, "tab_width", where);
+        if (width < StackNode.MinimumTabStripWidth || width > StackNode.MaximumTabStripWidth)
+            throw new SessionFormatException($"{where}.tab_width must be between {StackNode.MinimumTabStripWidth} and {StackNode.MaximumTabStripWidth}.");
+        return (int)width;
     }
 
     private static Dictionary<Guid, PaneSnapshot> ReadPanes(TomlTable window, string where, int sourceVersion)

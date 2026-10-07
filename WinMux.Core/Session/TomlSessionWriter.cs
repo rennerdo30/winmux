@@ -87,6 +87,8 @@ public static class TomlSessionWriter
                 // Omitted when it is the default, so the common file stays as short as it was.
                 if (node.TabStrip is { } strip and not TabStripPlacement.Top)
                     Kv(sb, NodeKeyWidth, "tabs", Str(TomlNames.Text(strip)));
+                if (node.TabStripWidth is { } width)
+                    Kv(sb, NodeKeyWidth, "tab_width", width.ToString(CultureInfo.InvariantCulture));
                 break;
         }
     }

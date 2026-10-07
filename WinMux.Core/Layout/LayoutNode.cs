@@ -253,6 +253,18 @@ public sealed class StackNode : LayoutNode
     /// </summary>
     public TabStripPlacement TabStrip { get; set; } = TabStripPlacement.Top;
 
+    public const int MinimumTabStripWidth = 96;
+    public const int MaximumTabStripWidth = 480;
+    private int? _tabStripWidth;
+
+    /// <summary>Width of a vertical strip; null uses the surface's default metrics.</summary>
+    public int? TabStripWidth
+    {
+        get => _tabStripWidth;
+        set => _tabStripWidth = value is { } width
+            ? Math.Clamp(width, MinimumTabStripWidth, MaximumTabStripWidth) : null;
+    }
+
     public StackNode(
         IEnumerable<LayoutNode> children,
         int activeIndex = 0,
@@ -296,7 +308,7 @@ public sealed class StackNode : LayoutNode
     public override LeafNode ActiveLeaf() => Active.ActiveLeaf();
 
     public override LayoutNode Clone() =>
-        new StackNode(_children.Select(c => c.Clone()), _activeIndex, TabStrip) { Title = Title };
+        new StackNode(_children.Select(c => c.Clone()), _activeIndex, TabStrip) { Title = Title, TabStripWidth = TabStripWidth };
 
     public override string ToString() => $"Stack({_children.Count}, active={_activeIndex}, tabs={TabStrip})";
 }

@@ -93,7 +93,10 @@ public sealed class LayoutTree
         }
         else
         {
-            var split = new SplitNode(direction, [new LeafNode(leaf.Pane), incoming], [1 - ratio, ratio]);
+            var split = new SplitNode(direction, [new LeafNode(leaf.Pane), incoming], [1 - ratio, ratio])
+            {
+                Title = ExplicitTabTitle(leaf),
+            };
             Replace(leaf, split);
         }
 
@@ -115,7 +118,10 @@ public sealed class LayoutTree
         }
         else
         {
-            var created = new StackNode([new LeafNode(leaf.Pane), incoming], activeIndex: 1);
+            var created = new StackNode([new LeafNode(leaf.Pane), incoming], activeIndex: 1)
+            {
+                Title = ExplicitTabTitle(leaf),
+            };
             Replace(leaf, created);
         }
 
@@ -139,11 +145,20 @@ public sealed class LayoutTree
         ArgumentNullException.ThrowIfNull(newPane);
 
         var leaf = Find(target) ?? throw new InvalidOperationException($"No such pane: {target}");
-        var created = new StackNode([new LeafNode(leaf.Pane), new LeafNode(newPane)], activeIndex: 1);
+        var created = new StackNode([new LeafNode(leaf.Pane), new LeafNode(newPane)], activeIndex: 1)
+        {
+            Title = ExplicitTabTitle(leaf),
+        };
         Replace(leaf, created);
         _focused = newPane.Id;
         return newPane.Id;
     }
+
+    // Turning a named tab into a container must retain that tab's explicit label. Otherwise its
+    // new outer tab derives its label from the first inner pane and renaming that pane renames
+    // the parent too. Automatic runtime titles remain derived; only user choices are retained.
+    private static string ExplicitTabTitle(LeafNode leaf) => leaf.Title.Length > 0
+        ? leaf.Title : leaf.Pane.Restore.TitleIsCustom ? leaf.Pane.Title : string.Empty;
 
     /// <summary>
     /// Add a tab to a stack that already exists, beside its active child.

@@ -493,7 +493,8 @@ internal sealed partial class MainWindow : Window
             MoveTabToGroup: MoveTabToGroup,
             AddTab: stack => Run(AddTabToStackAsync(stack)),
             MoveStrip: SetTabPlacement,
-            MoveTab: MoveTab);
+            MoveTab: MoveTab,
+            ResizeStrip: ResizeTabStrip);
 
         foreach (var strip in arrangement.TabStrips)
         {
@@ -602,15 +603,6 @@ internal sealed partial class MainWindow : Window
         }
 
         await RenamePaneAsync(leaf.Pane.Id);
-
-        // A leaf can be carrying a group's name, because a group that loses its second tab hands
-        // its name to the pane that is left. Renaming that tab must show the new name rather than
-        // set the pane's and go on displaying the old group's.
-        if (node.Title.Length > 0)
-        {
-            node.Title = string.Empty;
-            Relayout();
-        }
     }
 
     private async Task RenameGroupAsync(LayoutNode node)
@@ -695,6 +687,9 @@ internal sealed partial class MainWindow : Window
             return;
         }
 
+        // A collapsed group can leave an explicit label on the leaf. Remove it only after the
+        // user accepts a new pane name or automatic naming, never when the prompt is cancelled.
+        if (_tree.Find(target) is { } leaf) leaf.Title = string.Empty;
         Relayout();
         _session.RequestSave();
     }
@@ -810,6 +805,14 @@ internal sealed partial class MainWindow : Window
         stack.TabStrip = placement;
         _message = $"tabs moved to the {placement.ToString().ToLowerInvariant()}";
         Relayout();
+    }
+
+    private void ResizeTabStrip(StackNode stack, int width)
+    {
+        if (stack.TabStripWidth == width) return;
+        stack.TabStripWidth = width;
+        Relayout();
+        _session.RequestSave();
     }
 
     /// <summary>The toolbar and keymap act on whichever stack holds the focused pane.</summary>

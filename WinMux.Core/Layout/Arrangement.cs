@@ -153,7 +153,17 @@ public static class Layouter
         // Reserve the strip out of the stack's own rectangle before placing the active child, so
         // the child's rect and the strip's rect can never overlap. A pane hosting a native window
         // would otherwise paint straight over the tabs that control it.
-        var (stripRect, contentRect) = Split(rect, stack.TabStrip, metrics.StripFor(stack.TabStrip));
+        var thickness = metrics.StripFor(stack.TabStrip);
+        if (thickness > 0 && (stack.TabStrip is TabStripPlacement.Left or TabStripPlacement.Right) &&
+            stack.TabStripWidth is { } customWidth)
+        {
+            // Retain the requested width when a window temporarily becomes narrower, preserving
+            // content and hiding the strip only when even its minimum width cannot fit.
+            var availableWidth = Math.Max(0, rect.Width - MinimumContentExtent);
+            thickness = availableWidth >= StackNode.MinimumTabStripWidth
+                ? Math.Min(customWidth, availableWidth) : 0;
+        }
+        var (stripRect, contentRect) = Split(rect, stack.TabStrip, thickness);
         if (!stripRect.IsEmpty) strips.Add(new TabStrip(stack, stripRect, stack.TabStrip));
 
         // Tabs: only the active child occupies the content. The others are not merely hidden,

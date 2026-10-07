@@ -28,7 +28,8 @@ internal sealed record TabStripCommands(
     Action<PaneId, StackNode, int> MoveTabToGroup,
     Action<StackNode> AddTab,
     Action<StackNode, TabStripPlacement> MoveStrip,
-    Action<int> MoveTab);
+    Action<int> MoveTab,
+    Action<StackNode, int>? ResizeStrip = null);
 
 /// <summary>
 /// One stack's tabs, drawn in the band the layout engine reserved for them.
@@ -110,8 +111,23 @@ internal static class TabStripView
 
         EnableDragAndDrop(items, tabs, strip, vertical, commands);
 
-        items.Children.Add(Icon(Icons.Add(), "Add a tab to this group", () => commands.AddTab(strip.Stack), vertical));
-        items.Children.Add(PlacementButton(strip, commands, vertical));
+        var add = Icon(Icons.Add(), "Add a tab to this group", () => commands.AddTab(strip.Stack), false);
+        var more = PlacementButton(strip, commands, false);
+        if (vertical)
+        {
+            items.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 2,
+                Margin = new Thickness(0, 4, 0, 0),
+                Children = { add, more },
+            });
+        }
+        else
+        {
+            items.Children.Add(add);
+            items.Children.Add(more);
+        }
 
         // The caret that shows where a dragged tab will land, drawn over the tabs and inside the
         // same scrolled space so it stays on the gap when the strip is scrolled.
@@ -138,7 +154,9 @@ internal static class TabStripView
             Background = Palette.SurfaceBrush,
             BorderBrush = Palette.EdgeBrush,
             BorderThickness = ContentEdge(strip.Placement, stackHasFocus),
-            Child = scroller,
+            Child = vertical && commands.ResizeStrip is not null
+                ? new Panel { Children = { scroller, BuildResizeHandle(strip, commands.ResizeStrip) } }
+                : scroller,
         };
 
         // The whole band accepts a drop, not only the tabs in it: a group of one tab has almost no
@@ -149,6 +167,60 @@ internal static class TabStripView
             strip.Stack.Children.Select(c => c.Leaves().First().Pane.IsPinned).ToArray(),
             strip.Stack.Children.Select(c => WaitingFor(c, waiting)).ToArray(), refreshers.ToArray()));
         return band;
+    }
+
+    internal static int WidthAfterDrag(int originalWidth, double horizontalDelta, TabStripPlacement placement) =>
+        Math.Clamp((int)Math.Round(originalWidth +
+            (placement == TabStripPlacement.Right ? -horizontalDelta : horizontalDelta)),
+            StackNode.MinimumTabStripWidth, StackNode.MaximumTabStripWidth);
+
+    private static Control BuildResizeHandle(LayoutTabStrip strip, Action<StackNode, int> resize)
+    {
+        var handle = new Border
+        {
+            Width = 6,
+            Background = Brushes.Transparent,
+            HorizontalAlignment = strip.Placement == TabStripPlacement.Left
+                ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Cursor = new Cursor(StandardCursorType.SizeWestEast),
+            [ToolTip.TipProperty] = "Drag to resize this tab strip",
+        };
+        Point? origin = null;
+        TopLevel? surface = null;
+        var originalWidth = 0;
+        handle.PointerEntered += (_, _) => handle.Background = Palette.EdgeBrush;
+        handle.PointerExited += (_, _) => { if (origin is null) handle.Background = Brushes.Transparent; };
+        handle.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed) return;
+            surface = TopLevel.GetTopLevel(handle);
+            if (surface is null) return;
+            origin = e.GetPosition(surface);
+            originalWidth = (int)Math.Round((handle.Parent?.Parent as Control)?.Bounds.Width ?? strip.Rect.Width);
+            e.Pointer.Capture(handle);
+            e.Handled = true;
+        };
+        handle.PointerMoved += (_, e) =>
+        {
+            if (origin is not { } start || surface is null) return;
+            resize(strip.Stack, WidthAfterDrag(originalWidth, e.GetPosition(surface).X - start.X, strip.Placement));
+            e.Handled = true;
+        };
+        handle.PointerReleased += (_, e) =>
+        {
+            if (origin is null) return;
+            origin = null;
+            e.Pointer.Capture(null);
+            handle.Background = Brushes.Transparent;
+            e.Handled = true;
+        };
+        handle.PointerCaptureLost += (_, _) =>
+        {
+            origin = null;
+            handle.Background = Brushes.Transparent;
+        };
+        return handle;
     }
 
     /// <summary>
@@ -400,7 +472,8 @@ internal static class TabStripView
             Text = title,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            MaxWidth = vertical ? 118 : 170,
+            MaxWidth = vertical ? double.PositiveInfinity : 170,
+            TextAlignment = TextAlignment.Left,
             FontSize = Palette.BodySize,
         };
 
@@ -415,12 +488,13 @@ internal static class TabStripView
         var corner = new Button
         {
             Content = pinned ? Icons.Pin(10) : Icons.Close(10),
-            Margin = new Thickness(6, 0, -2, 0),
+            Margin = vertical ? new Thickness(6, 0, 0, 0) : new Thickness(6, 0, -2, 0),
             VerticalAlignment = VerticalAlignment.Center,
             [ToolTip.TipProperty] = pinned ? "Pinned. Open the menu to unpin." : "Close this tab",
             ContextMenu = unpinMenu,
         };
         corner.Classes.Add(pinned ? Theme.PinButton : Theme.CloseButton);
+        if (vertical) corner.Classes.Add(Theme.VerticalTabCorner);
         corner.Click += (_, e) =>
         {
             e.Handled = true;
@@ -461,6 +535,7 @@ internal static class TabStripView
             [ToolTip.TipProperty] = waiting is null ? title : $"{title}{Environment.NewLine}{waiting}",
         };
         tab.Classes.Add(Theme.Tab);
+        if (vertical) tab.Classes.Add(Theme.VerticalTab);
         if (isActive) tab.Classes.Add(Theme.ActiveTab);
         tab.Click += (_, _) => commands.Activate(child.ActiveLeaf().Pane.Id);
 
