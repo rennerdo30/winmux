@@ -26,7 +26,8 @@ registry tests. No native GUI launches or real registry changes were performed d
 Test.8 folder/zip passed packaging checks, component versions and packaged CLI validation;
 GitHub release workflow passed. Separate main CI exposed a pre-existing autosave test's fixed
 150 ms wait; it now awaits SaveCompleted with a bounded deadline. All five autosave tests pass
-locally; follow-up main CI pending. SDK: `%LOCALAPPDATA%\WinMuxDev\dotnet\dotnet.exe`.
+locally; [follow-up main CI passed build/test/package](https://github.com/rennerdo30/winmux/actions/runs/37621974002).
+SDK: `%LOCALAPPDATA%\WinMuxDev\dotnet\dotnet.exe`.
 Standing constraints: [development guardrails](docs/development-guardrails.md).
 
 ## The next action
