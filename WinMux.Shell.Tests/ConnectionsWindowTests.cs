@@ -112,6 +112,43 @@ public sealed class ConnectionsWindowTests
     private static ConnectionNode? Row(ListBoxItem item) =>
         item.Tag?.GetType().GetProperty("Node")?.GetValue(item.Tag) as ConnectionNode;
 
+    [Theory]
+    [InlineData("WEB-01")]
+    [InlineData("10.0.0.11")]
+    [InlineData("Production svc-deploy")]
+    [InlineData("rdp CORP")]
+    public Task Search_matches_connection_fields_and_keeps_parent_folders(string query) => Headless.RunSync(() =>
+    {
+        var result = WithTree();
+        result.Root!.Add(new ConnectionEntry("unrelated", new ConnectionSettings
+        {
+            Host = Inherited<string>.Of("other.example"),
+        }));
+        var window = Show(new ConnectionsWindow([result]));
+        window.GetVisualDescendants().OfType<TextBox>().Single().Text = query;
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["Pretend", "Production", "web-01"], RowsOf(window).Select(item => Row(item)!.Name));
+        window.Close();
+    });
+
+    [Fact]
+    public Task Search_with_no_matches_disables_actions_and_clearing_restores_the_tree() => Headless.RunSync(() =>
+    {
+        var window = Show(new ConnectionsWindow([WithTree()]));
+        var list = window.GetVisualDescendants().OfType<ListBox>().First();
+        list.SelectedItem = RowsOf(window).Last();
+        var search = window.GetVisualDescendants().OfType<TextBox>().Single();
+        search.Text = "does-not-exist";
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        Assert.Empty(RowsOf(window));
+        Assert.False(window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open in a pane")).IsEnabled);
+        Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.IsVisible && t.Text == "No matching connections");
+        search.Text = " ";
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        Assert.Equal(3, RowsOf(window).Count);
+        window.Close();
+    });
+
     [Fact]
     public void A_connection_becomes_something_that_can_be_opened()
     {

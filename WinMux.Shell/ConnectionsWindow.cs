@@ -30,6 +30,16 @@ namespace WinMux.Shell;
 internal sealed class ConnectionsWindow : Window
 {
     private readonly ListBox _tree = new();
+    private readonly TextBox _search = new()
+    {
+        Name = "ConnectionSearch", PlaceholderText = "Search connections…",
+        Margin = new Thickness(0, 0, 0, Palette.GapSmall),
+    };
+    private readonly TextBlock _empty = new()
+    {
+        Text = "No matching connections", Foreground = Palette.MutedTextBrush,
+        Margin = new Thickness(Palette.GapMedium), IsVisible = false,
+    };
     private readonly StackPanel _details = new() { Spacing = 4 };
     private readonly TextBlock _heading;
     private readonly TextBlock _note;
@@ -91,6 +101,8 @@ internal sealed class ConnectionsWindow : Window
         _tree.Padding = new Thickness(Palette.GapSmall / 2);
         _tree.SelectionChanged += (_, _) => ShowSelected();
         _tree.DoubleTapped += (_, _) => OpenSelected();
+        _search.TextChanged += (_, _) => Render();
+        Avalonia.Automation.AutomationProperties.SetName(_search, "Search saved connections");
 
         _open = Dialog("Open in a pane", OpenSelected);
 
@@ -105,9 +117,16 @@ internal sealed class ConnectionsWindow : Window
 
         Content = Build(close);
         Render();
+        Opened += (_, _) => _search.Focus();
 
         KeyDown += (_, e) =>
         {
+            if (e.Key == Avalonia.Input.Key.F && e.KeyModifiers == Avalonia.Input.KeyModifiers.Control)
+            {
+                _search.Focus();
+                _search.SelectAll();
+                e.Handled = true;
+            }
             if (e.Key == Avalonia.Input.Key.Escape) Close();
         };
     }
@@ -134,12 +153,14 @@ internal sealed class ConnectionsWindow : Window
             BorderBrush = Palette.EdgeBrush,
             BorderThickness = new Thickness(1),
             CornerRadius = Palette.ControlRadius,
-            Child = _tree,
+            Child = new Grid { Children = { _tree, _empty } },
         };
 
         var left = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(caption, Dock.Top);
         left.Children.Add(caption);
+        DockPanel.SetDock(_search, Dock.Top);
+        left.Children.Add(_search);
         left.Children.Add(listCard);
 
         var facts = new Border
@@ -226,28 +247,52 @@ internal sealed class ConnectionsWindow : Window
     private void Render()
     {
         var selected = Selected()?.Node;
+        var terms = (_search.Text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var filtering = terms.Length > 0;
 
         _rows.Clear();
         foreach (var result in _results)
         {
+            HashSet<ConnectionNode>? visible = null;
+            if (filtering)
+            {
+                visible = [];
+                if (result.Root is { } searchRoot)
+                {
+                    foreach (var node in searchRoot.Folders().Cast<ConnectionNode>().Concat(searchRoot.Entries()))
+                    {
+                        var searchable = result.Source.DisplayName + " " + node.Path +
+                            (node is ConnectionEntry entry ? " " + Summarise(entry) + " " + ConnectionResolver.Domain(entry).Value : "");
+                        if (terms.All(term => searchable.Contains(term, StringComparison.OrdinalIgnoreCase)))
+                            visible.UnionWith(node.UpToRoot());
+                    }
+                    if (visible.Count == 0) continue;
+                }
+                else if (!terms.All(term => (result.Source.DisplayName + " " + result.Problem)
+                             .Contains(term, StringComparison.OrdinalIgnoreCase))) continue;
+            }
             _rows.Add(new Row(result, result.Root, 0, result.Problem));
-            if (result.Root is { } root && !_collapsed.Contains(root)) AddChildren(result, root, 1);
+            if (result.Root is { } root && (filtering || !_collapsed.Contains(root))) AddChildren(result, root, 1, visible);
         }
 
         _tree.ItemsSource = _rows.Select(ItemFor).ToArray();
 
         var at = _rows.FindIndex(row => ReferenceEquals(row.Node, selected));
         _tree.SelectedIndex = at >= 0 ? at : (_rows.Count > 0 ? 0 : -1);
+        _empty.IsVisible = filtering && _rows.Count == 0;
+        ShowSelected();
     }
 
-    private void AddChildren(ConnectionSourceResult result, ConnectionFolder folder, int depth)
+    private void AddChildren(ConnectionSourceResult result, ConnectionFolder folder, int depth,
+        HashSet<ConnectionNode>? visible = null)
     {
         foreach (var child in folder.Children)
         {
+            if (visible is not null && !visible.Contains(child)) continue;
             _rows.Add(new Row(result, child, depth, null));
-            if (child is ConnectionFolder nested && !_collapsed.Contains(nested))
+            if (child is ConnectionFolder nested && (visible is not null || !_collapsed.Contains(nested)))
             {
-                AddChildren(result, nested, depth + 1);
+                AddChildren(result, nested, depth + 1, visible);
             }
         }
     }
