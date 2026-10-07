@@ -3,8 +3,8 @@
 ## Where we are
 
 Phases 0–5 are complete; Phase 6 features are implemented, with runtime acceptance still open.
-Source version: `0.7.8-test.5`. Optional rendering preference and terminal/tab interaction fixes
-are implemented; no release was published. See [ADR 0026](docs/adr/0026-optional-gpu-rendering.md)
+Source version: `0.7.8-test.6`. Optional rendering preference and terminal/tab interaction fixes
+are implemented; the new prerelease package passed local verification. See [ADR 0026](docs/adr/0026-optional-gpu-rendering.md)
 and [ADR 0027](docs/adr/0027-terminal-and-tab-interaction.md).
 
 ## What just happened
@@ -23,6 +23,9 @@ Skia captures verify separator uniformity at 100%/150%. Native acceptance remain
 Pinned SDK: `%LOCALAPPDATA%\WinMuxDev\dotnet\dotnet.exe`. Review executable:
 `artifacts/review/bin/WinMux.Shell/release/WinMux.exe` (ordinary output was locked by the running app).
 Standing constraints remain in [development guardrails](docs/development-guardrails.md).
+Version bumped to 0.7.8-test.6; dist contains the verified folder/zip. Packaging checks GUI/CLI
+subsystems, required files, notices and component versions; CLI help runs. Release workflow
+publication is pending tag push/CI. Dependency lockfiles were preserved.
 
 ## The next action
 
