@@ -29,6 +29,8 @@ public sealed class KeymapRouter(KeyBindingTable bindings, ActionDispatcher disp
     private readonly ActionDispatcher _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
 
     public bool IsPrefixArmed { get; private set; }
+    public string PrefixDisplay => _bindings.Prefix?.Display() ?? "none";
+    public KeyStroke? Prefix => _bindings.Prefix;
 
     public KeymapRouteResult Route(Key key, KeyModifiers modifiers = KeyModifiers.None) =>
         Route(new KeyStroke(key, modifiers));
@@ -50,6 +52,8 @@ public sealed class KeymapRouter(KeyBindingTable bindings, ActionDispatcher disp
         if (IsPrefixArmed)
         {
             IsPrefixArmed = false;
+            // Repeating the prefix sends the second chord to the terminal, as in tmux.
+            if (_bindings.Prefix == gesture) return new KeymapRouteResult(KeymapRouteKind.PassThrough);
             if (_bindings.TryGetPrefixed(gesture, out var prefixedAction)) return Dispatch(prefixedAction);
             return _bindings.TryGetPrefixedSymbol(plain, out var prefixedSymbolAction)
                 ? Dispatch(prefixedSymbolAction)

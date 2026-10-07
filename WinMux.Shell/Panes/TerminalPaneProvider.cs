@@ -6,7 +6,7 @@ namespace WinMux.Shell.Panes;
 
 internal interface ITerminalInputRuntime
 {
-    ValueTask SendPrefixAsync(CancellationToken cancellationToken = default);
+    ValueTask SendPrefixAsync(Keymap.KeyStroke prefix, CancellationToken cancellationToken = default);
 }
 
 internal sealed class TerminalPaneProvider : IPaneProvider
@@ -91,20 +91,25 @@ internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime,
         }
 
         _terminal = new TerminalPaneControl(program, arguments, cwd, restore.EnvOverrides);
-        _terminal.TitleChanged += title => Dispatcher.UIThread.Post(() =>
+        string? pendingTitle = null;
+        var titleScheduled = 0;
+        _terminal.TitleChanged += title =>
         {
-            if (!string.IsNullOrWhiteSpace(title))
+            Volatile.Write(ref pendingTitle, title);
+            if (Interlocked.Exchange(ref titleScheduled, 1) != 0) return;
+            Dispatcher.UIThread.Post(() =>
             {
-                // A shell sets its console title constantly — cmd does it on almost every
-                // command — so an automatic title must never overwrite one the user chose.
-                if (!_pane.Restore.TitleIsCustom)
-                {
-                    _pane.Title = title;
-                    _pane.Restore = _pane.Restore with { Title = title };
-                }
-            }
-            StateChanged?.Invoke(this, EventArgs.Empty);
-        });
+                Interlocked.Exchange(ref titleScheduled, 0);
+                var latest = Volatile.Read(ref pendingTitle);
+                // Repeated OSC titles during output are metadata no-ops. They must not queue a
+                // persistence capture and strip refresh on every write, or overwrite a custom name.
+                if (Volatile.Read(ref _disposed) != 0 || string.IsNullOrWhiteSpace(latest) ||
+                    _pane.Restore.TitleIsCustom || _pane.Title == latest) return;
+                _pane.Title = latest;
+                _pane.Restore = _pane.Restore with { Title = latest };
+                StateChanged?.Invoke(this, EventArgs.Empty);
+            }, DispatcherPriority.Background);
+        };
         _terminal.WorkingDirectoryChanged += path => Dispatcher.UIThread.Post(() =>
         {
             _pane.Restore = _pane.Restore with
@@ -156,8 +161,11 @@ internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime,
         return _pane.Restore;
     }
 
-    public ValueTask SendPrefixAsync(CancellationToken token = default) =>
-        _terminal.SendText("\u0002", token);
+    public ValueTask SendPrefixAsync(Keymap.KeyStroke prefix, CancellationToken token = default)
+    {
+        var bytes = TerminalInput.EncodeKey(prefix.Key, prefix.Modifiers, null, applicationCursor: false);
+        return bytes is null ? ValueTask.CompletedTask : _terminal.SendText(System.Text.Encoding.UTF8.GetString(bytes), token);
+    }
 
     public ValueTask<PaneCloseResult> CloseAsync(PaneCloseReason reason, CancellationToken token = default)
     {

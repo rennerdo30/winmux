@@ -104,7 +104,7 @@ id = '22222222-2222-2222-2222-222222222222'
 kind = 'terminal'
 title = 'Phase 4 controls'
 program = $cmd
-args = ['/d', '/k', 'echo Ctrl+B then T opens a terminal from the focused file browser.']
+args = ['/d', '/k', 'echo Ctrl+Shift+P then T opens a terminal from the focused file browser.']
 cwd = $repoCwd
 cwd_source = 'launch-directory'
 cwd_captured_at = $timestamp
@@ -145,8 +145,8 @@ Write-Host 'PHASE 4 VISIBLE CHECK' -ForegroundColor Cyan
 Write-Host '  • Left and right file panes must navigate independently; Enter opens a directory, Backspace goes up, F5 refreshes.'
 Write-Host '  • The right pane restores a Unicode path and selected file.'
 Write-Host '  • The lower-middle pane explains that its saved directory is missing and keeps that restore intent.'
-Write-Host '  • Focus the left pane and use Ctrl+B then T: the new terminal tab must start in "selected folder".'
-Write-Host '  • Ctrl+B then 5 opens another file-browser tab; the command palette and CLI expose the same named actions.'
+Write-Host '  • Focus the left pane and use Ctrl+Shift+P then T: the new terminal tab must start in "selected folder".'
+Write-Host '  • Ctrl+Shift+P then 5 opens another file-browser tab; the command palette and CLI expose the same named actions.'
 Write-Host '  • Close and rerun with -NoBuild to see current directories and selections restore.'
 Write-Host ''
 Write-Host "Editable session: $sessionPath"

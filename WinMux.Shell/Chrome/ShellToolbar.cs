@@ -115,8 +115,8 @@ internal static class ShellToolbar
         return new Border
         {
             Background = Palette.RaisedBrush,
-            BorderBrush = Palette.EdgeBrush,
-            BorderThickness = new Thickness(0, 0, 0, 1),
+            // TitleBar owns the full-width separator. A second line here made the middle
+            // of the caption thicker than the identity and window-button ends.
             Child = layout,
         };
     }

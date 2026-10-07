@@ -88,18 +88,20 @@ public class CoalescedRepaintTests
         // without pause; with one job queued at a time the input below it still runs.
         var clicked = false;
         var painted = 0;
+        var paintedBeforeClick = -1;
         CoalescedRepaint? repaint = null;
         repaint = new CoalescedRepaint(() =>
         {
             if (++painted < 200) repaint!.Request();
         });
 
-        Dispatcher.UIThread.Post(() => clicked = true, DispatcherPriority.Input);
+        Dispatcher.UIThread.Post(() => { clicked = true; paintedBeforeClick = painted; }, DispatcherPriority.Input);
         repaint.Request();
 
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(clicked, "the input-priority job never ran, so repaints are still starving input");
+        Assert.InRange(paintedBeforeClick, 0, 1);
         Assert.Equal(200, painted);
     });
 }

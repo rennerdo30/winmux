@@ -49,6 +49,9 @@ public interface ITerminalEngine
     /// </summary>
     bool ApplicationCursorKeysEnabled { get; }
 
+    /// <summary>Mouse reporting and alternate-screen scroll requests, read under one lock.</summary>
+    TerminalMouseMode MouseMode { get; }
+
     /// <summary>
     /// Changes when OSC 8 link identifiers may have been renumbered or discarded.
     /// </summary>

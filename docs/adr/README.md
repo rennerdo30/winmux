@@ -27,3 +27,5 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | [0018](0018-terminal-emulation-supply-chain.md) | `Terminal.Emulation`: the supply-chain position | accepted for 0.x |
 | [0019](0019-network-filesystems.md) | Network filesystems: delegate to Windows, ship no client | accepted |
 | [0020](0020-sftp-and-ftp.md) | SFTP and FTP: implement them, because nothing else will | accepted |
+| [0026](0026-optional-gpu-rendering.md) | Optional GPU rendering with software fallback | accepted |
+| [0027](0027-terminal-and-tab-interaction.md) | Terminal input, responsive tabs and close protection | accepted; native acceptance open |

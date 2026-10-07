@@ -118,7 +118,7 @@ copy an example before editing it if you want to keep the original.
 
 $(if ($SelfContained) { "This copy carries its own .NET runtime; nothing needs to be installed." } else { "Requires the .NET 10 desktop runtime: https://dotnet.microsoft.com/download" })
 
-Everything is on the toolbar. The keyboard is tmux-style: Ctrl+B then % or " to split,
+Everything is on the toolbar. The keyboard is tmux-style: Ctrl+Shift+P then % or " to split,
 arrows to move focus, c for a tab, v for a tab group with tabs down the side, x to close,
 : for the command palette.
 

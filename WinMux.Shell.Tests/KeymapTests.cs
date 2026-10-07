@@ -27,7 +27,7 @@ public class KeymapTests
             new KeyBindingTable(KeymapConfiguration.TmuxDefaults()),
             dispatcher);
 
-        var prefix = router.Route(Key.B, KeyModifiers.Control);
+        var prefix = router.Route(Key.P, KeyModifiers.Control | KeyModifiers.Shift);
         var action = router.Route(Key.D5, KeyModifiers.Shift);
 
         Assert.Equal(KeymapRouteKind.PrefixArmed, prefix.Kind);
@@ -54,7 +54,7 @@ public class KeymapTests
     public void Unknown_key_after_prefix_is_consumed_and_clears_prefix_state()
     {
         var router = Router(KeymapConfiguration.TmuxDefaults());
-        router.Route(Key.B, KeyModifiers.Control);
+        router.Route(Key.P, KeyModifiers.Control | KeyModifiers.Shift);
 
         var result = router.Route(Key.F12);
 
@@ -218,4 +218,25 @@ public class KeymapTests
 
     private static KeymapRouter Router(KeymapConfiguration configuration) =>
         new(new KeyBindingTable(configuration), new ActionDispatcher());
+
+    [Fact]
+    public void Ctrl_B_passes_to_the_program_with_the_default_keymap()
+    {
+        var router = Router(KeymapConfiguration.TmuxDefaults());
+        Assert.Equal(KeymapRouteKind.PassThrough, router.Route(Key.B, KeyModifiers.Control).Kind);
+        Assert.False(router.IsPrefixArmed);
+        Assert.Equal("Ctrl+Shift+P", router.PrefixDisplay);
+    }
+
+    [Theory]
+    [InlineData("Ctrl+B", Key.B, KeyModifiers.Control)]
+    [InlineData("Ctrl+Shift+P", Key.P, KeyModifiers.Control | KeyModifiers.Shift)]
+    public void Repeating_a_configured_prefix_passes_the_chord_through(string prefix, Key key, KeyModifiers modifiers)
+    {
+        var router = Router(KeymapConfiguration.TmuxDefaults() with { Prefix = prefix });
+        Assert.Equal(KeymapRouteKind.PrefixArmed, router.Route(key, modifiers).Kind);
+        Assert.Equal(KeymapRouteKind.PassThrough, router.Route(key, modifiers).Kind);
+        Assert.False(router.IsPrefixArmed);
+        Assert.Equal(prefix, router.PrefixDisplay);
+    }
 }

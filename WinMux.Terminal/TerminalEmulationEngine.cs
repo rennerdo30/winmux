@@ -100,6 +100,17 @@ public sealed class TerminalEmulationEngine : ITerminalEngine
         get { lock (sync) return terminal.UsingAlternate; }
     }
 
+    public TerminalMouseMode MouseMode
+    {
+        get
+        {
+            lock (sync) return new TerminalMouseMode(
+                terminal.Modes.Mouse != global::Terminal.Emulation.MouseTracking.Off,
+                terminal.Modes.MouseEncoding == global::Terminal.Emulation.MouseEncoding.Sgr,
+                terminal.UsingAlternate, terminal.Modes.AlternateScroll, terminal.Modes.ApplicationCursorKeys);
+        }
+    }
+
     public int HyperlinkGeneration
     {
         get { lock (sync) return terminal.HyperlinkGeneration; }

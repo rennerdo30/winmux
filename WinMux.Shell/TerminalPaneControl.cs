@@ -55,8 +55,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     /// <summary>Brushes for colours the VT stream asks for, kept so a rainbow prompt is not an allocation storm.</summary>
     private static readonly Dictionary<uint, IBrush> BrushCache = [];
 
-    /// <summary>Rows per wheel notch. Three is what every terminal on this machine uses.</summary>
-    private const int WheelRows = 3;
+    private readonly TerminalWheelInput _wheel = new();
 
     private const double ScrollbarWidth = 4;
 
@@ -471,9 +470,13 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
-        if (_engine.ScrollbackCount <= 0) return;
+        var point = e.GetPosition(this);
+        var column = Math.Clamp((int)((point.X - Inset) / CellWidth), 0, Math.Max(0, _engine.Columns - 1));
+        var row = _metrics.RowAt(point.Y, Inset, _engine.Rows);
+        var action = _wheel.Route(e.Delta.Y, column, row, e.KeyModifiers, _engine.MouseMode);
+        if (action.Bytes.Length > 0) _ = WriteInputAsync(action.Bytes);
 
-        if (_viewport.Scroll((int)(e.Delta.Y * WheelRows), _engine.ScrollbackCount))
+        if (action.HistoryRows != 0 && _viewport.Scroll(action.HistoryRows, _engine.ScrollbackCount))
         {
             InvalidateVisual();
         }
@@ -962,6 +965,8 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     /// repaints faster than they drain starves the user's own clicks.
     /// </summary>
     private CoalescedRepaint? _repaint;
+    private CoalescedRepaint? _titleRepaint;
+    private string? _pendingTitle;
 
     private void OnEngineUpdated()
     {
@@ -981,7 +986,12 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     {
         if (_disposed == 0)
         {
-            Dispatcher.UIThread.Post(() => TitleChanged?.Invoke(title));
+            Volatile.Write(ref _pendingTitle, title);
+            (_titleRepaint ??= new CoalescedRepaint(() =>
+            {
+                if (_disposed == 0 && Volatile.Read(ref _pendingTitle) is { } latest)
+                    TitleChanged?.Invoke(latest);
+            })).Request();
         }
     }
 
@@ -997,7 +1007,9 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     {
         if (_disposed == 0)
         {
-            _ = WriteInputAsync(bytes.ToArray());
+            // A query response is not typing: don't mutate the viewport from the PTY thread
+            // or snap a user reading scrollback back to the live screen.
+            _ = WriteFocusReportAsync(bytes.ToArray());
         }
     }
 

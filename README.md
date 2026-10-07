@@ -75,7 +75,7 @@ Two strategies are implemented:
 `strategy = 'auto'` is the session-file default for foreign apps. It consults the shipped,
 user-editable `foreign-app-quirks.json`; unknown apps use an explicitly unverified embed default.
 If embedding is refused, PaneHost keeps the same application alive, explains why, and switches it
-to attach. `Ctrl+B`, then `A`, switches the focused foreign pane live and persists the result.
+to attach. `Ctrl+Shift+P`, then `A`, switches the focused foreign pane live and persists the result.
 
 Known-hard cases, handled by falling back to *attach* or by refusing cleanly:
 
@@ -140,6 +140,15 @@ the target; portability is a design discipline, not a promise.
 
 `run.cmd` and `publish.cmd` are double-clickable and need no execution-policy change.
 
+**Rendering:** Settings → Appearance → Rendering offers **Automatic (GPU with software fallback)**
+and **Software**. Automatic is the default and uses Avalonia's ANGLE GPU backend when available;
+Software forces CPU drawing for VMs, remote desktops or graphics-driver problems. Restart WinMux
+after changing it. The choice applies to the WinMux interface and terminal panes, not to embedded
+applications' own renderers. It is stored as `rendering = 'automatic'` or `rendering = 'software'`
+in `%APPDATA%\WinMux\settings.toml`; you can edit that file with WinMux closed if graphics problems
+prevent the app from opening. GPU-first drawing was already Avalonia's default, so this switch
+does not establish a terminal performance improvement or fix terminal input compatibility.
+
 Or by hand:
 
 ```powershell
@@ -162,7 +171,7 @@ To see the product phases rather than only run unit tests, use the visible walkt
 ```
 
 Every layout operation is a toolbar button, so none of this has to be memorised — but the default
-keymap is tmux-style: `Ctrl+B`, then `%`/`"` to split, arrows to move focus,
+keymap is tmux-style: `Ctrl+Shift+P`, then `%`/`"` to split, arrows to move focus,
 `Shift+arrows` to resize, `c` for a tab, `v` for a tab group with its tabs down the side,
 `n`/`p` to cycle, `,` to rename a pane, `e` for an empty pane, `x` to close, `w` to save, `A` to
 toggle a foreign pane between embed and attach, and `:` for
@@ -170,6 +179,14 @@ the command palette. `1`–`4` open cmd, Windows PowerShell, PowerShell 7, or WS
 cwd-reporting setup. Pass
 `--no-prefix`, or `--keymap path.json`, to replace the default map. `wmux help` lists the CLI
 action surface.
+
+The default prefix leaves `Ctrl+B` available to terminal applications. Custom keymaps keep their
+configured prefix; press the prefix twice to pass it through. Mouse wheels go to applications
+that request mouse reporting, or scroll terminal history otherwise; `Shift+wheel` always chooses
+history. A pinned tab's pin opens an explicit **Unpin tab** menu. With close confirmation enabled
+(the default), terminals running child programs ask before closing; idle CMD/PowerShell and file
+browsers close normally. This process check cannot detect work performed entirely inside a shell
+builtin, and conservatively protects WSL sessions.
 
 ## Prior art worth reading
 

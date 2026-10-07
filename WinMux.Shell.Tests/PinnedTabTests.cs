@@ -83,7 +83,7 @@ public sealed class PinnedTabTests
     });
 
     [Fact]
-    public Task A_pinned_tab_has_no_close_button_and_unpins_instead() => Headless.RunSync(() =>
+    public Task Clicking_a_pinned_corner_does_not_unpin_or_close() => Headless.RunSync(() =>
     {
         var (strip, first, log) = BuildStrip(pinFirst: true);
 
@@ -92,9 +92,50 @@ public sealed class PinnedTabTests
         Assert.DoesNotContain(Theme.CloseButton, corner.Classes);
 
         corner.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        corner.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
 
         Assert.Empty(log.Closed);
-        Assert.Equal([first.Id], log.Pinned);
+        Assert.Empty(log.Pinned);
+        Assert.True(first.IsPinned);
+        Assert.True(corner.ContextMenu!.IsOpen);
+        corner.ContextMenu.Close();
+    });
+
+    [Fact]
+    public Task Unpinning_requires_choosing_the_menu_action() => Headless.RunSync(() =>
+    {
+        var (strip, first, log) = BuildStrip(pinFirst: true);
+        var corner = CornerOf(strip, "build");
+        try
+        {
+            corner.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            Assert.Empty(log.Pinned);
+            var unpin = Assert.Single(corner.ContextMenu!.Items.OfType<MenuItem>());
+            Assert.Equal("Unpin tab", unpin.Header);
+            unpin.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+            Assert.Equal([first.Id], log.Pinned);
+            Assert.Empty(log.Closed);
+        }
+        finally
+        {
+            corner.ContextMenu!.Close();
+            (TopLevel.GetTopLevel(strip) as Window)?.Close();
+        }
+    });
+
+    [Fact]
+    public Task The_tab_menu_disables_close_until_unpinned() => Headless.RunSync(() =>
+    {
+        var (strip, _, _) = BuildStrip(pinFirst: true);
+        try
+        {
+            var tab = strip.GetVisualDescendants().OfType<Button>()
+                .First(b => b.Classes.Contains(Theme.Tab));
+            var close = tab.ContextMenu!.Items.OfType<MenuItem>().Single(i => i.Header as string == "Close tab");
+            Assert.False(close.IsEnabled);
+            Assert.Contains(tab.ContextMenu.Items.OfType<MenuItem>(), i => i.Header as string == "Unpin tab");
+        }
+        finally { (TopLevel.GetTopLevel(strip) as Window)?.Close(); }
     });
 
     [Fact]

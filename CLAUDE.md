@@ -56,6 +56,12 @@ When two goals conflict, the higher one wins. This ordering is the product.
 [ADR 0002](docs/adr/0002-terminal-stack.md). (This said ".NET 9" before Phase 0; 10 is what is
 installed and what the terminal packages target.)
 
+**Drawing backend selection** ([ADR 0026](docs/adr/0026-optional-gpu-rendering.md)): load settings
+before creating Avalonia's platform backend. Automatic requests ANGLE GPU drawing with Software
+fallback; Software requests CPU drawing only. Settings → Appearance → Rendering persists the
+choice and states that restarting is required. Both modes draw the same terminal control. GPU-first
+drawing was already Avalonia's default; no speedup or input-compatibility improvement is claimed.
+
 Why:
 - Win32 interop is the bulk of the hard work here, and C# + [CsWin32](https://github.com/microsoft/CsWin32)
   gives typed P/Invoke with no hand-written signatures.
@@ -532,7 +538,7 @@ starvation while also silently delivering no input at all in its healthy control
 - Detached/daemon sessions — does the shell survive its own restart with panes intact? Deferred
   past v1, but the process model should not make it impossible later.
 - ~~Adopting already-running apps (drag a running window into a pane) — v1 or later?~~
-  **Answered — built, 2026-09-15.** `Ctrl+B o` opens a tray of the open windows and one can be
+  **Answered — built, 2026-09-15.** `Ctrl+Shift+P o` opens a tray of the open windows and one can be
   dragged onto a pane. Dragging an application's *own* window from the desktop is not possible and
   never will be: Windows delivers a window-move to the window being moved, not to whatever it
   passes over, so there is no drop for WinMux to receive.

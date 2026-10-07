@@ -20,10 +20,9 @@ namespace WinMux.Shell;
 /// </para>
 ///
 /// <para>
-/// Coalescing fixes it at the source. One job is queued at a time, so the queue is bounded by the
-/// number of panes rather than by how fast a program writes, and input is never behind more than
-/// one repaint per pane. Nothing is lost by dropping the others: a repaint draws whatever the
-/// engine says *now*, so the one that runs has all of it.
+/// Coalescing bounds the queue, but the priority must also yield to input: one Render job that
+/// continually replaces itself can still starve Input forever. Nothing is lost by dropping
+/// duplicate requests: the job uses the latest state when it runs.
 /// </para>
 /// </summary>
 internal sealed class CoalescedRepaint
@@ -35,7 +34,7 @@ internal sealed class CoalescedRepaint
     public CoalescedRepaint(Action paint, DispatcherPriority? priority = null)
     {
         _paint = paint ?? throw new ArgumentNullException(nameof(paint));
-        _priority = priority ?? DispatcherPriority.Render;
+        _priority = priority ?? DispatcherPriority.Background;
     }
 
     /// <summary>How many repaints have actually been drawn, for tests to check the coalescing.</summary>

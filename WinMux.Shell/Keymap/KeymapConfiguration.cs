@@ -10,12 +10,13 @@ namespace WinMux.Shell.Keymap;
 /// </summary>
 public sealed record KeymapConfiguration
 {
-    public string? Prefix { get; init; } = "Ctrl+B";
+    public const string DefaultPrefix = "Ctrl+Shift+P";
+    public string? Prefix { get; init; } = DefaultPrefix;
     public IReadOnlyList<KeyBindingConfiguration> Bindings { get; init; } = [];
 
     public static KeymapConfiguration TmuxDefaults() => new()
     {
-        Prefix = "Ctrl+B",
+        Prefix = DefaultPrefix,
         Bindings = DefaultBindings(KeyBindingScope.Prefixed),
     };
 

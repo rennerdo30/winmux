@@ -83,7 +83,7 @@ id = '11111111-1111-1111-1111-111111111111'
 kind = 'terminal'
 title = 'Phase 3 controls'
 program = $cmd
-args = ['/d', '/k', 'echo Ctrl+B then A toggles the focused foreign pane between embed and attach.']
+args = ['/d', '/k', 'echo Ctrl+Shift+P then A toggles the focused foreign pane between embed and attach.']
 cwd = $cwd
 cwd_source = 'launch-directory'
 cwd_captured_at = $timestamp
@@ -117,9 +117,9 @@ Write-Host ''
 Write-Host 'PHASE 3 VISIBLE CHECK' -ForegroundColor Cyan
 Write-Host '  • Character Map should be borderless and truly embedded in the middle pane.'
 Write-Host '  • Calculator should remain top-level but track the right pane (automatic packaged-app rule).'
-Write-Host '  • Use Ctrl+B then Left/Right to focus a foreign pane; Ctrl+B then A switches its strategy live.'
+Write-Host '  • Use Ctrl+Shift+P then Left/Right to focus a foreign pane; Ctrl+Shift+P then A switches its strategy live.'
 Write-Host '  • Resize/move WinMux: both apps must follow without freezing the terminal.'
-Write-Host '  • Closing WinMux detaches both apps so they survive; closing a pane with Ctrl+B then X closes its app.'
+Write-Host '  • Closing WinMux detaches both apps so they survive; closing a pane with Ctrl+Shift+P then X closes its app.'
 Write-Host ''
 Write-Host "Editable session: $sessionPath"
 

@@ -289,8 +289,8 @@ internal sealed partial class MainWindow : Window
         _canvas.PointerMoved += ContinueDividerDrag;
         _canvas.PointerReleased += EndDividerDrag;
 
-        // Tunnel first so the shell prefix wins before a focused terminal translates Ctrl+B
-        // into byte 0x02. Pass-through keys continue down to the pane normally.
+        // Tunnel first so the shell prefix wins before a focused terminal translates Ctrl+Shift+P
+        // into terminal input. Pass-through keys continue down to the pane normally.
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         Opened += async (_, _) =>
         {
@@ -363,10 +363,21 @@ internal sealed partial class MainWindow : Window
 
         _runtimes.Add(pane.Id, runtime);
         _canvas.Children.Add(runtime.View);
-        runtime.StateChanged += (_, _) => Dispatcher.UIThread.Post(() => SyncRuntimeState(pane, runtime));
+        var pendingState = 0;
+        runtime.StateChanged += (_, _) =>
+        {
+            if (Interlocked.Exchange(ref pendingState, 1) != 0) return;
+            Dispatcher.UIThread.Post(() =>
+            {
+                Interlocked.Exchange(ref pendingState, 0);
+                if (_runtimes.GetValueOrDefault(pane.Id) == runtime) SyncRuntimeState(pane, runtime);
+            }, DispatcherPriority.Background);
+        };
         runtime.View.GotFocus += (_, _) =>
         {
-            if (_tree.Focused == pane.Id) return;
+            // Hiding a previously active group can dispatch a late focus event from its view.
+            // Only a currently visible runtime can change the user's selected nested tabs.
+            if (_tree.Focused == pane.Id || !runtime.View.IsVisible || !_tree.Arrange().IsVisible(pane.Id)) return;
             _tree.Focus(pane.Id);
             Relayout();
         };
@@ -435,13 +446,6 @@ internal sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Draw one tab strip per stack, in the band the layout engine reserved for it.
-    ///
-    /// Rebuilt wholesale on every layout rather than diffed. The strips are small and there are as
-    /// many as there are stacks — usually one or two — so the cost is nothing next to the bugs that
-    /// come from keeping a second model of the tree in sync with the tree.
-    /// </summary>
-    /// <summary>
     /// Re-assert foreign window placement after the shell window moves. Everything else in the
     /// layout is expressed in canvas coordinates and has not changed.
     /// </summary>
@@ -462,7 +466,9 @@ internal sealed partial class MainWindow : Window
 
     private void UpdateTabStrips(Arrangement arrangement)
     {
-        foreach (var strip in _tabStrips) _canvas.Children.Remove(strip);
+        // An OSC title update may arrive between pointer press and release. Keep those buttons
+        // (and context menus) attached while refreshing metadata, focus or window activation.
+        var previous = _tabStrips.ToList();
         _tabStrips.Clear();
         foreach (var handle in _dividerHandles) _canvas.Children.Remove(handle);
         _dividerHandles.Clear();
@@ -491,14 +497,21 @@ internal sealed partial class MainWindow : Window
 
         foreach (var strip in arrangement.TabStrips)
         {
-            var view = TabStripView.Build(strip, _tree.Focused, commands, _attention.WaitingMessage);
+            var view = previous.FirstOrDefault(v =>
+                TabStripView.TryRefresh(v, strip, _tree.Focused, _attention.WaitingMessage));
+            if (view is null)
+            {
+                view = TabStripView.Build(strip, _tree.Focused, commands, _attention.WaitingMessage);
+                _canvas.Children.Add(view);
+            }
+            else previous.Remove(view);
             Canvas.SetLeft(view, strip.Rect.X);
             Canvas.SetTop(view, strip.Rect.Y);
             view.Width = strip.Rect.Width;
             view.Height = strip.Rect.Height;
-            _canvas.Children.Add(view);
             _tabStrips.Add(view);
         }
+        foreach (var obsolete in previous) _canvas.Children.Remove(obsolete);
     }
 
     /// <summary>
@@ -964,7 +977,7 @@ internal sealed partial class MainWindow : Window
             _session.SessionPath,
             _session.LastSavedAt,
             saving: false,
-            prefixGesture: "Ctrl+B",
+            prefixGesture: _keymap.PrefixDisplay,
             armed: _keymap.IsPrefixArmed,
             now: DateTimeOffset.UtcNow);
 
@@ -995,6 +1008,7 @@ internal sealed partial class MainWindow : Window
     {
         // KeySymbol is what this keyboard produced, which is the only way a binding written as "%"
         // or ":" can work on a layout that does not put them where a US keyboard does.
+        var wasArmed = _keymap.IsPrefixArmed;
         var route = _keymap.Route(new KeyStroke(e.Key, e.KeyModifiers), e.KeySymbol);
         if (TerminalDebugLog.Enabled)
         {
@@ -1002,7 +1016,11 @@ internal sealed partial class MainWindow : Window
         }
 
         e.Handled = route.Handled;
-        if (!route.Handled) return;
+        if (!route.Handled)
+        {
+            if (wasArmed != _keymap.IsPrefixArmed) UpdateStatus();
+            return;
+        }
 
         _message = route.Kind switch
         {
@@ -1314,7 +1332,7 @@ internal sealed partial class MainWindow : Window
     /// Say that an update exists, in a window.
     ///
     /// <para>
-    /// It was a line in the status bar reading "Ctrl+B then : and \"Install update\"", six seconds
+    /// It was a line in the status bar reading "Ctrl+Shift+P then : and \"Install update\"", six seconds
     /// after startup, while the user is looking at their panes. Reported as the update check not
     /// returning an "update available" window — and it never had: the check works, and always did,
     /// but the only thing it produced was a sentence nobody was looking at and an instruction
@@ -1439,8 +1457,8 @@ internal sealed partial class MainWindow : Window
 
     private void SendPrefix()
     {
-        if (_runtimes.GetValueOrDefault(_tree.Focused) is ITerminalInputRuntime terminal)
-            _ = terminal.SendPrefixAsync(_shutdown.Token);
+        if (_runtimes.GetValueOrDefault(_tree.Focused) is ITerminalInputRuntime terminal && _keymap.Prefix is { } prefix)
+            _ = terminal.SendPrefixAsync(prefix, _shutdown.Token);
         else
             _message = "the focused pane does not accept terminal input";
     }
@@ -1751,7 +1769,7 @@ internal sealed partial class MainWindow : Window
     /// a supported workflow rather than a gap. A new tab that silently became cmd made that state
     /// unreachable from the one control everybody presses, and assumed the answer to a question the
     /// user had not been asked. The empty pane offers profiles, the application catalogue and the
-    /// windows already open, so a terminal is still one click away — and `Ctrl+B 1`–`5` open a
+    /// windows already open, so a terminal is still one click away — and `Ctrl+Shift+P 1`–`5` open a
     /// specific shell directly for anyone who knows what they want.
     /// </summary>
     private Task AddTabAsync() => AddTabAsync(Pane.Empty(), "new tab");
@@ -1815,7 +1833,7 @@ internal sealed partial class MainWindow : Window
         Relayout();
 
         // Changing tab did not give the keyboard to the pane that came forward — it did not focus
-        // anything at all — so `Ctrl+B n` left the next keystroke going to the tab you had left.
+        // anything at all — so `Ctrl+Shift+P n` left the next keystroke going to the tab you had left.
         if (moved) FocusActivePaneAfterLayout();
     }
 
@@ -1848,7 +1866,7 @@ internal sealed partial class MainWindow : Window
 
     private async Task CloseFocusedAsync()
     {
-        if (_paneCloseInProgress) { _message = "a pane is already closing"; UpdateStatus(); return; }
+        if (_paneCloseInProgress || _shutdownStarted) { _message = "a pane is already closing"; UpdateStatus(); return; }
         if (_tree.Panes.Count() == 1) { _message = "cannot close the last pane"; UpdateStatus(); return; }
 
         // Before the runtime is asked to close: a pinned pane must not get as far as being told to
@@ -1864,6 +1882,14 @@ internal sealed partial class MainWindow : Window
         _paneCloseInProgress = true;
         try
         {
+            if (!await ConfirmTerminalCloseAsync([id], "Close this tab?", "Close tab")) return;
+            // The process check yields to input; the pane may have been pinned in that time.
+            if (PaneOf(id) is { IsPinned: true })
+            {
+                _message = "tab is pinned — unpin it to close it";
+                UpdateStatus();
+                return;
+            }
             if (_runtimes.TryGetValue(id, out var runtime))
             {
                 _message = "closing pane safely…";
@@ -1887,6 +1913,32 @@ internal sealed partial class MainWindow : Window
         {
             _paneCloseInProgress = false;
         }
+    }
+
+    private async Task<bool> ConfirmTerminalCloseAsync(
+        IEnumerable<PaneId> panes, string title, string acceptLabel)
+    {
+        if (!Settings.ShellSettings.Current.ConfirmBeforeClosingPanes) return true;
+        var terminals = panes.Distinct()
+            .Select(id => (Id: id, ProcessId: (_runtimes.GetValueOrDefault(id)?.View as TerminalPaneControl)?.ProcessId))
+            .Where(item => item.ProcessId is not null)
+            .Select(item => (item.Id, ProcessId: item.ProcessId!.Value))
+            .ToArray();
+        if (terminals.Length == 0) return true;
+
+        // Toolhelp/process image inspection can take hundreds of milliseconds. The fresh close
+        // check belongs on a worker, never on the input/render thread or the output hot path.
+        var results = await Task.Run(() => TerminalCloseProtection.Inspect(
+            terminals.Select(item => item.ProcessId), PlatformServices.Processes));
+        var protectedPanes = terminals.Where(item => results[item.ProcessId].RequiresConfirmation).ToArray();
+        if (protectedPanes.Length == 0) return true;
+        var details = string.Join(Environment.NewLine, protectedPanes.Select(item =>
+            $"• {PaneOf(item.Id)?.Title ?? "Terminal"}: {results[item.ProcessId].Description}"));
+        var confirmed = await NoticeWindow.ConfirmAsync(this, title,
+            "Closing will end these terminal sessions and may interrupt their work." +
+            Environment.NewLine + Environment.NewLine + details, acceptLabel);
+        if (!confirmed) { _message = "close cancelled"; UpdateStatus(); }
+        return confirmed;
     }
 
     /// <summary>
@@ -2207,22 +2259,44 @@ internal sealed partial class MainWindow : Window
     {
         if (_shutdownComplete) return;
         e.Cancel = true;
-        if (_shutdownStarted) return;
+        if (_shutdownStarted || _paneCloseInProgress) return;
+        _shutdownStarted = true;
+        _ = BeginShutdownAsync();
+    }
+
+    private async Task BeginShutdownAsync()
+    {
+        try
+        {
+            if (!_closingForUpdate && !await ConfirmTerminalCloseAsync(_tree.Panes.Select(pane => pane.Id),
+                    "Close WinMux?", "Close WinMux"))
+            {
+                _shutdownStarted = false;
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            _shutdownStarted = false;
+            _message = "WinMux stayed open because close confirmation failed: " + ex.Message;
+            UpdateStatus();
+            return;
+        }
         _cwdCaptureTimer.Stop();
         RefreshPaneRestoreStates();
         var saved = _session.PrepareWindowClosing(this);
         if (!saved.Succeeded)
         {
+            _shutdownStarted = false;
             _cwdCaptureTimer.Start();
             _message = "WinMux stayed open because the session could not be saved: " + saved.Error?.Message;
             UpdateStatus();
             return;
         }
 
-        _shutdownStarted = true;
         _message = "detaching foreign applications safely…";
         UpdateStatus();
-        _ = CompleteShutdownAsync();
+        await CompleteShutdownAsync();
     }
 
     private async Task CompleteShutdownAsync()

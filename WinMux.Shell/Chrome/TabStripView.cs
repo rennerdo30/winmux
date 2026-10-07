@@ -42,6 +42,25 @@ internal sealed record TabStripCommands(
 internal static class TabStripView
 {
     private const double AccentWeight = 2;
+    private sealed record RetainedStrip(StackNode Stack, TabStripPlacement Placement,
+        LayoutNode[] Children, PaneId[] Leaves, bool[] Pinned, string?[] Waiting, Action<PaneId>[] Refresh);
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, RetainedStrip> Retained = new();
+
+    /// <summary>Refresh labels and selection without replacing buttons or their open menus.</summary>
+    public static bool TryRefresh(Control view, LayoutTabStrip strip, PaneId focused,
+        Func<PaneId, string?>? waiting = null)
+    {
+        if (!Retained.TryGetValue(view, out var state) || state.Stack != strip.Stack ||
+            state.Placement != strip.Placement || !state.Children.SequenceEqual(strip.Stack.Children) ||
+            !state.Leaves.SequenceEqual(strip.Stack.Leaves().Select(l => l.Pane.Id)) ||
+            !state.Pinned.SequenceEqual(strip.Stack.Children.Select(c => c.Leaves().First().Pane.IsPinned)) ||
+            !state.Waiting.SequenceEqual(strip.Stack.Children.Select(c => WaitingFor(c, waiting)))) return false;
+        foreach (var refresh in state.Refresh) refresh(focused);
+        return true;
+    }
+
+    private static string? WaitingFor(LayoutNode child, Func<PaneId, string?>? waiting) =>
+        waiting is null ? null : child.Leaves().Select(l => waiting(l.Pane.Id)).FirstOrDefault(m => m is not null);
 
     /// <param name="waiting">
     /// What a pane is waiting to tell the user, or null. A tab whose pane is waiting says so, which
@@ -65,6 +84,7 @@ internal static class TabStripView
         var stackHasFocus = strip.Stack.Leaves().Any(leaf => leaf.Pane.Id == focused);
 
         var tabs = new List<Control>();
+        var refreshers = new List<Action<PaneId>>();
         for (var index = 0; index < strip.Stack.Children.Count; index++)
         {
             var child = strip.Stack.Children[index];
@@ -81,7 +101,8 @@ internal static class TabStripView
                 vertical,
                 strip.Placement,
                 commands,
-                asking);
+                asking,
+                refreshers);
 
             tabs.Add(tab);
             items.Children.Add(tab);
@@ -123,6 +144,10 @@ internal static class TabStripView
         // The whole band accepts a drop, not only the tabs in it: a group of one tab has almost no
         // tab to aim at, and dropping into an empty part of the strip is what people try first.
         AcceptDroppedTabs(band, items, caret, tabs, strip, vertical, commands);
+        Retained.Add(band, new RetainedStrip(strip.Stack, strip.Placement,
+            strip.Stack.Children.ToArray(), strip.Stack.Leaves().Select(l => l.Pane.Id).ToArray(),
+            strip.Stack.Children.Select(c => c.Leaves().First().Pane.IsPinned).ToArray(),
+            strip.Stack.Children.Select(c => WaitingFor(c, waiting)).ToArray(), refreshers.ToArray()));
         return band;
     }
 
@@ -345,7 +370,8 @@ internal static class TabStripView
         bool vertical,
         TabStripPlacement placement,
         TabStripCommands commands,
-        string? waiting)
+        string? waiting,
+        List<Action<PaneId>> refreshers)
     {
         var leaves = child.Leaves().ToArray();
 
@@ -380,20 +406,25 @@ internal static class TabStripView
 
         // A pinned tab shows a pin where its close button was. Leaving a close button that refuses
         // would be worse than removing it — the control would still say the tab can be closed, and
-        // the refusal would read as a bug. Clicking the pin unpins, so the way back out is where the
-        // way in was.
+        // the refusal would read as a bug. Unpinning needs a separate menu choice: replacing this
+        // pin with Close on the first click makes a second click at the same position destructive.
+        var unpinMenu = pinned ? new ContextMenu
+        {
+            ItemsSource = new[] { Item("Unpin tab", () => commands.TogglePin(target)) },
+        } : null;
         var corner = new Button
         {
             Content = pinned ? Icons.Pin(10) : Icons.Close(10),
             Margin = new Thickness(6, 0, -2, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            [ToolTip.TipProperty] = pinned ? "Pinned. Click to unpin." : "Close this tab",
+            [ToolTip.TipProperty] = pinned ? "Pinned. Open the menu to unpin." : "Close this tab",
+            ContextMenu = unpinMenu,
         };
         corner.Classes.Add(pinned ? Theme.PinButton : Theme.CloseButton);
         corner.Click += (_, e) =>
         {
             e.Handled = true;
-            if (pinned) commands.TogglePin(target);
+            if (pinned) unpinMenu!.Open(corner);
             else commands.CloseTab(target);
         };
 
@@ -437,13 +468,15 @@ internal static class TabStripView
         // nothing: the first click of the pair has already activated the tab.
         tab.DoubleTapped += (_, e) => { e.Handled = true; commands.Rename(child); };
 
+        var closeTab = Item("Close tab", () => commands.CloseTab(target));
+        closeTab.IsEnabled = !pinned;
         tab.ContextMenu = new ContextMenu
         {
             ItemsSource = new[]
             {
                 Item("Rename\u2026", () => commands.Rename(child)),
                 Item(pinned ? "Unpin tab" : "Pin tab", () => commands.TogglePin(target)),
-                Item("Close tab", () => commands.CloseTab(target)),
+                closeTab,
             },
         };
 
@@ -480,6 +513,20 @@ internal static class TabStripView
         }
         stacked.Children.Add(accent);
         stacked.Children.Add(tab);
+        refreshers.Add(focused =>
+        {
+            var active = child.Parent is StackNode stack && stack.Active == child;
+            var focus = child.Leaves().Any(l => l.Pane.Id == focused);
+            if (active) tab.Classes.Add(Theme.ActiveTab);
+            else tab.Classes.Remove(Theme.ActiveTab);
+            accent.Background = active ? (focus ? Palette.AccentBrush : Palette.MutedTextBrush) : Brushes.Transparent;
+            accent.Opacity = active && !focus ? 0.5 : 1;
+            var current = child.Title.Length > 0 ? child.Title : leaves.Length == 1
+                ? leaves[0].Pane.Title : $"{leaves[0].Pane.Title}  +{leaves.Length - 1}";
+            if (string.IsNullOrWhiteSpace(current)) current = "untitled";
+            label.Text = current;
+            ToolTip.SetTip(tab, waiting is null ? current : $"{current}{Environment.NewLine}{waiting}");
+        });
         return stacked;
     }
 
