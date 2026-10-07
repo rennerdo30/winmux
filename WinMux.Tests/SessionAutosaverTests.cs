@@ -10,14 +10,17 @@ public sealed class SessionAutosaverTests
     public async Task Rapid_changes_are_coalesced_and_the_latest_snapshot_wins()
     {
         var writes = new List<string>();
+        var completion = new TaskCompletionSource<SessionSaveResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var saver = new SessionAutosaver("ignored", TimeSpan.FromMilliseconds(40),
             (_, snapshot) => writes.Add(snapshot.Windows.Single().Title));
+        saver.SaveCompleted += result => completion.TrySetResult(result);
 
         saver.RequestSave(Snapshot("first"));
         saver.RequestSave(Snapshot("second"));
         saver.RequestSave(Snapshot("final"));
-        await Task.Delay(150);
+        var result = await completion.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
+        Assert.True(result.Succeeded);
         Assert.Equal(["final"], writes);
     }
 

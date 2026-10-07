@@ -3,7 +3,8 @@
 ## Where we are
 
 Phases 0–5 complete; Phase 6 implemented with native acceptance still open. Source version:
-`0.7.8-test.8`; test.7 is published and test.8 packaging is verified locally.
+`0.7.8-test.8`; [test.8 is published](https://github.com/rennerdo30/winmux/releases/tag/v0.7.8-test.8)
+and its downloaded ZIP checksum is verified.
 New work: Explorer folder launches route CMD into one WinMux process per user.
 See [ADR 0029](docs/adr/0029-explorer-single-instance-launch.md); earlier rendering/tab/key policies
 remain in ADRs [0026](docs/adr/0026-optional-gpu-rendering.md),
@@ -23,7 +24,9 @@ zero failures. IPC tests exercise startup/shutdown/timeout/validation; actual he
 use fake providers for CMD cwd, repeated requests and active-window routing. Registration uses fake
 registry tests. No native GUI launches or real registry changes were performed during validation.
 Test.8 folder/zip passed packaging checks, component versions and packaged CLI validation;
-GitHub publication pending. SDK: `%LOCALAPPDATA%\WinMuxDev\dotnet\dotnet.exe`.
+GitHub release workflow passed. Separate main CI exposed a pre-existing autosave test's fixed
+150 ms wait; it now awaits SaveCompleted with a bounded deadline. All five autosave tests pass
+locally; follow-up main CI pending. SDK: `%LOCALAPPDATA%\WinMuxDev\dotnet\dotnet.exe`.
 Standing constraints: [development guardrails](docs/development-guardrails.md).
 
 ## The next action
