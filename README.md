@@ -188,6 +188,13 @@ history. A pinned tab's pin opens an explicit **Unpin tab** menu. With close con
 browsers close normally. This process check cannot detect work performed entirely inside a shell
 builtin, and conservatively protects WSL sessions.
 
+In terminal panes, `Ctrl+C` always sends interrupt and `Ctrl+V` reaches the application.
+Copy uses `Ctrl+Shift+C` or `Ctrl+Insert`; paste uses `Ctrl+Shift+V` or `Shift+Insert`.
+`Alt+V` remains application input for image paste. `Escape` clears selection and still reaches
+the application. Drag the inner edge of a vertical tab strip to resize its width independently;
+each group's width is saved with the session. Saved connections has a search box (also `Ctrl+F`)
+for connection names, folder paths, hosts, users, domains and protocols.
+
 ## Prior art worth reading
 
 - [Stardock Groupy](https://www.stardock.com/products/groupy/) — proof that arbitrary-app embedding ships.

@@ -29,3 +29,4 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | [0020](0020-sftp-and-ftp.md) | SFTP and FTP: implement them, because nothing else will | accepted |
 | [0026](0026-optional-gpu-rendering.md) | Optional GPU rendering with software fallback | accepted |
 | [0027](0027-terminal-and-tab-interaction.md) | Terminal input, responsive tabs and close protection | accepted; native acceptance open |
+| [0028](0028-tab-width-and-terminal-key-ownership.md) | Resizable tabs, preserved names and terminal key ownership | accepted; native acceptance open |

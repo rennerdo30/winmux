@@ -2,48 +2,47 @@
 
 ## Where we are
 
-Phases 0–5 are complete; Phase 6 features are implemented, with runtime acceptance still open.
-Source version: `0.7.8-test.6`. Optional rendering preference and terminal/tab interaction fixes
-are implemented; the new prerelease package passed local verification. See [ADR 0026](docs/adr/0026-optional-gpu-rendering.md)
-and [ADR 0027](docs/adr/0027-terminal-and-tab-interaction.md).
+Phases 0–5 complete; Phase 6 implemented with native acceptance still open. Source version:
+`0.7.8-test.7`. Test.6 was published successfully; test.7 adds the latest search/tab/key fixes.
+See ADRs [0026](docs/adr/0026-optional-gpu-rendering.md),
+[0027](docs/adr/0027-terminal-and-tab-interaction.md) and
+[0028](docs/adr/0028-tab-width-and-terminal-key-ownership.md).
 
 ## What just happened
 
-**2026-10-07:** Added Automatic (ANGLE then Software) and forced Software rendering at startup,
-with persisted Settings controls. Avalonia supplies the drawing path; GPU-first was already its
-default, so this establishes mode selection, not a measured speedup.
-Changed the default prefix to Ctrl+Shift+P, preserving custom maps and freeing Ctrl+B. Added
-application wheel reports/alternate scroll and Shift-wheel history; query replies preserve history.
-Output/title work yields to input, tab buttons/menus survive title refreshes, and hidden focus
-events cannot reset nested selection. Pin clicks require an explicit Unpin menu. Removed the
-duplicate toolbar separator. Fresh process-tree checks ask before closing busy terminals/the window.
-Release solution build with SDK 10.0.400: 0 warnings/errors. Full suite: 1,198 passed, 6 live FTP/SFTP
-skips, 0 failures. Real-control fake-PTY tests cover wheel, query replies and flood-time Ctrl+B;
-Skia captures verify separator uniformity at 100%/150%. Native acceptance remains open.
-Pinned SDK: `%LOCALAPPDATA%\WinMuxDev\dotnet\dotnet.exe`. Review executable:
-`artifacts/review/bin/WinMux.Shell/release/WinMux.exe` (ordinary output was locked by the running app).
-Standing constraints remain in [development guardrails](docs/development-guardrails.md).
-Version bumped to 0.7.8-test.6; dist contains the verified folder/zip. Packaging checks GUI/CLI
-subsystems, required files, notices and component versions; CLI help runs. Release workflow
-publication is pending tag push/CI. Dependency lockfiles were preserved.
+**2026-10-07:** Optional GPU/software preference, application wheel input, Ctrl+Shift+P prefix,
+responsive retained tabs, safer pin/unpin, uniform separator and busy-terminal close confirmation
+were committed and released as test.6; GitHub build/tests/package/publish succeeded.
+Follow-up adds Saved connections search (Ctrl+F); compact vertical rows and grouped Add/More;
+independent per-group strip-width dragging persisted as optional tab_width; and preserved explicit
+parent labels when wrapping tabs. Cancelled rename keeps the previous label.
+Ctrl+C always interrupts; Ctrl+V/Escape reach the application even with selection/clipboard text.
+Copy: Ctrl+Shift+C or Ctrl+Insert. Paste: Ctrl+Shift+V or Shift+Insert. Alt+V preserved.
+Release solution build: 0 warnings/errors. Full suite: 1,236 passed, six live FTP/SFTP skips,
+zero failures. Real headless pointer drag and fake-PTY control tests cover resize/key wiring;
+Skia 150% captures show compact rows and search. Native acceptance remains open.
+Pinned SDK: `%LOCALAPPDATA%\WinMuxDev\dotnet\dotnet.exe`. Builds use ignored artifacts/review
+because the user's ordinary executable is running. Test.7 local package passed required-file,
+GUI/CLI subsystem, component-version and packaged CLI validation. GitHub publication pending CI.
+Standing constraints: [development guardrails](docs/development-guardrails.md).
 
 ## The next action
 
-Run the review executable and check Claude Code wheel/Ctrl+B, tab switching and rename during
-sustained output, nested selection, pin/unpin and busy versus idle terminal close confirmation.
+Run test.7 and check strip dragging/save/restart, nested rename, search, Ctrl+C while selected,
+Claude wheel/Alt+V, tab switching and menus during output, pin/unpin and busy/idle close prompts.
 
 ## Blocked / needs a human
 
-Native Claude Code compatibility, sustained-output feel, Windows frame/corners, native GPU execution,
-driver-failure fallback, VM behavior and mixed-DPI acceptance are unmeasured. Shell builtins without
-child processes cannot be detected as busy; WSL is protected conservatively. Stable release remains
-open. Connection-source follow-ups: RDCMan file selection and WinSCP registry editing
-([ADR 0025](docs/adr/0025-foreign-connection-sources.md)).
+Native Windows drag/DPI feel, live Claude Code, GPU/fallback/VM execution, frame/corners and physical
+mixed-DPI acceptance remain unmeasured. GPU-first was already Avalonia's default; no speedup claim.
+Process detection cannot identify shell builtins with no child; WSL protected conservatively.
+Stable release remains open. Connection-source follow-ups: RDCMan file selection and WinSCP registry
+editing ([ADR 0025](docs/adr/0025-foreign-connection-sources.md)).
 
 ## Do not re-do
 
-Read development guardrails and CLAUDE.md before changing embedding, persistence, rendering or focus.
-Do not call foreign HWNDs on the UI thread, hard-kill hosts still owning children, or claim tests
-prove native GPU/VM performance. Keep software fallback and load preferences before App.Initialize.
-Coalescing at Render still starves input; repaint/title/state work must yield to Input. Keep retained
-tab controls across metadata refreshes and Core active-leaf memory for nested groups.
+Read guardrails and CLAUDE.md before embedding/persistence/focus changes. No foreign HWND calls on
+UI thread, hard-killing hosts owning children or claims of native acceptance from headless tests.
+Keep software fallback/settings-before-App.Initialize. Repaint/title/state work yields to Input;
+retain tab controls for metadata/resize and Core active-leaf memory. Keep lockfiles unchanged when
+packaging and verify GUI/CLI PE subsystems. Do not overwrite existing published tags.
