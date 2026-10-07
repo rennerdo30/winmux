@@ -158,6 +158,18 @@ dotnet build WinMux.slnx -c Release
 
 For a folder you can copy elsewhere:
 
+Launch `WinMux.exe` once from its extracted folder. Normal GUI startup registers that executable
+in your per-user Windows **App Paths**, so typing `winmux` in Explorer's address bar or the
+Windows Run dialog can launch it. No administrator access or PATH change is required. If you move
+the folder, launch its `WinMux.exe` again to refresh the registered location. This registration
+does not make bare `winmux` a command in cmd/PowerShell; the command-line tool is `wmux.exe`.
+Explorer launches open CMD in the caller's folder. WinMux uses one process per Windows user:
+if it is already running, the launch adds a CMD tab to its active window; if it is restoring,
+the request waits until its panes are ready. Existing layouts and session files stay in use.
+An older running WinMux needs a safe restart after updating to gain this feature. Explicit session
+and keymap startup arguments apply only when starting the primary instance; use WinMux's session
+controls while it is running. A forwarding timeout reports an error and never starts a duplicate.
+
 ```powershell
 .\publish.cmd                  # -> dist\WinMux-<version>-win-x64\ and a .zip
 .\publish.cmd -SelfContained   # also carries the .NET runtime

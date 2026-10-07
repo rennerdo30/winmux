@@ -113,6 +113,11 @@ Run it
   WinMux.exe                       the default layout
   WinMux.exe examples\tabs-and-splits.toml    a layout with nested tab groups
 
+Launch WinMux.exe once from this folder to register it for your Windows account. After that,
+type winmux in Explorer's address bar or the Run dialog. Moving the folder? Launch WinMux.exe
+from its new location once to update the registration. No administrator access or PATH change
+is needed. For cmd/PowerShell commands, use wmux.exe from this folder.
+
 Note that a session file is LIVE: WinMux saves your layout back to the file you opened, so
 copy an example before editing it if you want to keep the original.
 
