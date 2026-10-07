@@ -20,6 +20,7 @@ namespace WinMux.Shell;
 internal sealed class SettingsWindow : Window
 {
     private readonly ComboBox _theme;
+    private readonly ComboBox _rendering;
     private readonly ListBox _profileList;
     private readonly ComboBox _terminal;
     private readonly List<LaunchProfile> _profiles;
@@ -71,6 +72,11 @@ internal sealed class SettingsWindow : Window
         _theme = Choice(
             [("Follow Windows", ThemePreference.System), ("Dark", ThemePreference.Dark), ("Light", ThemePreference.Light)],
             current.Theme);
+
+        _rendering = Choice(
+            [("Automatic (GPU with software fallback)", RenderingPreference.Automatic),
+             ("Software", RenderingPreference.Software)], current.Rendering);
+        _rendering.Name = "RenderingPreference";
 
         // The default-terminal list IS the profile list, so "which terminals do I have" and
         // "which one opens by default" stop being two unrelated ideas.
@@ -158,6 +164,11 @@ internal sealed class SettingsWindow : Window
             "Theme",
             _theme,
             "Follow Windows to switch with the system light and dark setting."));
+        body.Children.Add(SettingsCard.Row(
+            "Rendering",
+            _rendering,
+            "Automatic uses GPU drawing when available. Choose Software for VMs or graphics-driver problems. " +
+            "Applies to the interface and terminal panes after restarting WinMux."));
 
         body.Children.Add(SettingsCard.Heading("Profiles"));
         body.Children.Add(SettingsCard.Stacked(
@@ -243,6 +254,7 @@ internal sealed class SettingsWindow : Window
             Result = current with
             {
                 Theme = Selected<ThemePreference>(_theme),
+                Rendering = Selected<RenderingPreference>(_rendering),
                 DefaultTerminal = SelectedTerminalId(),
                 DefaultTabPlacement = Selected<TabStripPlacement>(_tabPlacement),
                 ConfirmBeforeClosingPanes = _confirmClosing.IsChecked == true,

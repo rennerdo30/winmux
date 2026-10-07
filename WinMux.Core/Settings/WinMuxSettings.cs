@@ -13,6 +13,16 @@ public enum ThemePreference
     Light,
 }
 
+/// <summary>Which drawing backend the shell should request at startup.</summary>
+public enum RenderingPreference
+{
+    /// <summary>Use GPU drawing when available, with software fallback.</summary>
+    Automatic,
+
+    /// <summary>Always use CPU drawing, for VMs or graphics-driver problems.</summary>
+    Software,
+}
+
 /// <summary>Which requests for attention from a terminal become a desktop notification.</summary>
 public enum TerminalNotificationPolicy
 {
@@ -45,6 +55,9 @@ public sealed record WinMuxSettings
 
     /// <summary>Colour scheme. <see cref="ThemePreference.System"/> tracks Windows live.</summary>
     public ThemePreference Theme { get; init; } = ThemePreference.System;
+
+    /// <summary>Drawing backend. Changes take effect after restarting WinMux.</summary>
+    public RenderingPreference Rendering { get; init; } = RenderingPreference.Automatic;
 
     /// <summary>
     /// Which terminal a plain "new terminal" opens when there is nothing to inherit from. Stored as

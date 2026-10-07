@@ -90,4 +90,41 @@ public sealed class SettingsWindowTests
 
         Assert.Equal(WinMuxSettings.Defaults, window.Result);
     });
+
+    [Theory]
+    [InlineData(RenderingPreference.Automatic)]
+    [InlineData(RenderingPreference.Software)]
+    public Task Saving_preserves_the_selected_rendering_mode(RenderingPreference preference) => Headless.RunSync(() =>
+    {
+        var current = WinMuxSettings.Defaults with { Rendering = preference };
+        var window = new SettingsWindow(current, LaunchProfile.Defaults, "session.toml", LongPath, "profiles.toml");
+        try
+        {
+            window.Show();
+            var choice = window.GetVisualDescendants().OfType<ComboBox>()
+                .Single(c => c.Name == "RenderingPreference");
+            Assert.Equal((int)preference, choice.SelectedIndex);
+            var save = window.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Save");
+            save.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(current, window.Result);
+        }
+        finally { window.Close(); }
+    });
+
+    [Fact]
+    public Task The_software_choice_can_be_saved_from_the_dialog() => Headless.RunSync(() =>
+    {
+        var window = Build();
+        try
+        {
+            window.Show();
+            var choice = window.GetVisualDescendants().OfType<ComboBox>()
+                .Single(c => c.Name == "RenderingPreference");
+            choice.SelectedIndex = 1;
+            var save = window.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Save");
+            save.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(RenderingPreference.Software, window.Result!.Rendering);
+        }
+        finally { window.Close(); }
+    });
 }

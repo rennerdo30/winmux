@@ -18,6 +18,7 @@ public sealed class SettingsRoundTripTests
     private static readonly WinMuxSettings NonDefault = new()
     {
         Theme = ThemePreference.Light,
+        Rendering = RenderingPreference.Software,
         DefaultTerminal = "powershell",
         DefaultTabPlacement = TabStripPlacement.Left,
         ConfirmBeforeClosingPanes = false,
@@ -39,6 +40,7 @@ public sealed class SettingsRoundTripTests
         var restored = RoundTrip(NonDefault);
 
         Assert.Equal(NonDefault.Theme, restored.Theme);
+        Assert.Equal(NonDefault.Rendering, restored.Rendering);
         Assert.Equal(NonDefault.DefaultTerminal, restored.DefaultTerminal);
         Assert.Equal(NonDefault.DefaultTabPlacement, restored.DefaultTabPlacement);
         Assert.Equal(NonDefault.ConfirmBeforeClosingPanes, restored.ConfirmBeforeClosingPanes);
@@ -66,6 +68,7 @@ public sealed class SettingsRoundTripTests
         Assert.Null(result.Warning);
         Assert.Equal(WinMuxSettings.Defaults.TerminalFontFamily, result.Settings.TerminalFontFamily);
         Assert.Equal(WinMuxSettings.Defaults.TerminalFontSize, result.Settings.TerminalFontSize);
+        Assert.Equal(RenderingPreference.Automatic, result.Settings.Rendering);
     }
 
     [Theory]
@@ -107,7 +110,7 @@ public sealed class SettingsRoundTripTests
 
         foreach (var key in new[]
                  {
-                     "theme", "default_terminal", "default_tab_placement",
+                     "theme", "rendering", "default_terminal", "default_tab_placement",
                      "confirm_before_closing_panes", "check_for_updates", "update_channel",
                      "terminal_font_family", "terminal_font_size",
                  })
@@ -116,5 +119,26 @@ public sealed class SettingsRoundTripTests
         }
 
         Assert.Contains("#", text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("automatic", RenderingPreference.Automatic)]
+    [InlineData("software", RenderingPreference.Software)]
+    [InlineData("SOFTWARE", RenderingPreference.Software)]
+    public void Rendering_preference_is_read(string value, RenderingPreference expected)
+    {
+        var result = SettingsFile.Parse($"rendering = '{value}'");
+        Assert.Null(result.Warning);
+        Assert.Equal(expected, result.Settings.Rendering);
+    }
+
+    [Theory]
+    [InlineData("rendering = 'invalid'")]
+    [InlineData("rendering = true")]
+    public void Invalid_rendering_preference_is_reported_and_falls_back(string text)
+    {
+        var result = SettingsFile.Parse(text);
+        Assert.Equal(RenderingPreference.Automatic, result.Settings.Rendering);
+        Assert.Contains("rendering", result.Warning);
     }
 }

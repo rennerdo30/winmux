@@ -66,6 +66,7 @@ public static class SettingsFile
         {
             Version = WinMuxSettings.CurrentVersion,
             Theme = Enum(root, "theme", WinMuxSettings.Defaults.Theme, problems),
+            Rendering = Enum(root, "rendering", WinMuxSettings.Defaults.Rendering, problems),
             DefaultTerminal = String(root, "default_terminal", WinMuxSettings.Defaults.DefaultTerminal),
             DefaultTabPlacement = Enum(root, "default_tab_placement", WinMuxSettings.Defaults.DefaultTabPlacement, problems),
             ConfirmBeforeClosingPanes =
@@ -108,6 +109,10 @@ public static class SettingsFile
 
             # "system" follows the Windows light/dark setting and changes with it. "dark" or "light" pin it.
             theme                        = '{Text(settings.Theme)}'
+
+            # automatic uses GPU drawing when available, with software fallback. software forces CPU drawing.
+            # Changing this requires restarting WinMux.
+            rendering                    = '{settings.Rendering.ToString().ToLowerInvariant()}'
 
             # Which terminal a plain "new terminal" opens: cmd, windows-powershell, powershell, wsl.
             default_terminal             = '{settings.DefaultTerminal}'

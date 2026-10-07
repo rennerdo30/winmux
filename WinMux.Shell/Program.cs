@@ -42,7 +42,6 @@ internal sealed class App : Application
         // pick up the platform here: Fluent kept resolving its light control colours while our own
         // brushes painted dark, so every templated control — the active tab, the dialogs — came out
         // light-on-dark. Asking Windows and saying the answer out loud is unambiguous.
-        Settings.ShellSettings.Load();
         Settings.ShellProfiles.Load();
         Chrome.Palette.Preference = Settings.ShellSettings.Current.Theme;
 
@@ -199,6 +198,8 @@ internal static class Program
             return 2;
         }
 
+        // Avalonia chooses its graphics backend before App.Initialize runs.
+        Settings.ShellSettings.Load();
         return BuildAvaloniaApp(snapshot, sessionPath, keymap, restored, notices).StartWithClassicDesktopLifetime(argv);
     }
 
@@ -213,6 +214,7 @@ internal static class Program
                 Snapshot = snapshot, SessionPath = sessionPath, Keymap = keymap, Restored = restored, StartupNotices = notices,
             })
             .UsePlatformDetect()
+            .With(RenderingOptions.Create(Settings.ShellSettings.Current.Rendering))
             .LogToTrace();
 
     private static void ShowStartupError(string title, string message)
