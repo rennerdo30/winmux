@@ -53,6 +53,9 @@ internal static class PlatformServices
     /// <summary>Where PuTTY and WinSCP keep their saved sessions (ADR 0025).</summary>
     public static WinMux.Connections.IRegistryStore Registry { get; } = new Win32RegistryStore();
 
+    /// <summary>Per-user executable discovery through Explorer's application launcher.</summary>
+    public static IApplicationRegistration ApplicationRegistration { get; } = new Win32ApplicationRegistration();
+
     /// <summary>Undoing DPAPI, which is how Remote Desktop Connection Manager stores a password.</summary>
     public static WinMux.Connections.Unprotect Unprotect { get; } = Win32SecretUnprotector.Unprotect;
 

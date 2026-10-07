@@ -58,6 +58,28 @@ internal sealed class SessionController : IDisposable
 
     public void StartCommandServer() => _ = RunCommandServerAsync();
 
+    public async Task DispatchLaunchAsync(string directory)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                ObjectDisposedException.ThrowIf(_disposed != 0, this);
+                var target = _activeWindow ?? _windows.FirstOrDefault()
+                    ?? throw new InvalidOperationException("WinMux has no open window.");
+                await target.OpenLaunchDirectoryAsync(directory);
+                completion.TrySetResult();
+            }
+            catch (Exception ex)
+            {
+                Broadcast("Could not open Explorer terminal: " + ex.Message);
+                completion.TrySetException(ex);
+            }
+        });
+        await completion.Task.ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Ask for a save. Cheap and coalescing: the snapshot is taken once the caller stops asking.
     /// </summary>

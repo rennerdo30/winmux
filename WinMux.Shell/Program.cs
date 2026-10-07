@@ -15,6 +15,7 @@ internal sealed class App : Application
     public string SessionPath { get; init; } = SessionFile.DefaultFileName;
     public WinMux.Shell.Keymap.KeymapConfiguration Keymap { get; init; } = WinMux.Shell.Keymap.KeymapConfiguration.TmuxDefaults();
     public bool Restored { get; init; }
+    public SingleInstanceLaunch? LaunchService { get; init; }
 
     /// <summary>What startup has to say before anything else — an update's outcome, a moved session.</summary>
     public IReadOnlyList<string> StartupNotices { get; init; } = [];
@@ -82,6 +83,11 @@ internal sealed class App : Application
             desktop.MainWindow = windows[0];
             foreach (var window in windows.Skip(1)) window.Show();
             session.StartCommandServer();
+            if (LaunchService is { } launches)
+            {
+                launches.SetHandler(request => session.DispatchLaunchAsync(request.Directory));
+                launches.LaunchFailed += message => Dispatcher.UIThread.Post(() => windows[0].ShowMessage(message));
+            }
             windows[0].Opened += (_, _) => Dispatcher.UIThread.Post(async () =>
             {
                 try
@@ -123,6 +129,7 @@ internal static class Program
     private static int Main(string[] argv)
     {
         CrashLog.Install();
+        var launchDirectory = Environment.CurrentDirectory;
 
         ShellArguments arguments;
         try
@@ -133,6 +140,38 @@ internal static class Program
         {
             Console.Error.WriteLine(ex.Message);
             return 64;
+        }
+
+        SingleInstanceLaunch launch;
+        try
+        {
+            launch = SingleInstanceLaunch.Open();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Threading.WaitHandleCannotBeOpenedException)
+        {
+            ShowStartupError("WinMux could not establish launch ownership", ex.Message);
+            return 1;
+        }
+        using var launchLifetime = launch;
+        if (launch.IsPrimary && LegacyInstanceProbe.IsListeningAsync().GetAwaiter().GetResult())
+        {
+            ShowStartupError("An older WinMux is already running",
+                "This running version does not support folder-launch forwarding. Close its windows safely " +
+                "before starting the updated WinMux. Your existing session was left alone; no duplicate was started.");
+            return 1;
+        }
+        if (!launch.IsPrimary)
+        {
+            if (argv.Length > 0)
+            {
+                ShowStartupError("WinMux is already running",
+                    "Session and keymap startup arguments cannot be applied to an existing WinMux. " +
+                    "Open the session or settings inside WinMux, or close all WinMux windows before launching with these arguments.");
+                return 64;
+            }
+            var reply = launch.ForwardAsync(new LaunchRequest(launchDirectory)).GetAwaiter().GetResult();
+            if (!reply.Success) ShowStartupError("WinMux could not open this folder", reply.Message);
+            return reply.Success ? 0 : 1;
         }
         SessionLocation.Resolution location;
         try
@@ -149,6 +188,9 @@ internal static class Program
 
         string sessionPath = location.Path;
         var notices = new List<string>();
+        if (ApplicationRegistration.RegisterCurrentExecutable(Environment.ProcessPath,
+                PlatformServices.ApplicationRegistration) is { } registrationNotice)
+            notices.Add(registrationNotice);
         if (location.MigratedFrom is { } oldPlace)
         {
             notices.Add($"Your session now lives in {sessionPath}; the old copy at {oldPlace} was left where it was");
@@ -200,7 +242,15 @@ internal static class Program
 
         // Avalonia chooses its graphics backend before App.Initialize runs.
         Settings.ShellSettings.Load();
-        return BuildAvaloniaApp(snapshot, sessionPath, keymap, restored, notices).StartWithClassicDesktopLifetime(argv);
+        // A fresh default session already opens CMD in this folder. A restored session needs a
+        // new tab, queued until the primary window finishes restoring its runtimes.
+        if (restored && arguments.SessionPath is null)
+        {
+            var request = new LaunchRequest(launchDirectory);
+            if (request.ValidationError() is { } error) notices.Add(error);
+            else _ = launch.QueueInitial(request);
+        }
+        return BuildAvaloniaApp(snapshot, sessionPath, keymap, restored, notices, launch).StartWithClassicDesktopLifetime(argv);
     }
 
     private static AppBuilder BuildAvaloniaApp(
@@ -208,10 +258,12 @@ internal static class Program
         string sessionPath,
         Keymap.KeymapConfiguration keymap,
         bool restored,
-        IReadOnlyList<string> notices) =>
+        IReadOnlyList<string> notices,
+        SingleInstanceLaunch launch) =>
         AppBuilder.Configure(() => new App
             {
                 Snapshot = snapshot, SessionPath = sessionPath, Keymap = keymap, Restored = restored, StartupNotices = notices,
+                LaunchService = launch,
             })
             .UsePlatformDetect()
             .With(RenderingOptions.Create(Settings.ShellSettings.Current.Rendering))

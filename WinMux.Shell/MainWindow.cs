@@ -140,6 +140,7 @@ internal sealed partial class MainWindow : Window
     private bool _closingForUpdate;
     private bool _shutdownComplete;
     private bool _paneCloseInProgress;
+    private readonly TaskCompletionSource _startupReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public MainWindow(
         LayoutTree tree,
@@ -296,8 +297,17 @@ internal sealed partial class MainWindow : Window
         {
             ClampRestoredGeometry();
             _shellHwnd = WindowHandle.FromPlatformValue(TryGetPlatformHandle()?.Handle ?? IntPtr.Zero);
-            await StartPanesAsync();
-            _cwdCaptureTimer.Start();
+            try
+            {
+                await StartPanesAsync();
+                _cwdCaptureTimer.Start();
+                _startupReady.TrySetResult();
+            }
+            catch (Exception ex)
+            {
+                _startupReady.TrySetException(ex);
+                throw;
+            }
         };
         Closing += (_, e) =>
         {
@@ -1916,6 +1926,19 @@ internal sealed partial class MainWindow : Window
         {
             _paneCloseInProgress = false;
         }
+    }
+
+    internal async Task OpenLaunchDirectoryAsync(string directory)
+    {
+        var fullPath = Path.GetFullPath(directory);
+        if (!Directory.Exists(fullPath))
+            throw new DirectoryNotFoundException("Cannot open CMD because the launch folder is unavailable: " + fullPath);
+        await _startupReady.Task.WaitAsync(_shutdown.Token);
+        if (_shutdownStarted) throw new InvalidOperationException("WinMux is closing; the terminal was not opened.");
+        await AddTabAsync(NewTerminalPane(TerminalProfiles.Cmd, fullPath), "opened CMD at " + fullPath);
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+        FocusActivePaneAfterLayout();
     }
 
     private async Task<bool> ConfirmTerminalCloseAsync(
