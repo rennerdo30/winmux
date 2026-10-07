@@ -3,7 +3,7 @@
 ## Where we are
 
 Phases 0–5 complete; Phase 6 implemented with native acceptance still open. Source version:
-`0.7.8-test.7`. Test.6 was published successfully; test.7 adds the latest search/tab/key fixes.
+`0.7.8-test.7`. Both test.6 and test.7 were published successfully; test.7 includes all current fixes.
 See ADRs [0026](docs/adr/0026-optional-gpu-rendering.md),
 [0027](docs/adr/0027-terminal-and-tab-interaction.md) and
 [0028](docs/adr/0028-tab-width-and-terminal-key-ownership.md).
@@ -23,7 +23,9 @@ zero failures. Real headless pointer drag and fake-PTY control tests cover resiz
 Skia 150% captures show compact rows and search. Native acceptance remains open.
 Pinned SDK: `%LOCALAPPDATA%\WinMuxDev\dotnet\dotnet.exe`. Builds use ignored artifacts/review
 because the user's ordinary executable is running. Test.7 local package passed required-file,
-GUI/CLI subsystem, component-version and packaged CLI validation. GitHub publication pending CI.
+GUI/CLI subsystem, component-version and packaged CLI validation. GitHub release build, tests,
+package and publication succeeded; downloaded archive matches published SHA-256 checksums.
+Release: https://github.com/rennerdo30/winmux/releases/tag/v0.7.8-test.7
 Standing constraints: [development guardrails](docs/development-guardrails.md).
 
 ## The next action
