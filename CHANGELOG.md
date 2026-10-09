@@ -7,7 +7,14 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
-## Unreleased
+## 0.7.9 — 2026-10-09
+
+### Changed
+
+- **The version comes from the git tag.** It was written by hand in `Directory.Build.props`, so
+  every release was two facts that had to agree — a number in source control and a tag beside it.
+  MinVer derives it from the nearest `v*` tag, so `v0.7.9` *is* 0.7.9. A build from an untagged
+  commit reports the next patch as a prerelease (`0.7.9-alpha.0.2`), which is what it is.
 
 ### Fixed
 

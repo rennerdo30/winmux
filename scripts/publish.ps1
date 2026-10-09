@@ -38,9 +38,19 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $shellProject = Join-Path $repo 'WinMux.Shell\WinMux.Shell.csproj'
 
-# One source of truth: Directory.Build.props. Reading it back from MSBuild rather than repeating
-# it here means the folder name can never disagree with what the binaries report about themselves.
-$version = (dotnet msbuild $shellProject -getProperty:Version -p:Platform=x64 | Select-Object -Last 1).Trim()
+# One source of truth: the git tag, through MinVer. Reading it back from MSBuild rather than
+# working it out here means the folder name can never disagree with what the binaries report about
+# themselves.
+#
+# `-t:MinVer` matters. Without it MSBuild reports the property as it was *evaluated*, before any
+# target has run, and MinVer sets the version from a target -- so the answer would be the 1.0.0
+# MSBuild invents when nobody has said otherwise, and every package would be named for a version
+# that does not exist.
+# A single -getProperty prints the bare value, so the last non-empty line is it. (Ask for two and
+# MSBuild prints a JSON object instead, which is a trap worth knowing about rather than hitting.)
+$version = (dotnet msbuild $shellProject -t:MinVer -getProperty:Version -p:Platform=x64 -nologo |
+    Where-Object { $_.Trim() } |
+    Select-Object -Last 1).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $version) { throw 'Could not read the product version from MSBuild.' }
 
 $name = "WinMux-$version-win-x64"

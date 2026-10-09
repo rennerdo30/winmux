@@ -27,8 +27,12 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $shellProject = Join-Path $repo 'WinMux.Shell\WinMux.Shell.csproj'
 
-# The same single source of truth publish.ps1 reads.
-$version = (dotnet msbuild $shellProject -getProperty:Version -p:Platform=x64 | Select-Object -Last 1).Trim()
+# The same single source of truth publish.ps1 reads: the git tag, through MinVer. `-t:MinVer` is
+# required — without it MSBuild answers with the property as evaluated, before any target has run,
+# which is the 1.0.0 it invents when nobody has said otherwise.
+$version = (dotnet msbuild $shellProject -t:MinVer -getProperty:Version -p:Platform=x64 -nologo |
+    Where-Object { $_.Trim() } |
+    Select-Object -Last 1).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $version) { throw 'Could not read the product version from MSBuild.' }
 
 # Windows file versions are four numbers; "0.7.8-test.8" becomes 0.7.8.0.

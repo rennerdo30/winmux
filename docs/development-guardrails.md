@@ -239,3 +239,13 @@ that a future session recognises them as answers rather than rediscovering them 
   report a path that looks unfamiliar. It is the same working tree.
 - Opening a session file under `examples/` rewrites it — `scripts/run.ps1` copies it aside first.
 
+## Versioning
+
+The version comes from the nearest `v*` git tag through MinVer; nothing hand-writes one. Two ways
+this goes wrong quietly, both guarded in the repository and worth knowing before changing either:
+
+- **`dotnet msbuild -getProperty:Version` without `-t:MinVer`** answers with the property as
+  evaluated, before any target has run — the 1.0.0 MSBuild invents when nobody has said otherwise.
+  Every script that needs the version runs the target first.
+- **A shallow clone has no tags**, and MinVer then produces `0.0.0-alpha.0` without complaining.
+  Every CI checkout sets `fetch-depth: 0`.

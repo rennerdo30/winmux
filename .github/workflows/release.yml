@@ -18,6 +18,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The version comes from the nearest git tag (MinVer). A shallow clone has no
+          # tags and would build 0.0.0-alpha.0 without saying anything was wrong.
+          fetch-depth: 0
 
       # From global.json, not a floating version: SDK-implicit packages such as
       # Microsoft.NET.ILLink.Tasks are pinned by the lock files, and a newer SDK patch changes

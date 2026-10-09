@@ -12,8 +12,23 @@
     Terminal.Emulation supply-chain call among them — and a 1.0 is a promise about compatibility
     that this project has not earned yet.
   -->
+  <!--
+    The version comes from the git tag, not from this file.
+
+    It was written here by hand, which meant every release was two facts that had to agree: a
+    number in source control and a tag next to it. They agreed by discipline, and discipline is
+    the thing that fails at 2 a.m. MinVer reads the nearest `v*` tag and derives the rest, so
+    `v0.7.9` *is* 0.7.9 and there is nothing to forget to bump.
+
+    A commit that is not tagged gets the next patch with a prerelease suffix and the height, e.g.
+    `0.7.9-alpha.0.3`. That is deliberate: a build from an untagged commit is not a release and
+    should not claim to be one, and the updater already treats prereleases as a separate channel.
+
+    Requires the tags to be present, so every CI checkout fetches them (`fetch-depth: 0`). A
+    shallow clone silently produces 0.0.0-alpha.0, which is the one way this can go wrong quietly.
+  -->
   <PropertyGroup>
-    <Version>0.7.8</Version>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
     <Product>WinMux</Product>
     <Company>WinMux</Company>
     <Authors>WinMux contributors</Authors>
@@ -38,5 +53,10 @@
   <PropertyGroup>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Build-time only: it sets the version properties and ships nothing. -->
+    <PackageReference Include="MinVer" Version="8.0.0" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
+  </ItemGroup>
 
 </Project>

@@ -42,6 +42,12 @@
         "resolved": "54.2.1",
         "contentHash": "Rv7MWPUR8orjoSHoDgH2Yp8JC7on6T4dh6+l76lvplu8p4nGmI+tl97hsiERy06HqigxCdhAccuZAv978d7aeQ=="
       },
+      "MinVer": {
+        "type": "Direct",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "AJy/KVjXgUbgjf6HiI8wAk4DSSq0SCmvXQF8aU6IB+pnIQq+YJvofvMczug2hqO8yEvnQY557ryew66KPpyCsA=="
+      },
       "SSH.NET": {
         "type": "Direct",
         "requested": "[2026.0.0, )",
@@ -280,13 +286,13 @@
         "type": "Project",
         "dependencies": {
           "Avalonia": "[12.1.2, )",
-          "WinMux.Core": "[0.7.7, )"
+          "WinMux.Core": "[1.0.0, )"
         }
       },
       "winmux.platform": {
         "type": "Project",
         "dependencies": {
-          "WinMux.Core": "[0.7.7, )"
+          "WinMux.Core": "[1.0.0, )"
         }
       },
       "winmux.platform.win32": {
@@ -294,9 +300,9 @@
         "dependencies": {
           "System.Drawing.Common": "[9.0.0, )",
           "System.Security.Cryptography.ProtectedData": "[9.0.0, )",
-          "WinMux.Connections": "[0.7.7, )",
-          "WinMux.Core": "[0.7.7, )",
-          "WinMux.Platform": "[0.7.7, )"
+          "WinMux.Connections": "[1.0.0, )",
+          "WinMux.Core": "[1.0.0, )",
+          "WinMux.Platform": "[1.0.0, )"
         }
       },
       "winmux.pty": {

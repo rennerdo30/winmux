@@ -35,6 +35,12 @@ selection and drop the highlight, or paste when nothing is selected. It did noth
 `TerminalQuickEdit` holds the rule; the wiring has its own test, checked by putting the early
 return back.
 
+**Versioning now comes from git** (MinVer, `v` tag prefix). Nothing hand-writes a version:
+`Directory.Build.props` has no `<Version>`, and `publish.ps1` and `build-installer.ps1` ask MSBuild
+with `-t:MinVer` — without that target the answer is the 1.0.0 MSBuild invents before targets run.
+CI checkouts use `fetch-depth: 0`, because a shallow clone has no tags and silently builds
+0.0.0-alpha.0.
+
 ## The next action
 
 Install v0.7.8 from its setup program on a clean machine (or after uninstalling an unzipped copy)
