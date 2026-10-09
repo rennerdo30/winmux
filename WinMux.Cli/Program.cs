@@ -40,6 +40,8 @@ internal static class Program
                 "previous-tab" or "prev-tab" => InvokeNamedAction("previous-tab"),
                 "save" or "save-session" => InvokeNamedAction("save-session"),
                 "palette" => InvokeNamedAction("show-palette"),
+                "about" => InvokeNamedAction("show-about"),
+                "update" => InvokeNamedAction("install-update"),
                 "help" or "--help" or "-h" or "/?" => Help(),
                 _ => Unknown(command),
             };
@@ -246,6 +248,8 @@ internal static class Program
               wmux close-pane         close the focused pane
               wmux save-session       write the running session
               wmux palette            open the command palette
+              wmux about              show the version, licence and update status
+              wmux update             check for an update and download it; restart from About
               wmux action NAME        invoke any registered action by its stable name
               wmux help
 

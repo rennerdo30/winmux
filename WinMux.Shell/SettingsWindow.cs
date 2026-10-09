@@ -245,7 +245,8 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(SettingsCard.Heading("About"));
         body.Children.Add(SettingsCard.Info(
             "Version",
-            typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "unknown"));
+            // The product version, suffix included; the assembly version drops "-test.8".
+            Update.UpdateService.Current.ToString()));
 
         var save = new Button { Content = "Save", IsDefault = true, Classes = { Chrome.Theme.DialogButton } };
         save.Click += (_, _) =>

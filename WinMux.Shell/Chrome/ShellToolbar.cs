@@ -122,7 +122,8 @@ internal static class ShellToolbar
     }
 
     /// <summary>
-    /// Help: the documentation, the release notes, and a way to ask for an update.
+    /// Help: the documentation, the release notes, and About — which is where updates are, as in
+    /// every other desktop application, rather than two loose commands at the bottom of this menu.
     ///
     /// A question mark rather than a hamburger, and a menu rather than a button, because these are
     /// the things a person looks for by category rather than by name — and because anything longer
@@ -142,8 +143,7 @@ internal static class ShellToolbar
                 Leaf("Release notes", () => Update.Links.Open(Update.Links.Releases)),
                 Leaf("Report an issue", () => Update.Links.Open(Update.Links.Issues)),
                 new Separator(),
-                Leaf("Check for updates", () => dispatch(ShellActionNames.CheckForUpdates)),
-                Leaf("Install update…", () => dispatch(ShellActionNames.InstallUpdate)),
+                Leaf("About WinMux", () => dispatch(ShellActionNames.ShowAbout)),
             },
         };
 

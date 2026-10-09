@@ -8,6 +8,11 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 WinMux checks GitHub for a newer release a few seconds after it starts, and tells you if it finds
 one. **Nothing is downloaded or installed without being asked.**
 
+Updates live where they do in every other application: **Help → About WinMux**. Opening it checks;
+if there is a newer release it offers **Download and install**, shows the progress, and then
+**Restart WinMux** to finish. You can close the window while it downloads — the download carries
+on, and the status bar says when it is ready.
+
 ## What happens
 
 ```mermaid
@@ -16,13 +21,14 @@ graph LR
     B --> C{Newer than<br/>this build?}
     C -->|No| D[Say nothing]
     C -->|Yes| E[Offer it in the status bar]
-    E --> F{You say<br/>install}
+    E --> F{You say<br/>download}
     F -->|No| D
     F -->|Yes| G[Download the zip]
     G --> H[Check SHA-256<br/>against checksums.txt]
     H -->|Mismatch| I[Discard, and say so]
     H -->|Match| J[Unpack into your profile]
-    J --> K[Save the session]
+    J --> R{You say<br/>restart}
+    R --> K[Save the session]
     K --> L[Replace files and relaunch]
 ```
 
@@ -49,6 +55,10 @@ same session, and says in the status bar whether the update went in. Every step 
 If you have edited `foreign-app-quirks.json`, your copy is kept beside the new one as
 `foreign-app-quirks.json.before-update`.
 
+If WinMux was installed with the setup program, the version listed in **Installed apps** is updated
+too. If it runs from a folder it cannot write to — a zip unpacked under Program Files — it says so
+before downloading anything, rather than failing after a restart.
+
 <Aside type="caution" title="Updating from 0.7.3 or earlier">
 The updater in those versions could fail to install and not restart. Install 0.7.4 once by hand —
 download the zip from the releases page and unpack it over your WinMux folder with WinMux closed.
@@ -62,17 +72,18 @@ started again, not resumed.
 
 **Settings → Updates**:
 
-- **Check for updates on start** — on by default. Turning it off stops all network access.
+- **Check for updates on start** — on by default. Turning it off stops all network access: About
+  then says checks are off and offers a **Check for updates** button instead of checking by itself.
 - **Releases to offer** — *Stable only* by default. *Stable and prereleases* also offers tagged
   builds that have not been declared stable.
 
 A prerelease never appears on the stable channel, whether it is marked prerelease on GitHub or
 merely carries a suffix in its tag — either signal alone is routinely wrong, so both count.
 
-<Aside type="tip" title="Doing it by hand">
-**Help → Check for updates** asks now. **Help → Install update…** downloads and installs the one
-that was found. **Help → Release notes** opens the releases page, which is also just
-`https://github.com/rennerdo30/winmux/releases`.
+<Aside type="tip" title="From the keyboard or a script">
+`check-for-updates` and `install-update` are in the command palette, and `wmux about` and
+`wmux update` reach the same window from a terminal. **Help → Release notes** opens the releases
+page, which is also just `https://github.com/rennerdo30/winmux/releases`.
 </Aside>
 
 ## Offline
@@ -83,8 +94,11 @@ carries on working exactly as before — nothing about the application depends o
 ## For maintainers
 
 Releases are built by `.github/workflows/release.yml` on a `v*` tag. It builds, runs the tests,
-packages with `scripts/publish.ps1`, writes `checksums.txt`, and publishes both. A tag containing a
-dash is published as a prerelease automatically.
+packages with `scripts/publish.ps1`, builds the setup program with `scripts/build-installer.ps1`
+(a pinned, signature-checked Inno Setup), installs and uninstalls it with
+`scripts/test-installer.ps1`, writes `checksums.txt` for the zip and the setup program, and
+publishes all three. A tag containing a dash is published as a prerelease automatically. The
+reasoning is in [ADR 0030](/adr/0030-installer-and-about-window/).
 
 ```powershell
 git tag v0.7.0

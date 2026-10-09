@@ -7,6 +7,40 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## Unreleased
+
+### Added
+
+- **A setup program.** Every release now carries `WinMux-<version>-win-x64-setup.exe` beside the zip.
+  It installs for your account only, into `%LOCALAPPDATA%\Programs\WinMux`, with no administrator
+  prompt — so WinMux can keep updating itself there — and offers the .NET 10 Desktop Runtime download
+  if it is missing. Uninstalling removes the program folder and keeps your sessions and settings.
+  CI builds it with a pinned, signature-checked Inno Setup 7.1.0, then installs and uninstalls it to
+  prove it works ([ADR 0030](docs/adr/0030-installer-and-about-window.md)).
+- **Help → About WinMux.** The version, copyright, licence and third-party notices, links to the
+  documentation, releases, source and issue tracker — and updates, the way browsers do them: opening
+  it checks, **Download and install** downloads and verifies with a progress bar, and **Restart
+  WinMux** finishes. The download carries on if you close the window. `wmux about` and `wmux update`
+  open it from a terminal.
+
+### Changed
+
+- **"Check for updates" and "Install update…" are gone from the Help menu**; About replaces them.
+  Both remain in the command palette, and both open About.
+- **The startup offer's button is "Download"** and continues in About, where the restart is.
+
+### Fixed
+
+- **A test build was never offered the next test build.** The running version was read from the
+  assembly version, which drops `-test.8`; WinMux believed it was `0.7.8`, and every `0.7.8-test.N`
+  sorts before that.
+- **"Check for updates" said "up to date" without checking** whenever automatic checks were turned
+  off. A check you ask for now always asks GitHub.
+- **A copy WinMux cannot write to is told so before anything downloads**, instead of failing the
+  update after a restart. And an update applied in place now updates the version Windows lists for
+  an installed WinMux.
+- **Unpacking a downloaded update no longer freezes the window** for a second.
+
 ## 0.7.8-test.5 — 2026-09-24
 
 A **test build**, published as a prerelease.

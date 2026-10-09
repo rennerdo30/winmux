@@ -113,6 +113,7 @@ WinMux.Cli/              `wmux` — the command line surface (section 6)        
 WinMux.Tests/                                                                                        [EXISTS]
 assets/                  winmux.svg (the source of the mark) and the .ico built from it        [EXISTS]
 samples/                 WinMux.SampleProvider: a pane kind loaded from outside the app      [EXISTS]
+installer/               WinMux.iss: the per-user Inno Setup program (ADR 0030)               [EXISTS]
 docs/adr/                one short file per architectural decision
 ```
 
@@ -267,6 +268,12 @@ part worth hand-editing. Paths are written as TOML literal strings so backslashe
 **The default session is `%APPDATA%\WinMux\session.toml`**, beside the settings, never a path
 relative to the working directory ([ADR 0023](docs/adr/0023-session-location-and-in-place-updates.md)).
 Relative, it followed a double-click into the installation, where the updater deleted it.
+
+**WinMux installs per-user and updates in place, so its folder must stay user-writable**
+([ADR 0030](docs/adr/0030-installer-and-about-window.md)). The setup program never offers a
+machine-wide install, and the zip remains the update package. The installer's `AppId` GUID is shared
+with `UpdateInstaller.InstallerAppId`; never change either. Updating lives in the About window,
+driven by one `UpdateController` that every surface shares.
 
 Implemented in `WinMux.Core/Session`: `SessionFile.Save`/`Load` is the whole surface. Saving is
 atomic; loading an unreadable file quarantines a copy and refuses rather than starting empty.

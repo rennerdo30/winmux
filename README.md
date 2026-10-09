@@ -173,7 +173,11 @@ controls while it is running. A forwarding timeout reports an error and never st
 ```powershell
 .\publish.cmd                  # -> dist\WinMux-<version>-win-x64\ and a .zip
 .\publish.cmd -SelfContained   # also carries the .NET runtime
+.\scripts\build-installer.ps1  # -> dist\WinMux-<version>-win-x64-setup.exe (needs Inno Setup 7)
 ```
+
+Releases carry a per-user setup program as well as the zip; **Help → About WinMux** shows the
+version and installs updates ([ADR 0030](docs/adr/0030-installer-and-about-window.md)).
 
 To see the product phases rather than only run unit tests, use the visible walkthroughs:
 

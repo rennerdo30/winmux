@@ -81,7 +81,8 @@ internal sealed class UpdateInstaller(GitHubReleases releases)
             }
 
             if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
-            ZipFile.ExtractToDirectory(archive, staging);
+            // Off the UI thread: unpacking forty-odd megabytes froze the window for a second.
+            await Task.Run(() => ZipFile.ExtractToDirectory(archive, staging), cancellationToken);
 
             // The archive contains what publish.ps1 packaged; if WinMux.exe is not in it, the swap
             // would leave an installation with no application in it. And *is* the application: the
@@ -157,6 +158,38 @@ internal sealed class UpdateInstaller(GitHubReleases releases)
         }
     }
 
+    /// <summary>
+    /// The installer's <c>AppId</c> (installer/WinMux.iss). Windows lists an installed WinMux under
+    /// <c>HKCU\…\Uninstall\{AppId}_is1</c>, and the swap script updates the version shown there,
+    /// or "Installed apps" would go on naming whatever the installer put down months ago.
+    /// </summary>
+    internal const string InstallerAppId = "8D6AF144-4CE1-44AA-83DD-DBA38FEF9DA8";
+
+    /// <summary>
+    /// Why WinMux cannot update the folder it runs from, or null when it can.
+    ///
+    /// Asked before anything is downloaded. The swap script would otherwise find out file by file,
+    /// roll back and report a failure after a restart — correct, but a slow and alarming way to
+    /// learn that WinMux was unzipped into Program Files.
+    /// </summary>
+    internal static string? InstallDirectoryProblem(string? directory = null)
+    {
+        directory ??= AppContext.BaseDirectory;
+        var probe = Path.Combine(directory, $".winmux-write-test-{Environment.ProcessId}");
+        try
+        {
+            File.WriteAllText(probe, string.Empty);
+            File.Delete(probe);
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return $"WinMux cannot write to the folder it runs from ({directory.TrimEnd(Path.DirectorySeparatorChar)}), " +
+                   "so it cannot update itself there. Install it with the setup program from the releases page, " +
+                   "which puts it in your own profile, or move the folder somewhere you can write to.";
+        }
+    }
+
     /// <summary>Everything an update did, in order. Kept small; see the script.</summary>
     public static string LogPath => Path.Combine(DataDirectory, "update.log");
 
@@ -217,8 +250,11 @@ internal sealed class UpdateInstaller(GitHubReleases releases)
         string logPath,
         string resultPath,
         bool relaunch,
-        int attempts = 40)
+        int attempts = 40,
+        string? installedAppKey = null)
     {
+        installedAppKey ??= @"HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{" + InstallerAppId + "}_is1";
+
         // $$ so a single brace is literal: the script is full of PowerShell blocks, and {{ }} is
         // what interpolates.
         return $$"""
@@ -233,6 +269,7 @@ internal sealed class UpdateInstaller(GitHubReleases releases)
             $result    = {{Quote(resultPath)}}
             $relaunch  = ${{(relaunch ? "true" : "false")}}
             $attempts  = {{attempts}}
+            $appKey    = {{Quote(installedAppKey)}}
 
             function Log([string]$message) {
                 try {
@@ -312,6 +349,18 @@ internal sealed class UpdateInstaller(GitHubReleases releases)
                 Log "installed $($replaced.Count) replaced and $($added.Count) new file(s)"
                 Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue
                 Set-Content -LiteralPath $result -Value ("ok|" + $version)
+
+                # Installed with the setup program? Then say the new version in "Installed apps" —
+                # but only for this folder: a second copy elsewhere is not the installed one.
+                try {
+                    if (Test-Path -LiteralPath $appKey) {
+                        $location = (Get-ItemProperty -LiteralPath $appKey).InstallLocation
+                        if ($location -and ($location.TrimEnd('\') -ieq $current.TrimEnd('\'))) {
+                            Set-ItemProperty -LiteralPath $appKey -Name DisplayVersion -Value $version
+                            Log "recorded $version as the installed version"
+                        }
+                    }
+                } catch { Log ("could not record the installed version: " + $_.Exception.Message) }
             }
 
             # Always start WinMux again — the new version, or the old one put back — on the same

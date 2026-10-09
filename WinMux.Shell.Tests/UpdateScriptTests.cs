@@ -34,8 +34,17 @@ public sealed class UpdateScriptTests : IDisposable
         Write(Staged, "only-in-new.dll", "new file");
     }
 
+    /// <summary>A scratch registry key standing in for the installer's "Installed apps" entry.</summary>
+    private readonly string _appKey = @"Software\WinMux.Tests\" + Guid.NewGuid().ToString("N");
+
     public void Dispose()
     {
+        Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(_appKey, throwOnMissingSubKey: false);
+        using (var parent = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\WinMux.Tests"))
+        {
+            if (parent is { SubKeyCount: 0, ValueCount: 0 })
+                Microsoft.Win32.Registry.CurrentUser.DeleteSubKey(@"Software\WinMux.Tests", throwOnMissingSubKey: false);
+        }
         try { Directory.Delete(_root, recursive: true); }
         catch (IOException) { }
     }
@@ -97,6 +106,48 @@ public sealed class UpdateScriptTests : IDisposable
         Assert.False(UpdateInstaller.IsWindowsApplication(Path.Combine(Current, "WinMux.exe")), "a text file is not a program");
     }
 
+    [Fact]
+    public void An_installed_copy_reports_its_new_version_to_Windows()
+    {
+        using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(_appKey))
+        {
+            key.SetValue("InstallLocation", Current + Path.DirectorySeparatorChar);
+            key.SetValue("DisplayVersion", "0.7.0");
+        }
+
+        Run(attempts: 40);
+
+        using var after = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(_appKey)!;
+        Assert.Equal("0.9.9", after.GetValue("DisplayVersion"));
+    }
+
+    [Fact]
+    public void Another_copy_does_not_claim_to_be_the_installed_one()
+    {
+        // The control case for the test above: an unzipped copy elsewhere updates itself, and the
+        // installed WinMux is still the version the installer put down.
+        using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(_appKey))
+        {
+            key.SetValue("InstallLocation", Path.Combine(_root, "Programs", "WinMux"));
+            key.SetValue("DisplayVersion", "0.7.0");
+        }
+
+        Run(attempts: 40);
+
+        Assert.Equal("ok|0.9.9", File.ReadAllText(Result).Trim());
+        using var after = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(_appKey)!;
+        Assert.Equal("0.7.0", after.GetValue("DisplayVersion"));
+    }
+
+    [Fact]
+    public void A_folder_that_cannot_be_written_is_refused_before_anything_downloads()
+    {
+        Assert.Null(UpdateInstaller.InstallDirectoryProblem(Current));
+
+        var missing = Path.Combine(_root, "does-not-exist");
+        Assert.Contains("cannot write", UpdateInstaller.InstallDirectoryProblem(missing));
+    }
+
     private void Run(int attempts)
     {
         // A process id that has certainly exited, so the script does not wait.
@@ -106,7 +157,7 @@ public sealed class UpdateScriptTests : IDisposable
         var script = Path.Combine(_root, "update.ps1");
         File.WriteAllText(script, UpdateInstaller.BuildScript(
             finished.Id, Current, Staged, Path.Combine(_root, "session.toml"), "0.9.9", Log, Result,
-            relaunch: false, attempts: attempts));
+            relaunch: false, attempts: attempts, installedAppKey: @"HKCU:\" + _appKey));
 
         using var powershell = Process.Start(new ProcessStartInfo("powershell.exe")
         {

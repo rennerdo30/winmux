@@ -1,4 +1,3 @@
-using WinMux.Core.Settings;
 using WinMux.Core.Update;
 
 namespace WinMux.Shell.Update;
@@ -13,6 +12,7 @@ internal static class Links
     public const string Documentation = $"https://{Owner}.github.io/{Repository}/";
     public const string Releases = $"{Repo}/releases";
     public const string Issues = $"{Repo}/issues";
+    public const string Licence = $"{Repo}/blob/main/LICENSE";
 
     /// <summary>
     /// Open a URL in whatever the user uses for URLs.
@@ -47,25 +47,49 @@ internal static class Links
 /// </summary>
 internal static class UpdateService
 {
-    /// <summary>The running version, from the assembly the shell was built as.</summary>
-    public static ReleaseVersion Current { get; } =
-        ReleaseVersion.TryParse(
-            typeof(UpdateService).Assembly.GetName().Version?.ToString(3), out var version)
-            ? version
-            : new ReleaseVersion(0, 0, 0, "");
+    /// <summary>
+    /// The running version, including any prerelease suffix.
+    ///
+    /// <para>
+    /// It used to come from the assembly version, which has four numbers and nowhere to put
+    /// <c>-test.8</c>. A test build therefore believed it was <c>0.7.8</c>, and since SemVer puts
+    /// every <c>0.7.8-…</c> prerelease <em>before</em> <c>0.7.8</c>, no later test build was ever
+    /// newer than it: the updater on the prerelease channel never offered anything.
+    /// </para>
+    /// </summary>
+    public static ReleaseVersion Current { get; } = RunningVersion(
+        typeof(UpdateService).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion,
+        typeof(UpdateService).Assembly.GetName().Version);
 
+    /// <summary>
+    /// The product version as built: the informational version, which carries the suffix (and
+    /// build metadata after <c>+</c>, which ordering ignores), else the assembly version.
+    /// </summary>
+    internal static ReleaseVersion RunningVersion(string? informational, Version? assembly)
+    {
+        if (ReleaseVersion.TryParse(informational, out var full)) return full;
+        return ReleaseVersion.TryParse(assembly?.ToString(3), out var numbers)
+            ? numbers
+            : new ReleaseVersion(0, 0, 0, "");
+    }
+
+    /// <summary>
+    /// Ask GitHub what is published. Always goes to the network: whether to check <em>on start</em>
+    /// is the caller's decision, and a check the user asked for by hand must never answer "up to
+    /// date" merely because automatic checks are off — which is what it used to do.
+    /// </summary>
     public static async Task<UpdateDecision> CheckAsync(
-        WinMuxSettings settings,
+        UpdateChannel channel,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(settings);
-        if (!settings.CheckForUpdates) return UpdateDecision.UpToDate;
-
         using var http = GitHubReleases.CreateClient();
         var releases = await new GitHubReleases(http, Links.Owner, Links.Repository)
             .ListAsync(cancellationToken);
 
-        return UpdateCheck.Decide(releases, Current, settings.UpdateChannel);
+        return UpdateCheck.Decide(releases, Current, channel);
     }
 
     /// <summary>Download and verify an update, leaving it staged for the next restart.</summary>
@@ -74,6 +98,9 @@ internal static class UpdateService
         IProgress<double>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        if (UpdateInstaller.InstallDirectoryProblem() is { } problem)
+            return new UpdateStageResult(false, null, problem);
+
         using var http = GitHubReleases.CreateClient();
         var installer = new UpdateInstaller(new GitHubReleases(http, Links.Owner, Links.Repository));
         return await installer.StageAsync(decision, progress, cancellationToken);

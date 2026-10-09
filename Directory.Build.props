@@ -17,7 +17,7 @@
     <Product>WinMux</Product>
     <Company>WinMux</Company>
     <Authors>WinMux contributors</Authors>
-    <Copyright>Copyright (c) WinMux contributors</Copyright>
+    <Copyright>Copyright (c) 2026 rennerdo30 and WinMux contributors</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/rennerdo30/winmux</RepositoryUrl>
   </PropertyGroup>

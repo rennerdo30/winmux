@@ -49,8 +49,23 @@ jobs:
       - name: Package
         run: pwsh -File scripts/publish.ps1
 
+      # The setup program: per-user, so the in-app updater can replace its files (ADR 0030). The
+      # compiler is a pinned Inno Setup, checked against its hash and signature before it runs.
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = ./scripts/install-inno-setup.ps1 -Destination "$env:RUNNER_TEMP\inno"
+          ./scripts/build-installer.ps1 -Iscc $iscc
+
+      # Compiling is not installing. Install it silently, check what it did, uninstall it.
+      - name: Test installer
+        shell: pwsh
+        run: ./scripts/test-installer.ps1 -Setup (Get-ChildItem dist/*-setup.exe | Select-Object -First 1).FullName
+
       - uses: actions/upload-artifact@v5
         with:
           name: winmux-win-x64
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*-setup.exe
           if-no-files-found: error

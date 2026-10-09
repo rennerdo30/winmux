@@ -119,7 +119,17 @@ internal sealed partial class MainWindow : Window
     /// </summary>
     private CommandPaletteWindow? _palette;
     private IDisposable? _foregroundWatch;
-    private UpdateDecision? _pendingUpdate;
+
+    /// <summary>
+    /// The one update, shared by the About window, the startup check and the palette actions, so
+    /// that a download started anywhere is seen everywhere.
+    /// </summary>
+    private readonly UpdateController _updates = new(
+        cancellationToken => UpdateService.CheckAsync(Settings.ShellSettings.Current.UpdateChannel, cancellationToken),
+        (decision, progress, cancellationToken) => UpdateService.StageAsync(decision, progress, cancellationToken));
+
+    /// <summary>The About window, when it is open. One at a time.</summary>
+    private AboutWindow? _about;
 
     /// <summary>The open-windows tray, when it is up. One, like the palette and the find bar.</summary>
     private WindowPickerWindow? _windowTray;
@@ -266,6 +276,8 @@ internal sealed partial class MainWindow : Window
         PlatformServices.Foreground.Changed += OnForegroundWindowChanged;
         Opened += (_, _) => _foregroundWatch ??= PlatformServices.Foreground.Start();
 
+        _updates.Changed += OnUpdateChanged;
+
         // A quiet check a few seconds after the window is up: late enough not to compete with
         // starting panes, and silent unless it actually finds something.
         Opened += (_, _) =>
@@ -274,7 +286,7 @@ internal sealed partial class MainWindow : Window
             timer.Tick += (_, _) =>
             {
                 timer.Stop();
-                Run(CheckForUpdatesAsync(announceWhenCurrent: false));
+                Run(CheckOnStartAsync());
             };
             timer.Start();
         };
@@ -1082,14 +1094,19 @@ internal sealed partial class MainWindow : Window
         _actions.Register(ShellActionNames.ShowPalette, ShowPalette);
         _actions.Register(ShellActionNames.FindInPane, ShowSearch);
         _actions.Register(ShellActionNames.ShowOpenWindows, ShowWindowTray);
+        _actions.Register(ShellActionNames.ShowAbout, () => ShowAbout());
         _actions.Register(ShellActionNames.CheckForUpdates, () =>
         {
-            // Asked for by name, so anything declined earlier is offered again: a check that
-            // answers with silence because of an hour-old decision is a check that did nothing.
-            _updateOffer.Reset();
-            Run(CheckForUpdatesAsync(announceWhenCurrent: true));
+            // Asked for by name, so it goes to the network even with automatic checks off, and
+            // shows its answer where updates live rather than as a line in the status bar.
+            ShowAbout();
+            Run(_updates.CheckAsync(_shutdown.Token));
         });
-        _actions.Register(ShellActionNames.InstallUpdate, () => Run(InstallUpdateAsync()));
+        _actions.Register(ShellActionNames.InstallUpdate, () =>
+        {
+            ShowAbout();
+            Run(DownloadUpdateAsync());
+        });
         _actions.Register(ShellActionNames.OpenDocumentation, OpenDocumentation);
         _actions.Register(ShellActionNames.MoveTabEarlier, () => MoveTab(-1));
         _actions.Register(ShellActionNames.MoveTabLater, () => MoveTab(1));
@@ -1284,60 +1301,61 @@ internal sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Download the offered update, verify it, and restart into it — after asking.
-    ///
-    /// Restarting closes every pane, so this asks first and says so plainly. The session is written
-    /// before anything else happens, because the whole point of WinMux is that the layout survives;
-    /// an update that lost it would be the worst possible advertisement for the feature.
+    /// Open the About window, or bring it forward. It checks for updates as it opens, the way a
+    /// browser's does, unless automatic checks are off.
     /// </summary>
-    /// <param name="alreadyConfirmed">
-    /// The user has just said yes to this exact version in the offer. Not a field, because a field
-    /// would outlive the dialog: someone who declines the offer and reaches for "Install update"
-    /// an hour later must still be asked.
-    /// </param>
-    private async Task InstallUpdateAsync(bool alreadyConfirmed = false)
+    private AboutWindow ShowAbout()
     {
-        if (_pendingUpdate is not { Release: { } release } decision)
+        if (_about is { } open)
         {
-            await CheckForUpdatesAsync(announceWhenCurrent: true);
-            if (_pendingUpdate is null) return;
-            decision = _pendingUpdate;
-            release = decision.Release!;
+            open.Activate();
+            return open;
         }
 
-        // Already agreed to in the offer, when that is where this came from. Asking the same
-        // question twice in a row teaches people to click through both.
-        var confirmed = alreadyConfirmed || await NoticeWindow.ConfirmAsync(
-            this,
-            $"Install WinMux {release.Version}?",
-            "WinMux will download the release, check it against its published checksum, and restart. " +
-            "Your session is saved first and restored afterwards, but programs running in panes are " +
-            "closed and started again — the same as any restart.",
-            "Download and restart",
-            "Not now");
+        var about = new AboutWindow(
+            _updates,
+            () => Settings.ShellSettings.Current.CheckForUpdates,
+            RestartIntoUpdate);
+        about.Closed += (_, _) => _about = null;
+        _about = about;
+        about.Show(this);
+        return about;
+    }
 
-        if (!confirmed) return;
+    /// <summary>
+    /// Find the update if it is not known yet, then download and verify it. Installing waits for
+    /// the restart button: downloading is harmless, restarting closes every program in a pane.
+    /// </summary>
+    private async Task DownloadUpdateAsync()
+    {
+        if (_updates.State == UpdateState.ReadyToRestart) return;
+        if (_updates.State != UpdateState.Available) await _updates.CheckAsync(_shutdown.Token);
+        if (_updates.State == UpdateState.Available) await _updates.DownloadAsync(_shutdown.Token);
+    }
 
-        ShowMessage($"downloading WinMux {release.Version}…");
-        var staged = await UpdateService.StageAsync(decision, cancellationToken: _shutdown.Token);
-        if (!staged.Succeeded || staged.StagedDirectory is null)
-        {
-            ShowMessage(staged.Message, StatusMessageKind.Error);
+    /// <summary>
+    /// Put the downloaded update in place: save the session, hand the files to the swap script,
+    /// and close so that it can run. The script starts WinMux again either way.
+    ///
+    /// No further question. The button says "Restart WinMux" beneath a line saying programs in panes
+    /// are closed and started again; asking a second time teaches people to click through both.
+    /// </summary>
+    private void RestartIntoUpdate()
+    {
+        if (_updates is not { State: UpdateState.ReadyToRestart, StagedDirectory: { } staged, Release: { } release })
             return;
-        }
 
-        // Persistence is priority 1; do it before handing control to a script that will kill us.
+        // Persistence is priority 1; do it before handing control to a script that will end us.
         _session.SaveNow();
 
-        if (!UpdateInstaller.LaunchSwapAndExit(staged.StagedDirectory, _session.SessionPath, release.Version.ToString()))
+        if (!UpdateInstaller.LaunchSwapAndExit(staged, _session.SessionPath, release.Version.ToString()))
         {
-            ShowMessage("the update is downloaded but could not be started", StatusMessageKind.Error);
+            ShowMessage("the update is downloaded but the installer could not be started", StatusMessageKind.Error);
             return;
         }
 
-        // The user already agreed to "Download and restart", which says programs in panes close.
-        // Asking again here could leave WinMux open under the installer, which then must wait.
         _closingForUpdate = true;
+        _about?.Close();
         Close();
     }
 
@@ -1348,29 +1366,31 @@ internal sealed partial class MainWindow : Window
     /// It was a line in the status bar reading "Ctrl+Shift+P then : and \"Install update\"", six seconds
     /// after startup, while the user is looking at their panes. Reported as the update check not
     /// returning an "update available" window — and it never had: the check works, and always did,
-    /// but the only thing it produced was a sentence nobody was looking at and an instruction
-    /// nobody should have to follow to accept an update they have already been offered.
+    /// but the only thing it produced was a sentence nobody was looking at.
     /// </para>
     ///
     /// <para>
     /// Once per version per run. An application that asks again every time it checks is one people
-    /// learn to dismiss without reading, which is the same as not asking.
+    /// learn to dismiss without reading, which is the same as not asking. Accepting opens the About
+    /// window and starts the download there, where its progress and the restart button are.
     /// </para>
     /// </summary>
     private async Task OfferUpdateAsync(ReleaseVersion version)
     {
-        if (!_updateOffer.ShouldOffer(version)) return;
+        if (_about is not null || !_updateOffer.ShouldOffer(version)) return;
 
         var take = await NoticeWindow.ConfirmAsync(
             this,
             $"WinMux {version} is available",
-            $"You are running {UpdateService.Current}. Installing downloads the release, checks it " +
-            "against its published checksum and restarts — your session is saved first and restored " +
-            "afterwards, but programs running in panes are closed and started again.",
-            "Install now",
+            $"You are running {UpdateService.Current}. WinMux downloads the release and checks it " +
+            "against its published checksum; you choose when to restart. Your layout is saved and " +
+            "restored, but programs running in panes are closed and started again.",
+            "Download",
             "Not now");
 
-        if (take) await InstallUpdateAsync(alreadyConfirmed: true);
+        if (!take) return;
+        ShowAbout();
+        await _updates.DownloadAsync(_shutdown.Token);
     }
 
     /// <summary>So the offer is made once per version rather than on every check.</summary>
@@ -1384,42 +1404,42 @@ internal sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Look for a newer release, and offer it.
-    ///
-    /// Checking is automatic; installing never is. The check is quiet when it finds nothing unless
-    /// the user asked for it by name — an application that announces "you are up to date" on every
-    /// launch is an application people learn to ignore.
+    /// The quiet check a few seconds after start. Silent unless it finds something — an application
+    /// that announces "you are up to date" on every launch is one people learn to ignore — and
+    /// absent entirely when automatic checks are off.
     /// </summary>
-    private async Task CheckForUpdatesAsync(bool announceWhenCurrent)
+    private async Task CheckOnStartAsync()
     {
-        try
+        if (!Settings.ShellSettings.Current.CheckForUpdates) return;
+
+        await _updates.CheckAsync(_shutdown.Token);
+        switch (_updates.State)
         {
-            var decision = await UpdateService.CheckAsync(Settings.ShellSettings.Current, _shutdown.Token);
-            _pendingUpdate = decision.Outcome == UpdateOutcome.UpdateAvailable ? decision : null;
+            case UpdateState.Available when _updates.Release is { } release:
+                ShowMessage($"WinMux {release.Version} is available — Help → About WinMux");
+                await OfferUpdateAsync(release.Version);
+                break;
 
-            switch (decision.Outcome)
-            {
-                case UpdateOutcome.UpdateAvailable when decision.Release is { } release:
-                    ShowMessage($"WinMux {release.Version} is available");
-                    await OfferUpdateAsync(release.Version);
-                    break;
-
-                case UpdateOutcome.UpdateNotInstallable when decision.Release is { } unavailable:
-                    ShowMessage(
-                        $"WinMux {unavailable.Version} is published but has no build for this machine",
-                        StatusMessageKind.Error);
-                    break;
-
-                default:
-                    if (announceWhenCurrent) ShowMessage("WinMux is up to date");
-                    break;
-            }
+            case UpdateState.NotInstallable when _updates.Release is { } unavailable:
+                ShowMessage(
+                    $"WinMux {unavailable.Version} is published but has no build for this machine",
+                    StatusMessageKind.Error);
+                break;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
-        {
-            // A failed check is a fact, not a failure: the product works offline.
-            if (announceWhenCurrent) ShowMessage("could not check for updates: " + ex.Message, StatusMessageKind.Error);
-        }
+    }
+
+    /// <summary>
+    /// A download that finishes or fails while the About window is closed still has to be heard
+    /// about, or "you can close this window; the download carries on" would be a way to lose it.
+    /// </summary>
+    private void OnUpdateChanged()
+    {
+        if (_about is not null || _closingForUpdate) return;
+
+        if (_updates is { State: UpdateState.ReadyToRestart, Release: { } release })
+            ShowMessage($"WinMux {release.Version} is downloaded — Help → About WinMux to restart into it");
+        else if (_updates is { State: UpdateState.Failed, Decision.Outcome: UpdateOutcome.UpdateAvailable })
+            ShowMessage("the update did not download: " + _updates.Error, StatusMessageKind.Error);
     }
 
     /// <summary>Reorder the focused tab within its strip.</summary>

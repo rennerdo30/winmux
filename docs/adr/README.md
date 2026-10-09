@@ -31,3 +31,4 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | [0027](0027-terminal-and-tab-interaction.md) | Terminal input, responsive tabs and close protection | accepted; native acceptance open |
 | [0028](0028-tab-width-and-terminal-key-ownership.md) | Resizable tabs, preserved names and terminal key ownership | accepted; native acceptance open |
 | [0029](0029-explorer-single-instance-launch.md) | Explorer folder launches and single-instance routing | accepted; native acceptance open |
+| [0030](0030-installer-and-about-window.md) | A per-user installer, and updating from About | accepted |

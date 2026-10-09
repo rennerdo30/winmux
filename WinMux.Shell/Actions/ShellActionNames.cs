@@ -48,6 +48,7 @@ public static class ShellActionNames
     public const string MoveTabEarlier = "move-tab-earlier";
     public const string MoveTabLater = "move-tab-later";
     public const string ShowOpenWindows = "show-open-windows";
+    public const string ShowAbout = "show-about";
     public const string CheckForUpdates = "check-for-updates";
     public const string InstallUpdate = "install-update";
     public const string OpenDocumentation = "open-documentation";
@@ -97,6 +98,7 @@ public static class ShellActionNames
         MoveTabEarlier,
         MoveTabLater,
         ShowOpenWindows,
+        ShowAbout,
         CheckForUpdates,
         InstallUpdate,
         OpenDocumentation,

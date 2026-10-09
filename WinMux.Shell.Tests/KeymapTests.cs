@@ -122,6 +122,8 @@ public class KeymapTests
         ShellActionNames.MoveTabsBottom,
         ShellActionNames.MoveTabsLeft,
         ShellActionNames.MoveTabsRight,
+        // Help → About WinMux, which is also where checking for and installing updates happens.
+        ShellActionNames.ShowAbout,
         ShellActionNames.CheckForUpdates,
         ShellActionNames.InstallUpdate,
         ShellActionNames.OpenDocumentation,

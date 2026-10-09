@@ -18,21 +18,30 @@ Windows Terminal and Visual Studio; installing it gives you the intended look.
 
 <Steps>
 
-1. Download the latest `WinMux-<version>-win-x64.zip` from the
+1. Download the latest `WinMux-<version>-win-x64-setup.exe` from the
    [releases page](https://github.com/rennerdo30/winmux/releases).
 
-2. Check it against `checksums.txt`, published with every release:
+2. Optionally, check it against `checksums.txt`, published with every release:
 
    ```powershell
-   (Get-FileHash -Algorithm SHA256 .\WinMux-0.7.7-win-x64.zip).Hash.ToLower()
+   (Get-FileHash -Algorithm SHA256 .\WinMux-0.7.8-win-x64-setup.exe).Hash.ToLower()
    ```
 
-3. Unzip it wherever you keep applications, and run `WinMux.exe`.
+3. Run it. It installs for your Windows account only, into `%LOCALAPPDATA%\Programs\WinMux`, and
+   asks for no administrator rights.
 
 </Steps>
 
-There is no installer and nothing is written outside the folder you unzip and your user profile.
-After the first launch, WinMux keeps itself current — see [Updates](/updates/).
+WinMux needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0); setup
+offers the download page if it is missing. After that, WinMux keeps itself current — see
+[Updates](/updates/). It is listed in **Settings → Apps → Installed apps**, and uninstalling it there
+removes the program folder but keeps your sessions and settings in `%APPDATA%\WinMux`.
+
+<Aside type="note" title="Prefer a folder you control?">
+Every release also carries `WinMux-<version>-win-x64.zip`. Unzip it anywhere **you can write to** and
+run `WinMux.exe` — the same program, and it updates itself the same way. Not under Program Files:
+WinMux replaces its own files when it updates, and it cannot do that there.
+</Aside>
 
 ## Building it yourself
 
