@@ -3,9 +3,9 @@
 ## Where we are
 
 Phases 0–5 complete; Phase 6 implemented with native acceptance still open. Source version:
-`0.7.8-test.8` ([published](https://github.com/rennerdo30/winmux/releases/tag/v0.7.8-test.8)),
-plus unreleased work: a per-user **setup program built by CI** and a **Help → About WinMux** window
-that checks, downloads and installs updates ([ADR 0030](docs/adr/0030-installer-and-about-window.md)).
+**`0.7.8`, the first stable release since 0.7.7**, tagged `v0.7.8`: the 0.7.8 test builds plus a
+per-user **setup program built by CI** and a **Help → About WinMux** window that checks, downloads
+and installs updates ([ADR 0030](docs/adr/0030-installer-and-about-window.md)).
 Explorer launches route into one process per user ([ADR 0029](docs/adr/0029-explorer-single-instance-launch.md)).
 
 ## What just happened
@@ -21,14 +21,16 @@ a manual check with automatic checks off answered "up to date" without asking.
 **Verified end to end:** a local 0.7.3 build, installed by the new setup program, updated itself
 from GitHub to v0.7.7 (77 replaced, 4 added, Installed-apps version updated, relaunched); test
 install uninstalled and the owner's App Paths entry restored. Release build 0 warnings; full suite
-**1,277 passed, 6 live FTP/SFTP skips**. Not committed yet; the workflows have not run on GitHub.
+**1,277 passed, 6 live FTP/SFTP skips**. Main CI (run 37895299051) passed including the new
+Installer and Test installer steps. The docs deploy was killed for memory on its runner (local
+build passes) and was re-run.
 SDK: `%LOCALAPPDATA%\WinMuxDev\dotnet\dotnet.exe`.
 Standing constraints: [development guardrails](docs/development-guardrails.md).
 
 ## The next action
 
-Commit, push, and watch the main CI run's new Installer and Test installer steps pass on
-`windows-latest`; then tag a test build so the release workflow publishes the setup program.
+Confirm the v0.7.8 release carries the zip, the setup program and checksums.txt, then install it
+on a clean machine from the setup program and let About update it when 0.7.9 ships.
 
 ## Blocked / needs a human
 

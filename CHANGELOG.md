@@ -7,7 +7,16 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
-## Unreleased
+## 0.7.8 — 2026-10-09
+
+The first stable release since 0.7.7. It contains everything in the eight 0.7.8 test builds below —
+among them, from test.6 to test.8, which have no entries of their own: optional GPU rendering with a
+software fallback ([ADR 0026](docs/adr/0026-optional-gpu-rendering.md)); terminal input, responsive
+tabs and confirmation before closing running panes ([ADR 0027](docs/adr/0027-terminal-and-tab-interaction.md));
+resizable compact vertical tabs, preserved group names and terminal key ownership
+([ADR 0028](docs/adr/0028-tab-width-and-terminal-key-ownership.md)); search in saved connections; and
+typing `winmux` in Explorer's address bar to open CMD there, in one WinMux per user
+([ADR 0029](docs/adr/0029-explorer-single-instance-launch.md)) — and, new in this release:
 
 ### Added
 
