@@ -29,6 +29,12 @@ build passes) and was re-run.
 SDK: `%LOCALAPPDATA%\WinMuxDev\dotnet\dotnet.exe`.
 Standing constraints: [development guardrails](docs/development-guardrails.md).
 
+**2026-10-09 (later):** right-click in a terminal pane does what the console does — copy the
+selection and drop the highlight, or paste when nothing is selected. It did nothing at all before:
+`OnPointerPressed` returned unless the left button was down, so the right button reached no code.
+`TerminalQuickEdit` holds the rule; the wiring has its own test, checked by putting the early
+return back.
+
 ## The next action
 
 Install v0.7.8 from its setup program on a clean machine (or after uninstalling an unzipped copy)

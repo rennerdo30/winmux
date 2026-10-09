@@ -7,6 +7,15 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## Unreleased
+
+### Fixed
+
+- **Right-click did nothing in a terminal pane**, so selecting text and right-clicking — how
+  copying out of `cmd` has worked for thirty years — copied nothing. It now does what the console
+  does: copy the selection and drop the highlight, or paste when nothing is selected. The handler
+  returned early unless the *left* button was down, so the right button reached no code at all.
+
 ## 0.7.8 — 2026-10-09
 
 The first stable release since 0.7.7. It contains everything in the eight 0.7.8 test builds below —

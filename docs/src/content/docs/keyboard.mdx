@@ -45,6 +45,10 @@ pane. Anything you type returns the view to the live screen.
 
 **Copy and paste work the way Windows Terminal does.** Select with the mouse, then `Ctrl+C` copies
 it; with nothing selected, `Ctrl+C` is the interrupt it always was. `Ctrl+V` pastes text.
+
+**Right-click does what the console does**, so the habit works: with a selection it copies and the
+highlight goes away, and with nothing selected it pastes. The middle button does nothing — pasting
+on a wheel press is an X11 convention, and a stray one that types into a shell is not worth it.
 `Ctrl+Shift+C`, `Ctrl+Shift+V` and `Shift+Insert` work too. A program that copies for you — Claude
 Code, vim's `"+y` — reaches the Windows clipboard (OSC 52); programs can write to the clipboard but
 never read it.

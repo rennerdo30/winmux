@@ -614,6 +614,27 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         Focus();
 
         var point = e.GetCurrentPoint(this);
+
+        // The console's own right-click: copy what is selected, or paste when nothing is. WinMux
+        // ignored the right button altogether, which made copying out of a pane look broken rather
+        // than merely different from cmd. See TerminalQuickEdit.
+        if (point.Properties.IsRightButtonPressed)
+        {
+            e.Handled = true;
+            switch (TerminalQuickEdit.RightButton(_viewport.HasSelection))
+            {
+                case TerminalMouseAction.CopyAndClearSelection:
+                    _ = CopySelectionAndClearAsync();
+                    break;
+
+                case TerminalMouseAction.Paste:
+                    _ = PasteAsync();
+                    break;
+            }
+
+            return;
+        }
+
         if (!point.Properties.IsLeftButtonPressed) return;
 
         var at = PositionAt(point.Position);
@@ -1128,6 +1149,19 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     /// Falling back rather than doing nothing keeps the behaviour that existed before selection
     /// did, and "copy what I am looking at" is a reasonable reading of the shortcut anyway.
     /// </summary>
+    /// <summary>
+    /// Copy the selection and drop it, which is what the console does on a right-click: the
+    /// highlight going away is the only acknowledgement that anything was copied.
+    /// </summary>
+    private async Task CopySelectionAndClearAsync()
+    {
+        if (_viewport.Selection is not { } selection) return;
+
+        await CopyRangeAsync(selection.Start, selection.End);
+
+        if (_viewport.ClearSelection()) InvalidateVisual();
+    }
+
     private Task CopySelectionAsync() =>
         _viewport.Selection is { } selection ? CopyRangeAsync(selection.Start, selection.End) : CopyVisibleTextAsync();
 
