@@ -3,7 +3,9 @@
 ## Where we are
 
 Phases 0–5 complete; Phase 6 implemented with native acceptance still open. Source version:
-**`0.7.8`, the first stable release since 0.7.7**, tagged `v0.7.8`: the 0.7.8 test builds plus a
+**`0.7.8`, the first stable release since 0.7.7**, [published 2026-10-09](https://github.com/rennerdo30/winmux/releases/tag/v0.7.8)
+as GitHub's latest release with the zip, the setup program and checksums.txt (both hashes verified
+after download): the 0.7.8 test builds plus a
 per-user **setup program built by CI** and a **Help → About WinMux** window that checks, downloads
 and installs updates ([ADR 0030](docs/adr/0030-installer-and-about-window.md)).
 Explorer launches route into one process per user ([ADR 0029](docs/adr/0029-explorer-single-instance-launch.md)).
@@ -29,8 +31,8 @@ Standing constraints: [development guardrails](docs/development-guardrails.md).
 
 ## The next action
 
-Confirm the v0.7.8 release carries the zip, the setup program and checksums.txt, then install it
-on a clean machine from the setup program and let About update it when 0.7.9 ships.
+Install v0.7.8 from its setup program on a clean machine (or after uninstalling an unzipped copy)
+and check About's version, licence and notices by hand; let About install 0.7.9 when it ships.
 
 ## Blocked / needs a human
 
