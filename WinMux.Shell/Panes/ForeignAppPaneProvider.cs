@@ -136,7 +136,10 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
     {
         if (_app.Located)
         {
-            var origin = View.PointToScreen(new Point(0, 0));
+            // Arrange can run before Avalonia has laid out this View at its canvas offset.
+            // The arrangement is already in canvas coordinates and is the authoritative origin.
+            if (View.Parent is not Canvas canvas) return;
+            var origin = canvas.PointToScreen(new Point(arrangement.Bounds.X, arrangement.Bounds.Y));
             var scale = TopLevel.GetTopLevel(View)?.RenderScaling ?? 1.0;
             _tracker.Place(
                 PaneId,
