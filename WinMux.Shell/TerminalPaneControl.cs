@@ -82,6 +82,8 @@ internal sealed class TerminalPaneControl : Control, IDisposable
 
     private IPtySession? _session;
     private Task? _startTask;
+    private int? _exitCode;
+    private string? _restartError;
     private int _disposed;
     private int _resizeQueued;
 
@@ -121,6 +123,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     public event Action<string>? WorkingDirectoryChanged;
 
     public event Action<int>? Exited;
+    public event Action? Restarted;
 
     /// <summary>
     /// The program asked for attention (OSC 9/777/99 or a bell). Raised on the UI thread; whether it
@@ -132,7 +135,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     {
         get
         {
-            lock (_gate) return _session?.ProcessId;
+            lock (_gate) return _exitCode is null ? _session?.ProcessId : null;
         }
     }
 
@@ -164,7 +167,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         // The cursor belongs to the live screen. Drawing it while the user is reading history
         // would put it on an unrelated row and imply typing would land there.
         var cursor = _engine.Cursor;
-        if (_viewport.IsFollowing && cursor.Visible && cursor.Row >= 0 && cursor.Row < _engine.Rows)
+        if (_exitCode is null && _viewport.IsFollowing && cursor.Visible && cursor.Row >= 0 && cursor.Row < _engine.Rows)
         {
             context.FillRectangle(
                 CursorBrush,
@@ -258,6 +261,20 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         }
 
         DrawScrollbar(context, visibleRows);
+
+        if (_exitCode is { } exitCode)
+        {
+            context.FillRectangle(new SolidColorBrush(Color.FromArgb(0x88, 0, 0, 0)), renderBounds);
+            var banner = new Rect(12, Math.Max(12, Bounds.Height - 68), Math.Max(1, Bounds.Width - 24), 56);
+            context.DrawRectangle(Chrome.Palette.RaisedBrush, new Pen(Chrome.Palette.EdgeBrush, 1),
+                new RoundedRect(banner, 8));
+            var message = _restartError is null
+                ? $"Process exited with code {exitCode}  ·  Enter to restart  ·  Ctrl+W to close"
+                : $"Restart failed: {_restartError}  ·  Enter to retry  ·  Ctrl+W to close";
+            context.DrawText(new FormattedText(message, CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight, new Typeface(Chrome.Palette.UiFont), 13,
+                Chrome.Palette.TextBrush), new Point(banner.X + 14, banner.Y + 18));
+        }
     }
 
     /// <summary>Underlines, strikethrough and overline, which are lines rather than font choices.</summary>
@@ -673,6 +690,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     {
         TerminalDebugLog.Write($"TextInput text={Show(e.Text)} suppressed={Show(_suppressedText)}");
         base.OnTextInput(e);
+        if (_exitCode is not null) { e.Handled = true; return; }
         if (_suppressedText is not null && e.Text == _suppressedText)
         {
             _suppressedText = null;
@@ -698,6 +716,14 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         }
 
         base.OnKeyDown(e);
+
+        if (_exitCode is not null)
+        {
+            if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None)
+                _ = RestartAsync();
+            e.Handled = true;
+            return;
+        }
 
         _suppressedText = null;
 
@@ -909,10 +935,42 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         try
         {
             var exitCode = await session.Exited.ConfigureAwait(false);
-            Dispatcher.UIThread.Post(() => Exited?.Invoke(exitCode));
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_disposed != 0 || _session != session) return;
+                _exitCode = exitCode;
+                InvalidateVisual();
+                Exited?.Invoke(exitCode);
+            });
         }
         catch (OperationCanceledException) when (Volatile.Read(ref _disposed) != 0)
         {
+        }
+    }
+
+    private async Task RestartAsync()
+    {
+        if (_exitCode is null || _disposed != 0) return;
+        lock (_gate)
+        {
+            _session?.Dispose();
+            _session = null;
+            _startTask = null;
+        }
+        _restartError = null;
+        _exitCode = null;
+        _engine.Write("\u001b[2J\u001b[H"u8);
+        InvalidateVisual();
+        try
+        {
+            await StartAsync(_lifetime.Token);
+            Restarted?.Invoke();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || _disposed == 0)
+        {
+            _exitCode = -1;
+            _restartError = ex.Message;
+            InvalidateVisual();
         }
     }
 

@@ -126,6 +126,11 @@ internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime,
             StatusMessage = $"terminal exited with code {exitCode}";
             StateChanged?.Invoke(this, EventArgs.Empty);
         });
+        _terminal.Restarted += () =>
+        {
+            StatusMessage = null;
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        };
     }
 
     public PaneId PaneId => _pane.Id;

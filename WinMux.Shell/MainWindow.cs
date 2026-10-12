@@ -408,6 +408,15 @@ internal sealed partial class MainWindow : Window
             handoff.TerminalHandoffRequested += (_, _) =>
                 Dispatcher.UIThread.Post(() => _ = OpenTerminalHereAsync(runtime));
         }
+        if (runtime is IPaneCloseRequest closeRequest)
+        {
+            closeRequest.CloseRequested += (_, _) =>
+            {
+                if (_runtimes.GetValueOrDefault(pane.Id) != runtime) return;
+                _tree.Focus(pane.Id);
+                _ = CloseFocusedAsync();
+            };
+        }
         WireAttention(pane, runtime);
         SyncRuntimeState(pane, runtime);
     }

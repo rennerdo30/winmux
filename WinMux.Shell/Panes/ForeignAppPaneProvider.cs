@@ -67,7 +67,12 @@ internal interface IHostedWindowPane
     bool OwnsWindow(WindowHandle window);
 }
 
-internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategyRuntime, IHostedWindowPane
+internal interface IPaneCloseRequest
+{
+    event EventHandler? CloseRequested;
+}
+
+internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategyRuntime, IHostedWindowPane, IPaneCloseRequest
 {
     private readonly Pane _pane;
     private readonly ForeignAppPane _app;
@@ -75,6 +80,7 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
     private readonly HashSet<WindowHandle> _claimedWindows;
     private readonly WindowHandle _ownerWindow;
     private readonly TextBlock _message;
+    private readonly StackPanel _actions;
     private int _disposed;
 
     public ForeignAppPaneRuntime(
@@ -89,20 +95,46 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
         _claimedWindows = claimedWindows;
         _ownerWindow = ownerWindow;
         _app = new ForeignAppPane(pane, windows);
+        _app.Exited += child =>
+        {
+            lock (_claimedWindows) _claimedWindows.Remove(child);
+            _tracker.Forget(PaneId);
+        };
+        _app.StateChanged += () =>
+        {
+            UpdateMessage();
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        };
         _message = new TextBlock
         {
             Margin = new Thickness(14),
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.FromRgb(0xa6, 0xad, 0xc8)),
+            Foreground = Chrome.Palette.TextBrush,
             Text = $"{pane.Title}\n\nstarting…",
+        };
+        var restart = new Button { Content = "Restart", Margin = new Thickness(0, 0, 8, 0) };
+        restart.Click += async (_, _) =>
+        {
+            restart.IsEnabled = false;
+            try { await _app.RestartAsync(_claimedWindows, _ownerWindow, CancellationToken.None); }
+            finally { restart.IsEnabled = true; UpdateMessage(); }
+        };
+        var close = new Button { Content = "Close pane" };
+        close.Click += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
+        _actions = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Margin = new Thickness(14, 0, 14, 14),
+            Children = { restart, close },
         };
         View = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x24, 0x27, 0x3a)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x45, 0x47, 0x5a)),
+            Background = Chrome.Palette.SurfaceBrush,
+            BorderBrush = Chrome.Palette.EdgeBrush,
             BorderThickness = new Thickness(1),
-            Child = _message,
+            Child = new StackPanel { Children = { _message, _actions } },
         };
+        UpdateMessage();
     }
 
     public PaneId PaneId => _pane.Id;
@@ -122,6 +154,7 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
     public string? StatusMessage => _app.Notice ?? _app.Status;
     public HostStrategy? EffectiveStrategy => _app.EffectiveStrategy;
     public event EventHandler? StateChanged;
+    public event EventHandler? CloseRequested;
 
     public async Task StartAsync(CancellationToken token)
     {
@@ -190,5 +223,9 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
         return ValueTask.CompletedTask;
     }
 
-    private void UpdateMessage() => _message.Text = $"{_pane.Title}\n\n{_app.Status}";
+    private void UpdateMessage()
+    {
+        _message.Text = $"{_pane.Title}\n\n{_app.Status}";
+        _actions.IsVisible = !_app.IsReady && _app.Status != "starting…";
+    }
 }

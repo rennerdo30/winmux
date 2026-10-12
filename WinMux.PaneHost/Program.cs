@@ -215,6 +215,9 @@ internal static class HostProtocol
 
     public static string Notice(string message) => "NOTICE=" + message;
 
+    public static string Exited(int? exitCode) => "EXITED=" +
+        (exitCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "window closed");
+
     public static string EmbedFailure(int error) => error switch
     {
         5 => "ERROR=application is elevated or higher-integrity; WinMux cannot embed it " +
@@ -236,6 +239,7 @@ internal sealed class PaneHostWindow : IDisposable
     private const uint WmMove = 0x0003, WmSize = 0x0005, WmActivate = 0x0006, WmWindowPosChanged = 0x0047;
     private const uint WmAppAdopt = 0x8001, WmAppClosePane = 0x8002;
     private const uint WmAppAttach = 0x8003, WmAppEmbed = 0x8004, WmAppAbandonAttach = 0x8005;
+    private const uint WmAppChildExited = 0x8006;
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const uint SwpNoSize = 0x0001, SwpNoMove = 0x0002, SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010, SwpShowWindow = 0x0040, SwpFrameChanged = 0x0020;
@@ -416,12 +420,37 @@ internal sealed class PaneHostWindow : IDisposable
 
         if (IsIconic(child)) ShowWindow(child, SwRestore);
         if (_launch.Strategy == HostStrategy.Attach)
-        {
             Attach(original with { Strategy = HostStrategy.Attach });
-            return;
-        }
+        else
+            Embed(original with { Strategy = HostStrategy.Embed });
+        if (_hosted is not null && _childWindow != IntPtr.Zero)
+            _ = Task.Run(() => WatchApplicationWindow(child));
+    }
 
-        Embed(original with { Strategy = HostStrategy.Embed });
+    private async Task WatchApplicationWindow(IntPtr child)
+    {
+        var pid = GetWindowProcessId(child);
+        Process? process = null;
+        try { process = Process.GetProcessById((int)pid); }
+        catch (ArgumentException) { }
+        try
+        {
+            while (!_shutdown.IsCancellationRequested && IsWindow(_hostWindow))
+            {
+                if (!IsWindow(child) || GetWindowProcessId(child) != pid)
+                {
+                    int? code = null;
+                    try { if (process?.HasExited == true) code = process.ExitCode; }
+                    catch (InvalidOperationException) { }
+                    PostMessageW(_hostWindow, WmAppChildExited, child,
+                        new IntPtr(code ?? int.MinValue));
+                    return;
+                }
+                await Task.Delay(250, _shutdown.Token);
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally { process?.Dispose(); }
     }
 
     private void Embed(HostedWindowState state)
@@ -620,6 +649,13 @@ internal sealed class PaneHostWindow : IDisposable
                     ShowWindow(_childWindow, SwShowNormal);
                 _hosted = null;
                 _childWindow = IntPtr.Zero;
+                DestroyWindow(hwnd);
+                return IntPtr.Zero;
+            case WmAppChildExited:
+                if (_hosted?.Child != wParam) return IntPtr.Zero;
+                _hosted = null;
+                _childWindow = IntPtr.Zero;
+                WriteProtocol(HostProtocol.Exited(lParam.ToInt32() == int.MinValue ? null : lParam.ToInt32()));
                 DestroyWindow(hwnd);
                 return IntPtr.Zero;
             case WmMove:

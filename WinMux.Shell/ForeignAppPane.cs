@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Avalonia.Threading;
 using WinMux.Core.Model;
 using WinMux.Platform;
 using WinMux.Platform.Win32.ForeignApps;
@@ -14,6 +15,11 @@ internal sealed class ForeignAppPane
     private Process? _hostProcess;
     private readonly SemaphoreSlim _protocolLock = new(1, 1);
     private readonly IHostWindowService _windows;
+    private volatile bool _ready;
+    private volatile bool _closing;
+
+    public event Action? StateChanged;
+    public event Action<WindowHandle>? Exited;
 
     public PaneId Id { get; }
     public Pane Pane { get; }
@@ -22,6 +28,7 @@ internal sealed class ForeignAppPane
     public HostStrategy? EffectiveStrategy { get; private set; }
     public string Status { get; private set; } = "starting…";
     public string? Notice { get; private set; }
+    public bool IsReady => _ready;
     public bool Located => _windows.IsAlive(Hwnd);
 
     public ForeignAppPane(Pane pane, IHostWindowService windows)
@@ -128,6 +135,9 @@ internal sealed class ForeignAppPane
         {
             _hostProcess = Process.Start(start);
             if (_hostProcess is null) throw new InvalidOperationException("process did not start");
+            var host = _hostProcess;
+            host.EnableRaisingEvents = true;
+            host.Exited += (_, _) => _ = ObserveUnexpectedExitAsync(host);
         }
         catch (Exception ex)
         {
@@ -173,6 +183,7 @@ internal sealed class ForeignAppPane
                             effectiveStrategy = reportedStrategy;
                         ChildHwnd = child;
                         EffectiveStrategy = effectiveStrategy;
+                        _ready = true;
                         lock (claimed) claimed.Add(child);
                         var mode = effectiveStrategy == HostStrategy.Attach ? "attached" : "embedded";
                         var detail = Notice ?? plan.Limitation;
@@ -224,6 +235,47 @@ internal sealed class ForeignAppPane
         return line.StartsWith(prefix, StringComparison.Ordinal) &&
                long.TryParse(line.AsSpan(prefix.Length), out var value) &&
                !(hwnd = WindowHandle.FromPlatformValue((nint)value)).IsNone;
+    }
+
+    private async Task ObserveUnexpectedExitAsync(Process? host)
+    {
+        if (!_ready || _closing || host is null) return;
+        try
+        {
+            await _protocolLock.WaitAsync();
+            string remainder;
+            try { remainder = await host.StandardOutput.ReadToEndAsync(); }
+            finally { _protocolLock.Release(); }
+            if (_closing) return;
+            var exit = remainder.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .LastOrDefault(line => line.StartsWith("EXITED=", StringComparison.Ordinal));
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_closing || _hostProcess != host) return;
+                Status = exit switch
+                {
+                    "EXITED=window closed" => "application window closed",
+                    { } line => "application exited with code " + line["EXITED=".Length..],
+                    _ => "PaneHost exited unexpectedly; application is no longer hosted",
+                };
+                var child = ChildHwnd;
+                ClearHandles();
+                Exited?.Invoke(child);
+                StateChanged?.Invoke();
+            });
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_closing || _hostProcess != host) return;
+                Status = "PaneHost exited; could not read application exit: " + ex.Message;
+                var child = ChildHwnd;
+                ClearHandles();
+                Exited?.Invoke(child);
+                StateChanged?.Invoke();
+            });
+        }
     }
 
     internal static bool TryReadReady(string line, out WindowHandle hwnd, out HostStrategy strategy)
@@ -333,18 +385,34 @@ internal sealed class ForeignAppPane
     public Task<ForeignAppShutdownResult> CloseAsync(CancellationToken token = default) =>
         ShutdownAsync("CLOSE", "CLOSED", token);
 
+    public async Task RestartAsync(ISet<WindowHandle> claimed, WindowHandle ownerWindow, CancellationToken token)
+    {
+        if (_ready) return;
+        _hostProcess?.Dispose();
+        _hostProcess = null;
+        _closing = false;
+        Notice = null;
+        Status = "restarting…";
+        StateChanged?.Invoke();
+        await LaunchAsync(claimed, ownerWindow, token);
+        StateChanged?.Invoke();
+    }
+
     private async Task<ForeignAppShutdownResult> ShutdownAsync(
         string command,
         string acknowledgement,
         CancellationToken token)
     {
+        _closing = true;
+        var succeeded = false;
         if (_hostProcess is null || _hostProcess.HasExited)
         {
             ClearHandles();
             return new ForeignAppShutdownResult(true, "PaneHost had already exited");
         }
 
-        await _protocolLock.WaitAsync(token);
+        try { await _protocolLock.WaitAsync(token); }
+        catch { _closing = false; throw; }
         try
         {
             if (!SendCommand(command))
@@ -356,6 +424,7 @@ internal sealed class ForeignAppPane
             {
                 if (line.Equals(acknowledgement, StringComparison.Ordinal))
                 {
+                    succeeded = true;
                     ClearHandles();
                     return new ForeignAppShutdownResult(true,
                         command == "DETACH" ? "application detached safely" : "application close requested safely");
@@ -383,11 +452,13 @@ internal sealed class ForeignAppPane
         finally
         {
             _protocolLock.Release();
+            if (!succeeded) _closing = false;
         }
     }
 
     private void ClearHandles()
     {
+        _ready = false;
         Hwnd = WindowHandle.None;
         ChildHwnd = WindowHandle.None;
         EffectiveStrategy = null;
