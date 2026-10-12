@@ -1,5 +1,7 @@
 using System.Text;
+using System.Reflection;
 using Avalonia.Threading;
+using WinMux.Core;
 
 namespace WinMux.Shell;
 
@@ -16,8 +18,7 @@ internal static class CrashLog
 {
     private static readonly object Gate = new();
 
-    public static string Path { get; } = System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinMux", "crash.log");
+    public static string Path => System.IO.Path.Combine(WinMuxDataDirectory.LocalPath, "crash.log");
 
     public static void Install()
     {
@@ -45,7 +46,8 @@ internal static class CrashLog
                 .Append(DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss.fff zzz"))
                 .Append("  ").Append(what)
                 .Append("  pid ").Append(Environment.ProcessId)
-                .Append("  version ").Append(typeof(CrashLog).Assembly.GetName().Version?.ToString(3))
+                .Append("  version ").Append(typeof(CrashLog).Assembly
+                    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown")
                 .AppendLine();
             if (exception is not null) entry.AppendLine(exception.ToString());
 

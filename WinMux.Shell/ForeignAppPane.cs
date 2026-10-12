@@ -41,7 +41,10 @@ internal sealed class ForeignAppPane
         }
 
         ForeignAppLaunchPlan plan;
-        var quirksPath = Path.Combine(AppContext.BaseDirectory, "foreign-app-quirks.json");
+        var isolatedQuirks = Path.Combine(WinMux.Core.WinMuxDataDirectory.RoamingPath, "foreign-app-quirks.json");
+        var quirksPath = WinMux.Core.WinMuxDataDirectory.IsIsolated && File.Exists(isolatedQuirks)
+            ? isolatedQuirks
+            : Path.Combine(AppContext.BaseDirectory, "foreign-app-quirks.json");
         try
         {
             plan = ForeignAppLaunchPlan.Resolve(restore, ForeignAppQuirksDatabase.Load(quirksPath));

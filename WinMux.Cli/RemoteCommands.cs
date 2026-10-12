@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using System.Text;
+using WinMux.Core;
 
 namespace WinMux.Cli;
 
@@ -21,7 +22,7 @@ public static class RemoteCommands
 
     public static async Task<RemoteCommandResult> InvokeAsync(
         string actionName,
-        string pipeName = DefaultPipeName,
+        string? pipeName = null,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
     {
@@ -29,6 +30,7 @@ public static class RemoteCommands
             return Failure("Action name cannot be empty.");
         if (actionName.Contains('\r') || actionName.Contains('\n'))
             return Failure("Action name must be a single line.");
+        pipeName ??= WinMuxDataDirectory.CommandPipeName;
         if (string.IsNullOrWhiteSpace(pipeName))
             return Failure("Pipe name cannot be empty.");
 

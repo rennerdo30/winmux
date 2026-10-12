@@ -196,8 +196,7 @@ internal sealed class UpdateInstaller(GitHubReleases releases)
     /// <summary>One line the script leaves for the next start: <c>ok|version</c> or <c>failed|reason</c>.</summary>
     public static string ResultPath => Path.Combine(DataDirectory, "update-result.txt");
 
-    private static string DataDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinMux");
+    private static string DataDirectory => WinMux.Core.WinMuxDataDirectory.LocalPath;
 
     /// <summary>
     /// What the last update did, for the status line — once — and tidy up after it: the old files it

@@ -16,8 +16,7 @@ internal static class TerminalDebugLog
 
     public static bool Enabled { get; } = Environment.GetEnvironmentVariable("WINMUX_DEBUG_KEYS") == "1";
 
-    public static string Path { get; } = System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinMux", "keys-debug.log");
+    public static string Path => System.IO.Path.Combine(WinMux.Core.WinMuxDataDirectory.LocalPath, "keys-debug.log");
 
     public static void Write(string message)
     {

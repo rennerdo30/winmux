@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using WinMux.Core.Layout;
+using WinMux.Core;
 using WinMux.Core.Model;
 using WinMux.Core.Session;
 
@@ -153,7 +154,8 @@ internal static class Program
             return 1;
         }
         using var launchLifetime = launch;
-        if (launch.IsPrimary && LegacyInstanceProbe.IsListeningAsync().GetAwaiter().GetResult())
+        if (launch.IsPrimary && !WinMuxDataDirectory.IsIsolated &&
+            LegacyInstanceProbe.IsListeningAsync().GetAwaiter().GetResult())
         {
             ShowStartupError("An older WinMux is already running",
                 "This running version does not support folder-launch forwarding. Close its windows safely " +
@@ -188,7 +190,8 @@ internal static class Program
 
         string sessionPath = location.Path;
         var notices = new List<string>();
-        if (ApplicationRegistration.RegisterCurrentExecutable(Environment.ProcessPath,
+        if (!WinMuxDataDirectory.IsIsolated &&
+            ApplicationRegistration.RegisterCurrentExecutable(Environment.ProcessPath,
                 PlatformServices.ApplicationRegistration) is { } registrationNotice)
             notices.Add(registrationNotice);
         if (location.MigratedFrom is { } oldPlace)

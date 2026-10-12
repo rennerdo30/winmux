@@ -27,6 +27,9 @@ param(
     # A session .toml to open. Defaults to WinMux's own default layout.
     [string]$Session,
 
+    # Isolated profile for this checkout. Defaults to artifacts\dev-data.
+    [string]$DataDirectory,
+
     # Run the already-built binaries instead of building first.
     [switch]$NoBuild,
 
@@ -44,6 +47,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $shell = Join-Path $repo "WinMux.Shell\bin\x64\$Configuration\net10.0-windows\WinMux.exe"
+if (-not $DataDirectory) { $DataDirectory = Join-Path $repo 'artifacts\dev-data' }
+$DataDirectory = [IO.Path]::GetFullPath($DataDirectory)
+New-Item -ItemType Directory -Path $DataDirectory -Force | Out-Null
 
 if (-not $NoBuild) {
     dotnet build (Join-Path $repo 'WinMux.slnx') -c $Configuration
@@ -69,7 +75,7 @@ if ($Session) {
     # and strips its comments. Copy it aside unless the caller insists.
     $examples = Join-Path $repo 'examples'
     if (-not $InPlace -and $resolved.StartsWith($examples, [StringComparison]::OrdinalIgnoreCase)) {
-        $scratch = Join-Path ([IO.Path]::GetTempPath()) ("winmux-" + (Split-Path -Leaf $resolved))
+        $scratch = Join-Path $DataDirectory ("example-" + (Split-Path -Leaf $resolved))
         Copy-Item -LiteralPath $resolved -Destination $scratch -Force
         Write-Host "Session: $scratch"
         Write-Host "         (copied from $resolved so the example is not overwritten; -InPlace to edit it)"
@@ -84,10 +90,18 @@ if ($Session) {
 if ($Passthrough) { $arguments += $Passthrough }
 
 Write-Host "Running:  $shell"
-if ($Wait) {
-    $process = Start-Process -FilePath $shell -ArgumentList $arguments -PassThru -Wait
-    Write-Host "WinMux exited with code $($process.ExitCode)."
-    exit $process.ExitCode
-}
+Write-Host "Data:     $DataDirectory"
+$previousDataDirectory = [Environment]::GetEnvironmentVariable('WINMUX_DATA_DIR', 'Process')
+try {
+    [Environment]::SetEnvironmentVariable('WINMUX_DATA_DIR', $DataDirectory, 'Process')
+    if ($Wait) {
+        $process = Start-Process -FilePath $shell -ArgumentList $arguments -PassThru -Wait
+        Write-Host "WinMux exited with code $($process.ExitCode)."
+        exit $process.ExitCode
+    }
 
-Start-Process -FilePath $shell -ArgumentList $arguments | Out-Null
+    Start-Process -FilePath $shell -ArgumentList $arguments | Out-Null
+}
+finally {
+    [Environment]::SetEnvironmentVariable('WINMUX_DATA_DIR', $previousDataDirectory, 'Process')
+}

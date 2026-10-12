@@ -848,8 +848,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         if (Environment.GetEnvironmentVariable("WINMUX_DEBUG_PTY") != "1") return;
         try
         {
-            var directory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinMux", "pty-capture");
+            var directory = Path.Combine(WinMux.Core.WinMuxDataDirectory.LocalPath, "pty-capture");
             Directory.CreateDirectory(directory);
             var stem = Path.Combine(directory, $"{DateTime.Now:yyyyMMdd-HHmmss}-{Environment.ProcessId}-{Guid.NewGuid():N}"[..40]);
             _capture = new FileStream(stem + ".bin", FileMode.CreateNew, FileAccess.Write, FileShare.Read);

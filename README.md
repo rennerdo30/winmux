@@ -138,6 +138,13 @@ the target; portability is a design discipline, not a promise.
 .\scripts\run.ps1 -Session .\examples\tabs-and-splits.toml  # nested tab groups
 ```
 
+`run.cmd` and `scripts/run.ps1` use an isolated profile in this checkout's ignored
+`artifacts/dev-data` directory. Development runs do not change the installed copy's settings,
+session, crash log, launch endpoint or Explorer registration. Set `WINMUX_DATA_DIR` to an absolute
+directory when launching `WinMux.exe` or `wmux.exe` directly to use a separate profile. Use the
+same value for the GUI and CLI so CLI actions reach the intended instance. Without the variable,
+the installed per-user profile remains the default.
+
 `run.cmd` and `publish.cmd` are double-clickable and need no execution-policy change.
 
 **Rendering:** Settings → Appearance → Rendering offers **Automatic (GPU with software fallback)**

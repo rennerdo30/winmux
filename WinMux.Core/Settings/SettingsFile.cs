@@ -26,10 +26,7 @@ public static class SettingsFile
     public readonly record struct LoadResult(WinMuxSettings Settings, string? Warning);
 
     /// <summary><c>%APPDATA%\WinMux\settings.toml</c>.</summary>
-    public static string DefaultPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "WinMux",
-        FileName);
+    public static string DefaultPath => Path.Combine(WinMuxDataDirectory.RoamingPath, FileName);
 
     public static LoadResult Load(string path)
     {
