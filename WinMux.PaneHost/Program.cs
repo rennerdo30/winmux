@@ -59,7 +59,9 @@ internal sealed record LaunchSpec(
     int SettleMilliseconds,
     IntPtr OwnerWindow,
     IReadOnlySet<IntPtr> ExcludedWindows,
-    IntPtr AdoptWindow)
+    IntPtr AdoptWindow,
+    uint? ExpectedAdoptPid = null,
+    long? ExpectedAdoptStartTicks = null)
 {
     /// <summary>
     /// True when this host was asked to take a window that already exists rather than start a
@@ -79,6 +81,8 @@ internal sealed record LaunchSpec(
         var settleMilliseconds = 400;
         var ownerWindow = IntPtr.Zero;
         var adoptWindow = IntPtr.Zero;
+        uint? expectedAdoptPid = null;
+        long? expectedAdoptStartTicks = null;
         var arguments = new List<string>();
         var excluded = new HashSet<IntPtr>();
         var afterSeparator = false;
@@ -134,6 +138,20 @@ internal sealed record LaunchSpec(
                 adoptWindow = new IntPtr(adopt);
                 continue;
             }
+            if (!afterSeparator && args[i] == "--adopt-pid")
+            {
+                if (++i >= args.Length || !uint.TryParse(args[i], out var adoptPid) || adoptPid == 0)
+                    throw new ArgumentException("--adopt-pid must be a positive process id");
+                expectedAdoptPid = adoptPid;
+                continue;
+            }
+            if (!afterSeparator && args[i] == "--adopt-start")
+            {
+                if (++i >= args.Length || !long.TryParse(args[i], out var adoptStart) || adoptStart <= 0)
+                    throw new ArgumentException("--adopt-start must be positive UTC ticks");
+                expectedAdoptStartTicks = adoptStart;
+                continue;
+            }
             if (!afterSeparator && args[i] == "--owner" && ++i < args.Length && long.TryParse(args[i], out var owner))
             {
                 ownerWindow = new IntPtr(owner);
@@ -151,9 +169,11 @@ internal sealed record LaunchSpec(
         // inventing one that must never be launched.
         if (string.IsNullOrWhiteSpace(program) && adoptWindow == IntPtr.Zero)
             throw new ArgumentException("missing --program <path> or --adopt <hwnd>");
+        if ((expectedAdoptPid is null) != (expectedAdoptStartTicks is null))
+            throw new ArgumentException("--adopt-pid and --adopt-start must be supplied together");
         program ??= string.Empty;
         return new LaunchSpec(program, arguments, windowClass, windowTitleContains, processName, matchMode, strategy,
-            settleMilliseconds, ownerWindow, excluded, adoptWindow);
+            settleMilliseconds, ownerWindow, excluded, adoptWindow, expectedAdoptPid, expectedAdoptStartTicks);
     }
 
     private static HostStrategy ParseStrategy(string value) => value.ToLowerInvariant() switch
@@ -217,6 +237,8 @@ internal static class HostProtocol
 
     public static string Exited(int? exitCode) => "EXITED=" +
         (exitCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "window closed");
+
+    public static string Identity(uint pid, long startTicks) => $"IDENTITY={pid},{startTicks}";
 
     public static string EmbedFailure(int error) => error switch
     {
@@ -307,6 +329,16 @@ internal sealed class PaneHostWindow : IDisposable
                 }
 
                 GetWindowThreadProcessId(_launch.AdoptWindow, out var adoptedOwner);
+                if (_launch.ExpectedAdoptPid is not null || _launch.ExpectedAdoptStartTicks is not null)
+                {
+                    if (_launch.ExpectedAdoptPid != adoptedOwner ||
+                        !TryGetProcessStartTicks(adoptedOwner, out var startTicks) ||
+                        startTicks != _launch.ExpectedAdoptStartTicks)
+                    {
+                        WriteProtocol("ERROR=saved application window identity changed; WinMux did not launch another copy");
+                        return;
+                    }
+                }
                 _launchedProcessId = adoptedOwner;
                 PostMessageW(_hostWindow, WmAppAdopt, _launch.AdoptWindow, IntPtr.Zero);
                 return;
@@ -411,6 +443,25 @@ internal sealed class PaneHostWindow : IDisposable
         return processId;
     }
 
+    private static bool TryGetProcessStartTicks(uint pid, out long ticks)
+    {
+        ticks = 0;
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            ticks = process.StartTime.ToUniversalTime().Ticks;
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception) { return false; }
+    }
+
+    private static void WriteIdentity(IntPtr child)
+    {
+        var pid = GetWindowProcessId(child);
+        if (pid != 0 && TryGetProcessStartTicks(pid, out var ticks))
+            WriteProtocol(HostProtocol.Identity(pid, ticks));
+    }
+
     private void HostApplication(IntPtr child)
     {
         if (!IsWindow(child)) return;
@@ -490,6 +541,7 @@ internal sealed class PaneHostWindow : IDisposable
         SetWindowPos(child, IntPtr.Zero, 0, 0, 0, 0,
             SwpNoSize | SwpNoMove | SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
         WriteProtocol(HostProtocol.Strategy(HostStrategy.Embed));
+        WriteIdentity(child);
         WriteProtocol(HostProtocol.Ready(child));
     }
 
@@ -508,6 +560,7 @@ internal sealed class PaneHostWindow : IDisposable
         }
 
         WriteProtocol(HostProtocol.Strategy(HostStrategy.Attach));
+        WriteIdentity(state.Child);
         WriteProtocol(HostProtocol.Ready(state.Child));
     }
 

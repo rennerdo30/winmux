@@ -76,6 +76,10 @@ Two strategies are implemented:
 user-editable `foreign-app-quirks.json`; unknown apps use an explicitly unverified embed default.
 If embedding is refused, PaneHost keeps the same application alive, explains why, and switches it
 to attach. `Ctrl+Shift+P`, then `A`, switches the focused foreign pane live and persists the result.
+When WinMux closes, it detaches foreign windows. On the next start it reattaches one only when the
+saved window handle, process ID, and process start time still match. If it cannot verify that
+identity, the pane waits for an explicit **Launch new** action, so a surviving app is not silently
+duplicated. **Reattach surviving applications** in Settings can disable automatic reattachment.
 
 Known-hard cases, handled by falling back to *attach* or by refusing cleanly:
 

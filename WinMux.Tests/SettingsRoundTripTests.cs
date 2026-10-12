@@ -22,6 +22,7 @@ public sealed class SettingsRoundTripTests
         DefaultTerminal = "powershell",
         DefaultTabPlacement = TabStripPlacement.Left,
         ConfirmBeforeClosingPanes = false,
+        ReattachSurvivingApps = false,
         CheckForUpdates = false,
         UpdateChannel = UpdateChannel.Prerelease,
         TerminalNotifications = TerminalNotificationPolicy.Messages,
@@ -44,6 +45,7 @@ public sealed class SettingsRoundTripTests
         Assert.Equal(NonDefault.DefaultTerminal, restored.DefaultTerminal);
         Assert.Equal(NonDefault.DefaultTabPlacement, restored.DefaultTabPlacement);
         Assert.Equal(NonDefault.ConfirmBeforeClosingPanes, restored.ConfirmBeforeClosingPanes);
+        Assert.Equal(NonDefault.ReattachSurvivingApps, restored.ReattachSurvivingApps);
         Assert.Equal(NonDefault.CheckForUpdates, restored.CheckForUpdates);
         Assert.Equal(NonDefault.UpdateChannel, restored.UpdateChannel);
         Assert.Equal(NonDefault.TerminalNotifications, restored.TerminalNotifications);

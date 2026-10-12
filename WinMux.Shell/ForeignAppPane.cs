@@ -15,8 +15,11 @@ internal sealed class ForeignAppPane
     private Process? _hostProcess;
     private readonly SemaphoreSlim _protocolLock = new(1, 1);
     private readonly IHostWindowService _windows;
+    private readonly bool _restoring;
     private volatile bool _ready;
     private volatile bool _closing;
+    private uint? _adoptPid;
+    private long? _adoptStartTicks;
 
     public event Action? StateChanged;
     public event Action<WindowHandle>? Exited;
@@ -31,11 +34,12 @@ internal sealed class ForeignAppPane
     public bool IsReady => _ready;
     public bool Located => _windows.IsAlive(Hwnd);
 
-    public ForeignAppPane(Pane pane, IHostWindowService windows)
+    public ForeignAppPane(Pane pane, IHostWindowService windows, bool restoring = false)
     {
         Pane = pane;
         Id = pane.Id;
         _windows = windows ?? throw new ArgumentNullException(nameof(windows));
+        _restoring = restoring;
     }
 
     public async Task LaunchAsync(ISet<WindowHandle> claimed, WindowHandle ownerWindow, CancellationToken token)
@@ -82,10 +86,30 @@ internal sealed class ForeignAppPane
         // anything. The handle is not persisted as a handle — see CaptureRestoreDescriptor.
         var adopting = restore.Extras.TryGetValue("adopt_window", out var adoptText) &&
                        long.TryParse(adoptText, out var adoptValue) && adoptValue != 0;
+        uint expectedPid = 0;
+        long expectedStart = 0;
+        var hasIdentity = restore.Extras.TryGetValue("adopt_pid", out var pidText) &&
+                          uint.TryParse(pidText, out expectedPid) &&
+                          restore.Extras.TryGetValue("adopt_start_ticks", out var startText) &&
+                          long.TryParse(startText, out expectedStart);
+        if (adopting && _restoring && (!hasIdentity || !Settings.ShellSettings.Current.ReattachSurvivingApps))
+        {
+            Status = hasIdentity
+                ? "saved application is on the desktop; reattachment is disabled in settings. Launch a new copy explicitly."
+                : "saved application identity is unavailable; WinMux did not launch another copy. Launch explicitly if needed.";
+            return;
+        }
         if (adopting)
         {
             start.ArgumentList.Add("--adopt");
             start.ArgumentList.Add(adoptText!);
+            if (hasIdentity)
+            {
+                start.ArgumentList.Add("--adopt-pid");
+                start.ArgumentList.Add(expectedPid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                start.ArgumentList.Add("--adopt-start");
+                start.ArgumentList.Add(expectedStart.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
         }
 
         start.ArgumentList.Add("--program");
@@ -177,6 +201,12 @@ internal sealed class ForeignAppPane
                         Status = Notice;
                         continue;
                     }
+                    if (TryReadIdentity(line, out var pid, out var ticks))
+                    {
+                        _adoptPid = pid;
+                        _adoptStartTicks = ticks;
+                        continue;
+                    }
                     if (TryReadReady(line, out var child, out var effectiveStrategy))
                     {
                         if (!line.Contains("strategy=", StringComparison.OrdinalIgnoreCase))
@@ -235,6 +265,27 @@ internal sealed class ForeignAppPane
         return line.StartsWith(prefix, StringComparison.Ordinal) &&
                long.TryParse(line.AsSpan(prefix.Length), out var value) &&
                !(hwnd = WindowHandle.FromPlatformValue((nint)value)).IsNone;
+    }
+
+    private static bool TryReadIdentity(string line, out uint pid, out long ticks)
+    {
+        pid = 0;
+        ticks = 0;
+        if (!line.StartsWith("IDENTITY=", StringComparison.Ordinal)) return false;
+        var parts = line["IDENTITY=".Length..].Split(',', 2);
+        return parts.Length == 2 && uint.TryParse(parts[0], out pid) && long.TryParse(parts[1], out ticks);
+    }
+
+    public RestoreDescriptor CaptureRestoreDescriptor()
+    {
+        var extras = new Dictionary<string, string>(Pane.Restore.Extras, StringComparer.Ordinal);
+        if (_ready && !ChildHwnd.IsNone && _adoptPid is { } pid && _adoptStartTicks is { } ticks)
+        {
+            extras["adopt_window"] = ChildHwnd.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            extras["adopt_pid"] = pid.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            extras["adopt_start_ticks"] = ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return Pane.Restore with { Extras = extras };
     }
 
     private async Task ObserveUnexpectedExitAsync(Process? host)
@@ -391,6 +442,13 @@ internal sealed class ForeignAppPane
         _hostProcess?.Dispose();
         _hostProcess = null;
         _closing = false;
+        _adoptPid = null;
+        _adoptStartTicks = null;
+        var extras = new Dictionary<string, string>(Pane.Restore.Extras, StringComparer.Ordinal);
+        extras.Remove("adopt_window");
+        extras.Remove("adopt_pid");
+        extras.Remove("adopt_start_ticks");
+        Pane.Restore = Pane.Restore with { Extras = extras };
         Notice = null;
         Status = "restarting…";
         StateChanged?.Invoke();

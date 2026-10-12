@@ -27,6 +27,7 @@ internal sealed class SettingsWindow : Window
     private string _pendingDefaultTerminal = string.Empty;
     private readonly ComboBox _tabPlacement;
     private readonly CheckBox _confirmClosing;
+    private readonly CheckBox _reattachApps;
     private readonly ComboBox _notifications;
     private readonly TextBox _fontFamily;
     private readonly NumericUpDown _fontSize;
@@ -143,6 +144,13 @@ internal sealed class SettingsWindow : Window
             MinWidth = 0,
         };
 
+        _reattachApps = new CheckBox
+        {
+            IsChecked = current.ReattachSurvivingApps,
+            Foreground = Palette.TextBrush,
+            MinWidth = 0,
+        };
+
         _notifications = Choice(
             [
                 ("Messages and bells", TerminalNotificationPolicy.MessagesAndBells),
@@ -221,6 +229,11 @@ internal sealed class SettingsWindow : Window
             "Confirm before closing running panes",
             _confirmClosing,
             "Asks first when an action would close a pane with a program still in it."));
+        body.Children.Add(SettingsCard.Row(
+            "Reattach surviving applications",
+            _reattachApps,
+            "On restart, reuse a detached application window only when its saved identity still matches. " +
+            "When off, the pane waits for you to launch a new copy."));
         body.Children.Add(SettingsCard.File("Session file", sessionPath, () => OpenFolderOf(sessionPath)));
         body.Children.Add(SettingsCard.File("Settings file", settingsPath, () => OpenFolderOf(settingsPath)));
         body.Children.Add(SettingsCard.File("Profiles file", profilesPath, () => OpenFolderOf(profilesPath)));
@@ -259,6 +272,7 @@ internal sealed class SettingsWindow : Window
                 DefaultTerminal = SelectedTerminalId(),
                 DefaultTabPlacement = Selected<TabStripPlacement>(_tabPlacement),
                 ConfirmBeforeClosingPanes = _confirmClosing.IsChecked == true,
+                ReattachSurvivingApps = _reattachApps.IsChecked == true,
                 TerminalFontFamily = string.IsNullOrWhiteSpace(_fontFamily.Text)
                     ? TerminalFontMetrics.DefaultFontFamily
                     : _fontFamily.Text.Trim(),

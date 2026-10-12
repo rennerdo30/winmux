@@ -31,19 +31,19 @@ internal sealed class ForeignAppPaneProvider(Func<WindowHandle> ownerWindow, IHo
     public bool IsOfferedDirectly => false;
 
     public ValueTask<IPaneRuntime> CreateAsync(PaneProviderContext context, CancellationToken token = default) =>
-        BuildAsync(context, token);
+        BuildAsync(context, restoring: false, token);
 
     public ValueTask<IPaneRuntime> RestoreAsync(PaneProviderContext context, CancellationToken token = default) =>
-        BuildAsync(context, token);
+        BuildAsync(context, restoring: true, token);
 
     public void Refresh() => _tracker.Refresh();
     public void Dispose() => _tracker.Dispose();
 
-    private async ValueTask<IPaneRuntime> BuildAsync(PaneProviderContext context, CancellationToken token)
+    private async ValueTask<IPaneRuntime> BuildAsync(PaneProviderContext context, bool restoring, CancellationToken token)
     {
         var pane = new Pane(context.PaneId, PaneKind.ForeignApp, context.Title, context.Descriptor);
         NormalizeProgram(pane);
-        var runtime = new ForeignAppPaneRuntime(pane, _tracker, _claimedWindows, _ownerWindow(), _windows);
+        var runtime = new ForeignAppPaneRuntime(pane, _tracker, _claimedWindows, _ownerWindow(), _windows, restoring);
         await runtime.StartAsync(token);
         return runtime;
     }
@@ -80,6 +80,7 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
     private readonly HashSet<WindowHandle> _claimedWindows;
     private readonly WindowHandle _ownerWindow;
     private readonly TextBlock _message;
+    private readonly Button _restartButton;
     private readonly StackPanel _actions;
     private int _disposed;
 
@@ -88,13 +89,14 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
         ForeignWindowTracker tracker,
         HashSet<WindowHandle> claimedWindows,
         WindowHandle ownerWindow,
-        IHostWindowService windows)
+        IHostWindowService windows,
+        bool restoring = false)
     {
         _pane = pane;
         _tracker = tracker;
         _claimedWindows = claimedWindows;
         _ownerWindow = ownerWindow;
-        _app = new ForeignAppPane(pane, windows);
+        _app = new ForeignAppPane(pane, windows, restoring);
         _app.Exited += child =>
         {
             lock (_claimedWindows) _claimedWindows.Remove(child);
@@ -112,12 +114,12 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
             Foreground = Chrome.Palette.TextBrush,
             Text = $"{pane.Title}\n\nstarting…",
         };
-        var restart = new Button { Content = "Restart", Margin = new Thickness(0, 0, 8, 0) };
-        restart.Click += async (_, _) =>
+        _restartButton = new Button { Content = "Restart", Margin = new Thickness(0, 0, 8, 0) };
+        _restartButton.Click += async (_, _) =>
         {
-            restart.IsEnabled = false;
+            _restartButton.IsEnabled = false;
             try { await _app.RestartAsync(_claimedWindows, _ownerWindow, CancellationToken.None); }
-            finally { restart.IsEnabled = true; UpdateMessage(); }
+            finally { _restartButton.IsEnabled = true; UpdateMessage(); }
         };
         var close = new Button { Content = "Close pane" };
         close.Click += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
@@ -125,7 +127,7 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
         {
             Orientation = Avalonia.Layout.Orientation.Horizontal,
             Margin = new Thickness(14, 0, 14, 14),
-            Children = { restart, close },
+            Children = { _restartButton, close },
         };
         View = new Border
         {
@@ -192,7 +194,7 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
     }
 
     public void RefreshRestoreState() { }
-    public RestoreDescriptor CaptureRestoreDescriptor() => _pane.Restore;
+    public RestoreDescriptor CaptureRestoreDescriptor() => _app.CaptureRestoreDescriptor();
 
     public async ValueTask<ForeignAppSwitchResult> SwitchStrategyAsync(HostStrategy target, CancellationToken token = default)
     {
@@ -226,6 +228,7 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
     private void UpdateMessage()
     {
         _message.Text = $"{_pane.Title}\n\n{_app.Status}";
+        _restartButton.Content = _pane.Restore.Extras.ContainsKey("adopt_window") ? "Launch new" : "Restart";
         _actions.IsVisible = !_app.IsReady && _app.Status != "starting…";
     }
 }
