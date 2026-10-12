@@ -40,3 +40,5 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | [0036](0036-startup-readytorun-and-safe-deferral.md) | ReadyToRun startup and safe deferral | accepted |
 | [0037](0037-pane-chrome-and-failure-surfaces.md) | Pane chrome and failure surfaces | accepted for owner visual review |
 | [0038](0038-root-tabs-in-custom-caption.md) | Root tabs in the custom caption | accepted for owner visual review |
+| [0039](0039-unified-caption-fill-and-bounded-close.md) | Unified caption fill and bounded close save | accepted for owner visual review |
+| [0040](0040-compact-tabs-and-persistent-update-entry.md) | Compact tabs and persistent update entry | accepted for owner visual review |

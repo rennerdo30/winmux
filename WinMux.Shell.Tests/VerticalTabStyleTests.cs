@@ -21,7 +21,7 @@ public sealed class VerticalTabStyleTests
             pinned.IsPinned = true;
             var empty = Pane.Terminal("empty pane");
             var stack = new StackNode([new LeafNode(pinned), new LeafNode(empty)], activeIndex: 1);
-            var commands = new TabStripCommands(_ => { }, _ => { }, _ => { }, _ => { },
+            var commands = new TabStripCommands(_ => { }, _ => { }, _ => Task.CompletedTask, _ => { },
                 (_, _, _) => { }, _ => { }, (_, _) => { }, _ => { });
             var strip = TabStripView.Build(new WinMux.Core.Layout.TabStrip(stack,
                 new WinMux.Core.Layout.Rect(0, 0, 220, 320), placement), empty.Id, commands);

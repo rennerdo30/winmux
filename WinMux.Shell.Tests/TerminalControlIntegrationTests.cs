@@ -6,6 +6,8 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using WinMux.Pty;
+using WinMux.Shell.Actions;
+using WinMux.Shell.Keymap;
 using WinMux.Terminal;
 
 namespace WinMux.Shell.Tests;
@@ -13,6 +15,18 @@ namespace WinMux.Shell.Tests;
 /// <summary>Exercise real control event routing and VT parsing against a recording PTY, without processes.</summary>
 public sealed class TerminalControlIntegrationTests
 {
+    [Fact]
+    public void Exit_banner_does_not_claim_a_nonexistent_default_close_shortcut()
+    {
+        var close = Assert.Single(KeymapConfiguration.TmuxDefaults().Bindings,
+            binding => binding.Action == ShellActionNames.ClosePane);
+        Assert.Equal(KeyBindingScope.Prefixed, close.Scope);
+        Assert.Equal("X", close.Gesture);
+        Assert.Contains("Enter to restart", TerminalPaneControl.ExitBannerText(-1, null));
+        Assert.DoesNotContain("Ctrl+W", TerminalPaneControl.ExitBannerText(-1, null));
+        Assert.DoesNotContain("Ctrl+W", TerminalPaneControl.ExitBannerText(-1, "retry"));
+    }
+
     [Fact]
     public Task Exited_terminal_stops_accepting_input_and_keeps_an_exit_state() => Headless.RunAsync(async () =>
     {

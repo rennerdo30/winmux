@@ -7,6 +7,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using System.Runtime.CompilerServices;
 using WinMux.Core.Layout;
 using WinMux.Core.Model;
@@ -28,7 +29,7 @@ namespace WinMux.Shell.Chrome;
 internal sealed record TabStripCommands(
     Action<PaneId> Activate,
     Action<LayoutNode> Rename,
-    Action<PaneId> CloseTab,
+    Func<PaneId, Task> CloseTab,
     Action<PaneId> TogglePin,
     Action<PaneId, StackNode, int> MoveTabToGroup,
     Action<StackNode> AddTab,
@@ -50,6 +51,10 @@ internal sealed record TabStripCommands(
 /// </summary>
 internal static class TabStripView
 {
+    internal const double CompactTabHeight = 30;
+    internal const double CompactTabMinWidth = 80;
+    internal const double CompactTabMaxWidth = 220;
+    internal const double CompactTabTitleSize = 11;
     private const double AccentWeight = 2;
     private sealed record RetainedStrip(StackNode Stack, TabStripPlacement Placement,
         LayoutNode[] Children, PaneId[] Leaves, bool[] Pinned, string?[] Waiting, Action<PaneId>[] Refresh);
@@ -81,7 +86,9 @@ internal static class TabStripView
         LayoutTabStrip strip,
         PaneId focused,
         TabStripCommands commands,
-        Func<PaneId, string?>? waiting = null)
+        Func<PaneId, string?>? waiting = null,
+        bool? closeMotionOverride = null,
+        bool isCaption = false)
     {
         var vertical = strip.IsVertical;
         var items = new StackPanel
@@ -132,7 +139,8 @@ internal static class TabStripView
                 commands,
                 asking,
                 refreshers,
-                opening: seenBefore && !seen.Nodes.Contains(child));
+                opening: seenBefore && !seen.Nodes.Contains(child),
+                closeMotion: closeMotionOverride ?? CaptionMotion.Enabled);
 
             tabs.Add(tab);
             items.Children.Add(tab);
@@ -261,7 +269,8 @@ internal static class TabStripView
                 var naturalTotal = naturalWidths.Sum() + decorationWidth;
                 var width = naturalTotal <= available
                     ? double.NaN
-                    : Math.Clamp((available - decorationWidth) / tabs.Count, 96, 240);
+                    : Math.Clamp((available - decorationWidth) / tabs.Count,
+                        CompactTabMinWidth, CompactTabMaxWidth);
                 foreach (var tab in tabs)
                     if (double.IsNaN(width) ? !double.IsNaN(tab.Width) :
                             double.IsNaN(tab.Width) || Math.Abs(tab.Width - width) > 0.5)
@@ -354,7 +363,7 @@ internal static class TabStripView
         {
             Background = Palette.TabStripBrush,
             BorderBrush = Palette.EdgeBrush,
-            BorderThickness = ContentEdge(strip.Placement, stackHasFocus),
+            BorderThickness = isCaption ? default : ContentEdge(strip.Placement, stackHasFocus),
             Child = vertical && commands.ResizeStrip is not null
                 ? new Panel { Children = { scroller, BuildResizeHandle(strip, commands.ResizeStrip) } }
                 : contents,
@@ -481,7 +490,7 @@ internal static class TabStripView
         var previewTitle = new TextBlock
         {
             Foreground = Palette.TextBrush,
-            FontSize = Palette.CaptionSize,
+            FontSize = CompactTabTitleSize,
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = 170,
             VerticalAlignment = VerticalAlignment.Center,
@@ -494,9 +503,9 @@ internal static class TabStripView
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(7),
             Padding = new Thickness(12, 5),
-            Height = vertical ? Palette.ControlHeight : 34,
-            MinWidth = 96,
-            MaxWidth = 240,
+            Height = vertical ? Palette.ControlHeight : CompactTabHeight,
+            MinWidth = CompactTabMinWidth,
+            MaxWidth = CompactTabMaxWidth,
             Opacity = 0.9,
             BoxShadow = new BoxShadows(new BoxShadow
             {
@@ -737,7 +746,8 @@ internal static class TabStripView
         TabStripCommands commands,
         string? waiting,
         List<Action<PaneId>> refreshers,
-        bool opening)
+        bool opening,
+        bool closeMotion)
     {
         var leaves = child.Leaves().ToArray();
 
@@ -768,7 +778,7 @@ internal static class TabStripView
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = vertical ? double.PositiveInfinity : 170,
             TextAlignment = TextAlignment.Left,
-            FontSize = Palette.CaptionSize,
+            FontSize = CompactTabTitleSize,
         };
 
         // A pinned tab shows a pin where its close button was. Leaving a close button that refuses
@@ -781,15 +791,20 @@ internal static class TabStripView
         } : null;
         Button? tab = null;
         var closing = false;
-        void CloseWithMotion()
+        async void CloseWithMotion()
         {
             if (closing) return;
-            if (vertical || !CaptionMotion.Enabled || tab is null || tab.Bounds.Width < 1)
+            if (vertical || !closeMotion || tab is null || tab.Bounds.Width < 1)
             {
-                commands.CloseTab(target);
+                try { await commands.CloseTab(target); }
+                catch (Exception ex) { CrashLog.Write("tab close failed", ex); }
                 return;
             }
             closing = true;
+            var oldWidth = tab.Width;
+            var oldMinWidth = tab.MinWidth;
+            var oldOpacity = tab.Opacity;
+            var oldTransitions = tab.Transitions;
             tab.IsHitTestVisible = false;
             tab.MinWidth = 0;
             tab.Width = tab.Bounds.Width;
@@ -800,7 +815,27 @@ internal static class TabStripView
             ];
             Dispatcher.UIThread.Post(() => { tab.Width = 0; tab.Opacity = 0; });
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(167) };
-            timer.Tick += (_, _) => { timer.Stop(); commands.CloseTab(target); };
+            timer.Tick += async (_, _) =>
+            {
+                timer.Stop();
+                try { await commands.CloseTab(target); }
+                catch (Exception ex) { CrashLog.Write("tab close failed", ex); }
+                finally
+                {
+                    // Confirmation can be cancelled and pane shutdown can fail. The retained
+                    // control then survives, so undo every animation property before it is used.
+                    if (tab.GetVisualAncestors().OfType<TopLevel>().Any())
+                    {
+                        tab.Transitions = [];
+                        tab.Width = oldWidth;
+                        tab.MinWidth = oldMinWidth;
+                        tab.Opacity = oldOpacity;
+                        tab.IsHitTestVisible = true;
+                        tab.Transitions = oldTransitions;
+                        closing = false;
+                    }
+                }
+            };
             timer.Start();
         }
         var corner = new Button
@@ -856,9 +891,9 @@ internal static class TabStripView
             Content = row,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             HorizontalAlignment = vertical ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
-            MinWidth = vertical ? 0 : 96,
-            MaxWidth = vertical ? double.PositiveInfinity : 240,
-            Height = vertical ? double.NaN : 34,
+            MinWidth = vertical ? 0 : CompactTabMinWidth,
+            MaxWidth = vertical ? double.PositiveInfinity : CompactTabMaxWidth,
+            Height = vertical ? double.NaN : CompactTabHeight,
             [ToolTip.TipProperty] = waiting is null ? title : $"{title}{Environment.NewLine}{waiting}",
         };
         tab.Classes.Add(Theme.Tab);
@@ -920,10 +955,10 @@ internal static class TabStripView
                 ];
                 tab.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() =>
                 {
-                    tab.MaxWidth = 240;
+                    tab.MaxWidth = CompactTabMaxWidth;
                     tab.Opacity = 1;
                     var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(167) };
-                    timer.Tick += (_, _) => { timer.Stop(); tab.MinWidth = 96; };
+                    timer.Tick += (_, _) => { timer.Stop(); tab.MinWidth = CompactTabMinWidth; };
                     timer.Start();
                 });
             }

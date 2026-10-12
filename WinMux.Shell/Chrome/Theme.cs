@@ -234,7 +234,7 @@ internal static class Theme
 
         AddButton(styles, ToolbarButton, Palette.TextBrush, Palette.ControlRadius, new Thickness(12, 6));
         AddButton(styles, IconButton, Palette.MutedTextBrush, Palette.ControlRadius, new Thickness(10, 6));
-        AddButton(styles, Tab, Palette.MutedTextBrush, new CornerRadius(7, 7, 0, 0), new Thickness(12, 5));
+        AddButton(styles, Tab, Palette.MutedTextBrush, new CornerRadius(7, 7, 0, 0), new Thickness(8, 3));
         styles.Add(new Style(x => x.OfType<Button>().Class(Tab).Template().OfType<ContentPresenter>())
         {
             Setters = { new Setter(ContentPresenter.TransitionsProperty, CaptionMotion.HoverTransitions(167)) },
@@ -260,6 +260,12 @@ internal static class Theme
         // what the system's own are — rounding them or insetting them is the giveaway that an app
         // has drawn its own title bar rather than merged into one.
         AddButton(styles, CaptionButton, Palette.TextBrush, new CornerRadius(0), new Thickness(0));
+        styles.Add(new Style(x => x.OfType<Button>().Class(CaptionButton).Template().OfType<ContentPresenter>())
+        {
+            // This is the same opaque token as the caption and tab band. Setting Button.Background
+            // directly would replace Fluent's hover/pressed animation on its presenter.
+            Setters = { new Setter(ContentPresenter.BackgroundProperty, Palette.TabStripBrush) },
+        });
         foreach (var selector in new Func<Style>[]
                  {
                      () => new Style(x => x.OfType<Button>().Class(CaptionButton)),

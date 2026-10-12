@@ -166,11 +166,11 @@ public sealed class SessionAutosaver : IAsyncDisposable
             result = new SessionSaveResult(false, ex);
         }
 
-        if (written || !result.Succeeded)
-        {
-            LastResult = result;
-            SaveCompleted?.Invoke(result);
-        }
+        // A durable, deduplicated snapshot is a successful operation too. Leaving LastResult
+        // at an earlier failure makes a subsequent Flush report that failure after this version
+        // has already been accounted for.
+        LastResult = result;
+        if (written || !result.Succeeded) SaveCompleted?.Invoke(result);
         return result;
     }
 }

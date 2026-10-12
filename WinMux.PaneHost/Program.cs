@@ -202,6 +202,11 @@ internal static class DpiCompatibility
     // GetAwarenessFromDpiAwarenessContext: -1 invalid, 0 unaware, 1 system aware, 2 per-monitor.
     public static bool NeedsAttach(int awareness, uint monitorDpi) =>
         monitorDpi != 0 && monitorDpi != 96 && awareness is 0 or 1;
+
+    public static HostStrategy EffectiveStrategy(HostStrategy requested, int awareness, uint monitorDpi) =>
+        requested == HostStrategy.Embed && NeedsAttach(awareness, monitorDpi)
+            ? HostStrategy.Attach
+            : requested;
 }
 
 /// <summary>Only a newly observed window with the expected application identity is eligible.</summary>
@@ -477,18 +482,7 @@ internal sealed class PaneHostWindow : IDisposable
             GetWindowLongPtrW(child, GwlExStyle), originalRect, _launch.Strategy);
 
         if (IsIconic(child)) ShowWindow(child, SwRestore);
-        if (_launch.Strategy == HostStrategy.Attach)
-            Attach(original with { Strategy = HostStrategy.Attach });
-        else if (DpiCompatibility.NeedsAttach(
-                     GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(child)),
-                     GetDpiForWindow(_hostWindow)))
-        {
-            WriteProtocol(HostProtocol.Notice(
-                "this application uses Windows DPI scaling; attach mode keeps it readable at this display scale"));
-            Attach(original with { Strategy = HostStrategy.Attach });
-        }
-        else
-            Embed(original with { Strategy = HostStrategy.Embed });
+        HostWithCompatibleStrategy(original, _launch.Strategy);
         if (_hosted is not null && _childWindow != IntPtr.Zero)
             _ = Task.Run(() => WatchApplicationWindow(child));
     }
@@ -586,18 +580,38 @@ internal sealed class PaneHostWindow : IDisposable
             WriteProtocol("ERROR=no hosted application is available to switch");
             return;
         }
-        if (current.Strategy == strategy)
+        var effective = CompatibleStrategy(current.Child, strategy);
+        if (current.Strategy == effective)
         {
-            WriteProtocol(HostProtocol.Strategy(strategy));
+            WriteProtocol(HostProtocol.Strategy(effective));
             WriteProtocol(HostProtocol.Ready(current.Child));
             return;
         }
 
         if (!RestoreForeignWindow(restoreRect: false)) return;
-        if (strategy == HostStrategy.Attach)
+        if (effective == HostStrategy.Attach)
             Attach(current with { Strategy = HostStrategy.Attach });
         else
             Embed(current with { Strategy = HostStrategy.Embed });
+    }
+
+    private HostStrategy CompatibleStrategy(IntPtr child, HostStrategy requested)
+    {
+        var effective = DpiCompatibility.EffectiveStrategy(requested,
+            GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(child)),
+            GetDpiForWindow(_hostWindow));
+        if (effective != requested)
+            WriteProtocol(HostProtocol.Notice(
+                "this application uses Windows DPI scaling; attach mode keeps it readable at this display scale"));
+        return effective;
+    }
+
+    private void HostWithCompatibleStrategy(HostedWindowState state, HostStrategy requested)
+    {
+        if (CompatibleStrategy(state.Child, requested) == HostStrategy.Attach)
+            Attach(state with { Strategy = HostStrategy.Attach });
+        else
+            Embed(state with { Strategy = HostStrategy.Embed });
     }
 
     private void ResizeChild()

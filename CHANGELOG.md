@@ -7,6 +7,30 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## 0.8.1 — 2026-10-12
+
+### Fixed
+
+- The title bar, resting caption buttons and root tab strip use one opaque theme fill in light and
+  dark mode; the extra caption separator is gone (WM-17). Hover and pressed caption states remain.
+- Cancelling an animated tab close restores its tab header and hit target (WM-1).
+- A close save returns at its ten-second deadline even if a disk write has already started. The
+  session writer continues its atomic replacement while the window stays open (WM-16).
+- A live attach-to-embed request keeps the DPI-safe attach fallback on scaled displays (WM-8).
+- A deduplicated durable save clears an earlier failure result without another write (WM-9).
+- The exited-terminal banner no longer advertises Ctrl+W, which the default keymap does not bind
+  to Close pane (WM-7).
+- Horizontal tabs in both the caption and nested rows are smaller, with 11px titles and 30px
+  headers while pin and close targets remain 24px (WM-18).
+- Help stays visible beside the window buttons when caption tabs replace the toolbar. Its menu
+  exposes About, release notes and Check for updates, with a badge when an update is ready (WM-19).
+
+### Known limits
+
+- WM-17 and WM-18 await the owner's visual confirmation. Both available monitors were at 150%, so native
+  100% appearance was not measured; nominal-scale geometry and theme-token tests pass.
+- Mixed-DPI moves and WM-4's total CPU target remain open as recorded for 0.8.0.
+
 ## 0.8.0 — 2026-10-12
 
 ### Changed

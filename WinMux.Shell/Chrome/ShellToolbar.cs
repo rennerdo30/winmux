@@ -1,9 +1,12 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Media;
 using WinMux.Core.Layout;
 using WinMux.Core.Settings;
+using WinMux.Core.Update;
 using WinMux.Shell.Actions;
+using WinMux.Shell.Update;
 
 namespace WinMux.Shell.Chrome;
 
@@ -99,7 +102,6 @@ internal static class ShellToolbar
         bar.Children.Add(IconOnly(Icons.Settings(), "Settings", ShellActionNames.ShowSettings, dispatch));
         bar.Children.Add(IconOnly(Icons.Commands(), "All commands by name (Ctrl+B then :)",
             ShellActionNames.ShowPalette, dispatch));
-        bar.Children.Add(HelpButton(dispatch));
 
         var layout = new ScrollViewer
         {
@@ -110,9 +112,9 @@ internal static class ShellToolbar
 
         return new Border
         {
-            Background = Palette.RaisedBrush,
-            // TitleBar owns the full-width separator. A second line here made the middle
-            // of the caption thicker than the identity and window-button ends.
+            // The caption owns the fill. A translucent second layer here makes only the
+            // toolbar column lighter than the caption buttons.
+            Background = Brushes.Transparent,
             Child = layout,
         };
     }
@@ -125,11 +127,32 @@ internal static class ShellToolbar
     /// the things a person looks for by category rather than by name — and because anything longer
     /// than a tooltip belongs on the documentation site, not in the application.
     /// </summary>
-    private static Control HelpButton(Action<string> dispatch)
+    internal static Button BuildHelpButton(Action<string> dispatch, UpdateController updates)
     {
         var button = Styled(Icons.Help(), "Help");
         button.Classes.Remove(Theme.ToolbarButton);
         button.Classes.Add(Theme.IconButton);
+
+        // This button stays beside the window controls even when root tabs replace the toolbar.
+        var badge = new Border
+        {
+            Width = 7,
+            Height = 7,
+            CornerRadius = new CornerRadius(4),
+            Background = Palette.AccentBrush,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            IsHitTestVisible = false,
+        };
+        badge.Classes.Add("update-badge");
+        button.Content = new Panel { Children = { Icons.Help(), badge } };
+        void RefreshBadge()
+        {
+            badge.IsVisible = updates.Decision?.Outcome == UpdateOutcome.UpdateAvailable;
+            ToolTip.SetTip(button, badge.IsVisible ? "Update available — Help and About" : "Help and About");
+        }
+        updates.Changed += RefreshBadge;
+        RefreshBadge();
 
         var menu = new ContextMenu
         {
@@ -140,8 +163,10 @@ internal static class ShellToolbar
                 Leaf("Report an issue", () => Update.Links.Open(Update.Links.Issues)),
                 new Separator(),
                 Leaf("About WinMux", () => dispatch(ShellActionNames.ShowAbout)),
+                Leaf("Check for updates", () => dispatch(ShellActionNames.CheckForUpdates)),
             },
         };
+        button.ContextMenu = menu;
 
         button.Click += (_, _) =>
         {

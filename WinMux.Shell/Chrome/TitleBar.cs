@@ -48,7 +48,8 @@ internal static class TitleBar
         => Build(window, content, out _);
 
     /// <summary>The caption can host the sole root stack's tabs in place of its toolbar.</summary>
-    public static Control Build(Window window, Control content, out ContentControl captionTabs)
+    public static Control Build(Window window, Control content, out ContentControl captionTabs,
+        Control? utility = null)
     {
         ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(content);
@@ -138,6 +139,7 @@ internal static class TitleBar
                 new ColumnDefinition(GridLength.Auto),
                 new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto),
             ],
         };
 
@@ -163,17 +165,17 @@ internal static class TitleBar
         Grid.SetColumn(identity, 0);
         Grid.SetColumn(content, 1);
         Grid.SetColumn(captionTabs, 1);
-        Grid.SetColumn(captionButtons, 2);
+        if (utility is not null) Grid.SetColumn(utility, 2);
+        Grid.SetColumn(captionButtons, 3);
         grid.Children.Add(identity);
         grid.Children.Add(content);
         grid.Children.Add(captionTabs);
+        if (utility is not null) grid.Children.Add(utility);
         grid.Children.Add(captionButtons);
 
         var bar = new Border
         {
-            Background = Palette.RaisedBrush,
-            BorderBrush = Palette.EdgeBrush,
-            BorderThickness = new Thickness(0, 0, 0, 1),
+            Background = Palette.TabStripBrush,
             Child = grid,
         };
 
