@@ -12,6 +12,8 @@ namespace WinMux.Shell;
 
 internal sealed class App : Application
 {
+    public DateTime ProcessStartUtc { get; init; }
+    public bool RegisterAppPathsAfterOpen { get; init; }
     public SessionSnapshot Snapshot { get; init; } = null!;
     public string SessionPath { get; init; } = SessionFile.DefaultFileName;
     public WinMux.Shell.Keymap.KeymapConfiguration Keymap { get; init; } = WinMux.Shell.Keymap.KeymapConfiguration.TmuxDefaults();
@@ -93,6 +95,9 @@ internal sealed class App : Application
             {
                 try
                 {
+                    var startupMs = (DateTime.UtcNow - ProcessStartUtc).TotalMilliseconds;
+                    _ = Task.Run(() => CrashLog.Write($"startup first window opened in {startupMs:0} ms", null));
+                    if (RegisterAppPathsAfterOpen) _ = RegisterAppPathsAsync(windows[0]);
                     if (Restored)
                     {
                         // Not a dialog. Restoring is the normal path and it worked, and Windows
@@ -102,8 +107,8 @@ internal sealed class App : Application
                         // then miss the one notice that matters.
                         var panes = windows.Sum(w => w.PaneCount);
                         windows[0].ShowMessage(
-                            $"Session restored · {panes} pane{(panes == 1 ? "" : "s")} · programs were restarted, "
-                            + "so anything that was running has to be started again");
+                            $"Session restored · {panes} pane{(panes == 1 ? "" : "s")} · terminal processes restarted; "
+                            + "surviving application windows may have reattached");
                     }
 
                     // After the restore line, so these are what is left on screen: each is something
@@ -122,6 +127,21 @@ internal sealed class App : Application
         }
         base.OnFrameworkInitializationCompleted();
     }
+
+    private static async Task RegisterAppPathsAsync(MainWindow window)
+    {
+        string? notice;
+        try
+        {
+            notice = await Task.Run(() => ApplicationRegistration.RegisterCurrentExecutable(
+                Environment.ProcessPath, PlatformServices.ApplicationRegistration));
+        }
+        catch (Exception ex)
+        {
+            notice = "WinMux could not register its app path: " + ex.Message;
+        }
+        if (notice is not null) window.ShowMessage(notice);
+    }
 }
 
 internal static class Program
@@ -129,6 +149,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] argv)
     {
+        using var self = System.Diagnostics.Process.GetCurrentProcess();
+        var processStartUtc = self.StartTime.ToUniversalTime();
         CrashLog.Install();
         var launchDirectory = Environment.CurrentDirectory;
 
@@ -190,10 +212,6 @@ internal static class Program
 
         string sessionPath = location.Path;
         var notices = new List<string>();
-        if (!WinMuxDataDirectory.IsIsolated &&
-            ApplicationRegistration.RegisterCurrentExecutable(Environment.ProcessPath,
-                PlatformServices.ApplicationRegistration) is { } registrationNotice)
-            notices.Add(registrationNotice);
         if (location.MigratedFrom is { } oldPlace)
         {
             notices.Add($"Your session now lives in {sessionPath}; the old copy at {oldPlace} was left where it was");
@@ -253,7 +271,8 @@ internal static class Program
             if (request.ValidationError() is { } error) notices.Add(error);
             else _ = launch.QueueInitial(request);
         }
-        return BuildAvaloniaApp(snapshot, sessionPath, keymap, restored, notices, launch).StartWithClassicDesktopLifetime(argv);
+        return BuildAvaloniaApp(snapshot, sessionPath, keymap, restored, notices, launch,
+            processStartUtc, !WinMuxDataDirectory.IsIsolated).StartWithClassicDesktopLifetime(argv);
     }
 
     private static AppBuilder BuildAvaloniaApp(
@@ -262,11 +281,15 @@ internal static class Program
         Keymap.KeymapConfiguration keymap,
         bool restored,
         IReadOnlyList<string> notices,
-        SingleInstanceLaunch launch) =>
+        SingleInstanceLaunch launch,
+        DateTime processStartUtc,
+        bool registerAppPathsAfterOpen) =>
         AppBuilder.Configure(() => new App
             {
                 Snapshot = snapshot, SessionPath = sessionPath, Keymap = keymap, Restored = restored, StartupNotices = notices,
                 LaunchService = launch,
+                ProcessStartUtc = processStartUtc,
+                RegisterAppPathsAfterOpen = registerAppPathsAfterOpen,
             })
             .UsePlatformDetect()
             .With(RenderingOptions.Create(Settings.ShellSettings.Current.Rendering))
