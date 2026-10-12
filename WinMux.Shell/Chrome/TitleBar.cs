@@ -45,6 +45,10 @@ internal static class TitleBar
     /// <param name="window">The window being decorated. Its hints are set here.</param>
     /// <param name="content">The toolbar, which becomes the left half of the caption.</param>
     public static Control Build(Window window, Control content)
+        => Build(window, content, out _);
+
+    /// <summary>The caption can host the sole root stack's tabs in place of its toolbar.</summary>
+    public static Control Build(Window window, Control content, out ContentControl captionTabs)
     {
         ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(content);
@@ -137,6 +141,12 @@ internal static class TitleBar
             ],
         };
 
+        captionTabs = new ContentControl
+        {
+            IsVisible = false,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+
         var identity = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -152,9 +162,11 @@ internal static class TitleBar
         // and the row's own handler makes it the drag region.
         Grid.SetColumn(identity, 0);
         Grid.SetColumn(content, 1);
+        Grid.SetColumn(captionTabs, 1);
         Grid.SetColumn(captionButtons, 2);
         grid.Children.Add(identity);
         grid.Children.Add(content);
+        grid.Children.Add(captionTabs);
         grid.Children.Add(captionButtons);
 
         var bar = new Border

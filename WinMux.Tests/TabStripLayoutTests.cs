@@ -19,6 +19,25 @@ public class TabStripLayoutTests
     private const int VStrip = Layouter.VerticalTabStripThickness;
 
     [Fact]
+    public void Root_top_stack_can_move_its_strip_to_caption_without_stealing_pane_space()
+    {
+        var first = P("first");
+        var second = P("second");
+        var root = new StackNode([new LeafNode(first), new LeafNode(second)], activeIndex: 1);
+        var bounds = new Rect(0, 0, 800, 600);
+
+        var normal = Layouter.Arrange(root, bounds);
+        var caption = Layouter.Arrange(root, bounds, captionStack: root);
+
+        Assert.Single(normal.TabStrips);
+        Assert.Empty(caption.TabStrips);
+        Assert.Equal(bounds, caption[second.Id]);
+        Assert.False(caption.IsVisible(first.Id));
+        root.TabStrip = TabStripPlacement.Bottom;
+        Assert.Single(Layouter.Arrange(root, bounds, captionStack: root).TabStrips);
+    }
+
+    [Fact]
     public void A_tree_with_no_stack_has_no_strips()
     {
         var a = P("a");

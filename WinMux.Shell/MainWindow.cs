@@ -38,6 +38,9 @@ internal sealed partial class MainWindow : Window
     /// There is one per stack, drawn where that stack is — see <see cref="TabStripView"/>.
     /// </summary>
     private readonly List<Control> _tabStrips = [];
+    private Control _captionToolbar = null!;
+    private ContentControl _captionTabsHost = null!;
+    private Control? _captionTabView;
     private readonly Dictionary<PaneId, Border> _paneHeaders = [];
 
     /// <summary>
@@ -238,7 +241,8 @@ internal sealed partial class MainWindow : Window
             () => Settings.ShellProfiles.All);
         // The toolbar is the caption row's left half rather than a bar beneath the system one.
         // Two stacked bars is the most visible way an app can fail to look like Windows 11.
-        var caption = Chrome.TitleBar.Build(this, toolbar);
+        _captionToolbar = toolbar;
+        var caption = Chrome.TitleBar.Build(this, toolbar, out _captionTabsHost);
         DockPanel.SetDock(caption, Dock.Top);
         dock.Children.Add(caption);
         var statusBar = new Border
@@ -424,7 +428,7 @@ internal sealed partial class MainWindow : Window
         {
             // Hiding a previously active group can dispatch a late focus event from its view.
             // Only a currently visible runtime can change the user's selected nested tabs.
-            if (_tree.Focused == pane.Id || !runtime.View.IsVisible || !_tree.Arrange().IsVisible(pane.Id)) return;
+            if (_tree.Focused == pane.Id || !runtime.View.IsVisible || !ArrangeShell().IsVisible(pane.Id)) return;
             _tree.Focus(pane.Id);
             Relayout();
         };
@@ -465,17 +469,29 @@ internal sealed partial class MainWindow : Window
             _message = $"{pane.Title}: {runtime.StatusMessage}";
         }
         UpdateStatus();
-        UpdateTabStrips(_tree.Arrange());
+        UpdateTabStrips(ArrangeShell());
         _session.RequestSave();
     }
 
     // ---------------- layout ----------------
 
+    private StackNode? CaptionStack() =>
+        _tree.Root is StackNode { TabStrip: TabStripPlacement.Top } root ? root : null;
+
+    private Arrangement ArrangeShell() =>
+        Layouter.Arrange(_tree.Root, _tree.Bounds, captionStack: CaptionStack());
+
+    private Arrangement ArrangeShell(CoreRect bounds)
+    {
+        _tree.Bounds = bounds;
+        return ArrangeShell();
+    }
+
     private void Relayout()
     {
         if (_canvas.Bounds.Width < 4 || _canvas.Bounds.Height < 4) return;
 
-        var arrangement = _tree.Arrange(new CoreRect(0, 0, (int)_canvas.Bounds.Width, (int)_canvas.Bounds.Height));
+        var arrangement = ArrangeShell(new CoreRect(0, 0, (int)_canvas.Bounds.Width, (int)_canvas.Bounds.Height));
 
         foreach (var pane in _tree.Panes)
         {
@@ -516,7 +532,7 @@ internal sealed partial class MainWindow : Window
     {
         if (_canvas.Bounds.Width < 4 || _canvas.Bounds.Height < 4) return;
 
-        var arrangement = _tree.Arrange();
+        var arrangement = ArrangeShell();
         foreach (var pane in _tree.Panes)
         {
             if (!_runtimes.TryGetValue(pane.Id, out var runtime)) continue;
@@ -633,6 +649,28 @@ internal sealed partial class MainWindow : Window
             MoveStrip: SetTabPlacement,
             MoveTab: MoveTab,
             ResizeStrip: ResizeTabStrip);
+
+        var captionStack = CaptionStack();
+        _captionTabsHost.IsVisible = captionStack is not null;
+        _captionToolbar.IsVisible = captionStack is null;
+        if (captionStack is not null)
+        {
+            var captionStrip = new WinMux.Core.Layout.TabStrip(captionStack,
+                new CoreRect(0, 0, Math.Max(0, (int)_captionTabsHost.Bounds.Width),
+                    (int)Palette.CaptionHeight), TabStripPlacement.Top);
+            if (_captionTabView is null || !TabStripView.TryRefresh(_captionTabView, captionStrip,
+                    _tree.Focused, _attention.WaitingMessage))
+            {
+                _captionTabView = TabStripView.Build(captionStrip, _tree.Focused, commands,
+                    _attention.WaitingMessage);
+                _captionTabsHost.Content = _captionTabView;
+            }
+        }
+        else if (_captionTabView is not null)
+        {
+            _captionTabsHost.Content = null;
+            _captionTabView = null;
+        }
 
         foreach (var strip in arrangement.TabStrips)
         {
@@ -1014,7 +1052,7 @@ internal sealed partial class MainWindow : Window
     {
         if (!e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed) return;
         var point = e.GetPosition(_canvas);
-        var arrangement = _tree.Arrange();
+        var arrangement = ArrangeShell();
         var divider = arrangement.Dividers.FirstOrDefault(item => item.Rect.Contains((int)point.X, (int)point.Y));
         if (divider.Split is null) return;
 
@@ -1049,7 +1087,7 @@ internal sealed partial class MainWindow : Window
 
     private double SplitExtent(SplitNode split, SplitDirection direction)
     {
-        var arrangement = _tree.Arrange();
+        var arrangement = ArrangeShell();
         var rectangles = split.Leaves()
             .Select(leaf => arrangement.PaneRects.GetValueOrDefault(leaf.Pane.Id))
             .Where(rect => !rect.IsEmpty)
@@ -1310,7 +1348,7 @@ internal sealed partial class MainWindow : Window
 
             _tree.Focus(pane);
             UpdateStatus();
-            UpdateTabStrips(_tree.Arrange());
+            UpdateTabStrips(ArrangeShell());
         });
     }
 
@@ -1368,7 +1406,7 @@ internal sealed partial class MainWindow : Window
     /// <summary>Which visible pane covers a point in canvas coordinates.</summary>
     private PaneId? PaneAt(Avalonia.Point point)
     {
-        var arrangement = _tree.Arrange();
+        var arrangement = ArrangeShell();
         foreach (var pane in _tree.Panes)
         {
             if (!arrangement.IsVisible(pane.Id)) continue;
@@ -1613,7 +1651,7 @@ internal sealed partial class MainWindow : Window
             return;
         }
 
-        var bounds = _tree.Arrange(new CoreRect(0, 0, (int)_canvas.Bounds.Width, (int)_canvas.Bounds.Height))
+        var bounds = ArrangeShell(new CoreRect(0, 0, (int)_canvas.Bounds.Width, (int)_canvas.Bounds.Height))
             [_tree.Focused];
 
         var search = new TerminalSearchWindow(terminal);
