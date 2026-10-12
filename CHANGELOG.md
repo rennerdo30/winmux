@@ -30,6 +30,8 @@ the ADRs say why.
 - WM-17, WM-18 and WM-19 await the owner's visual confirmation. Both available monitors were
   at 150%, so native 100% appearance was not measured; nominal-scale geometry and theme-token
   tests pass.
+- WM-18 and WM-19 native before/after captures await an idle desktop. Their geometry, UI
+  reachability and update flow passed automated checks.
 - Mixed-DPI moves and WM-4's total CPU target remain open as recorded for 0.8.0.
 
 ## 0.8.0 — 2026-10-12
