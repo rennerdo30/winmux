@@ -44,3 +44,10 @@ so it could not prove pixel equivalence. A native visual check remains necessary
 rows at fixed visual indices wasted most of the cache on each scroll; rotating by the viewport's
 first-row delta reduced the measured CPU further. The aggregate CPU result still warrants a
 separate parser/render-thread profile before claiming the 0.5-core target.
+
+On 2026-10-12, a vectorized fast path that skipped OSC and SGR byte loops for plain chunks was
+tested and rejected. The terminal test suite passed, but the same 22.55 MB native run took 20.90 s
+and 30.28 CPU-s, within run-to-run variation and no improvement over a later 20.51 s/29.67 CPU-s
+run without the fast path. A `dotnet-sampled-thread-time` trace was dominated by waiting threads,
+so it did not identify the remaining CPU hotspot. The proposed fast path was reverted rather than
+keeping unproved complexity in the parser.
