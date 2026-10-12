@@ -18,8 +18,9 @@ the caption. The caption's identity and native-size minimize, maximize and close
 fixed columns. A tab press is handled by its button; blank caption space remains the window drag
 target. Double-clicking blank caption space still toggles maximize.
 
-The + and chevron sit after the last tab while space permits. With overflow, fixed copies of
-those controls and 32 DIP scroll arrows remain visible. The chevron menu exposes the toolbar's
+The + and chevron sit after the last tab while space permits. Tabs shrink together toward 96 DIP
+before scrolling. With overflow, fixed copies of those controls, 16 DIP edge fades and 32 DIP
+scroll arrows remain visible. The chevron menu exposes the toolbar's
 new terminal, file browser, profile, split, group, close, save, settings and command actions.
 Wheel input scrolls the horizontal strip. Thin separators divide resting tabs without jumping
 the layout on hover. The canvas meets the caption for this root shape, and the focus ring omits

@@ -241,7 +241,34 @@ internal static class TabStripView
             VerticalScrollBarVisibility = vertical ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled,
             Padding = vertical ? new Thickness(6, 6) : new Thickness(6, 0, 0, 0),
         };
+        DockPanel? row = null;
         if (!vertical)
+        {
+            double[]? naturalWidths = null;
+            double decorationWidth = 0;
+            void FitTabs()
+            {
+                if (row is null || row.Bounds.Width <= 0 || tabs.Count == 0) return;
+                if (naturalWidths is null)
+                {
+                    if (tabs.Any(tab => tab.DesiredSize.Width <= 0) || items.DesiredSize.Width <= 0) return;
+                    naturalWidths = [.. tabs.Select(tab => tab.DesiredSize.Width)];
+                    // Reserve for scroller padding and DIP rounding so a fitting strip stays fitting.
+                    decorationWidth = Math.Max(0, items.DesiredSize.Width - naturalWidths.Sum()) +
+                        scroller.Padding.Left + 8;
+                }
+                var available = row.Bounds.Width;
+                var naturalTotal = naturalWidths.Sum() + decorationWidth;
+                var width = naturalTotal <= available
+                    ? double.NaN
+                    : Math.Clamp((available - decorationWidth) / tabs.Count, 96, 240);
+                foreach (var tab in tabs)
+                    if (double.IsNaN(width) ? !double.IsNaN(tab.Width) :
+                            double.IsNaN(tab.Width) || Math.Abs(tab.Width - width) > 0.5)
+                        tab.Width = width;
+            }
+            scroller.SizeChanged += (_, _) => FitTabs();
+            items.SizeChanged += (_, _) => FitTabs();
             scroller.PointerWheelChanged += (_, e) =>
             {
                 var maximum = Math.Max(0, scroller.Extent.Width - scroller.Viewport.Width);
@@ -249,6 +276,7 @@ internal static class TabStripView
                 scroller.Offset = new Vector(Math.Clamp(scroller.Offset.X - e.Delta.Y * 80, 0, maximum), 0);
                 e.Handled = true;
             };
+        }
 
         Control contents = scroller;
         if (!vertical)
@@ -258,6 +286,26 @@ internal static class TabStripView
             SizeCaptionActions(fixedAdd, fixedMore);
             fixedAdd.IsVisible = false;
             fixedMore.IsVisible = false;
+            static Border Fade(bool fromLeft) => new()
+            {
+                Width = 16,
+                Background = Palette.TabStripBrush,
+                OpacityMask = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+                    GradientStops =
+                    [
+                        new GradientStop(fromLeft ? Colors.White : Colors.Transparent, 0),
+                        new GradientStop(fromLeft ? Colors.Transparent : Colors.White, 1),
+                    ],
+                },
+                HorizontalAlignment = fromLeft ? HorizontalAlignment.Left : HorizontalAlignment.Right,
+                IsHitTestVisible = false,
+                IsVisible = false,
+            };
+            var leftFade = Fade(true);
+            var rightFade = Fade(false);
             var previous = Icon(new TextBlock { Text = "‹", FontSize = 20 }, "Scroll tabs left", () =>
                 scroller.Offset = new Vector(Math.Max(0, scroller.Offset.X - 160), 0), false);
             var next = Icon(new TextBlock { Text = "›", FontSize = 20 }, "Scroll tabs right", () =>
@@ -275,9 +323,11 @@ internal static class TabStripView
             next.IsVisible = false;
             void UpdateScrollButtons()
             {
-                var overflow = scroller.Extent.Width > scroller.Viewport.Width + 1;
+                var overflow = scroller.Extent.Width > (row?.Bounds.Width ?? 0) + 1;
                 previous.IsVisible = overflow && scroller.Offset.X > 1;
                 next.IsVisible = overflow && scroller.Offset.X + scroller.Viewport.Width < scroller.Extent.Width - 1;
+                leftFade.IsVisible = previous.IsVisible;
+                rightFade.IsVisible = next.IsVisible;
                 fixedAdd.IsVisible = overflow;
                 fixedMore.IsVisible = overflow;
                 add.Opacity = overflow ? 0 : 1;
@@ -287,7 +337,7 @@ internal static class TabStripView
             }
             scroller.ScrollChanged += (_, _) => UpdateScrollButtons();
             scroller.SizeChanged += (_, _) => UpdateScrollButtons();
-            var row = new DockPanel { LastChildFill = true };
+            row = new DockPanel { LastChildFill = true };
             DockPanel.SetDock(fixedMore, Dock.Right);
             DockPanel.SetDock(fixedAdd, Dock.Right);
             DockPanel.SetDock(next, Dock.Right);
@@ -296,7 +346,7 @@ internal static class TabStripView
             row.Children.Add(fixedAdd);
             row.Children.Add(next);
             row.Children.Add(previous);
-            row.Children.Add(scroller);
+            row.Children.Add(new Panel { Children = { scroller, leftFade, rightFade } });
             contents = row;
         }
 
