@@ -66,6 +66,20 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     private readonly Dictionary<string, string> _environment;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly ITerminalEngine _engine;
+    private TerminalCell[] _rowCells = [];
+    private CachedTerminalRow[] _cachedRows = [];
+    private int _cacheOffset;
+    private int _cachedFirstRow;
+
+    private sealed class CachedTerminalRow
+    {
+        public int Index = -1;
+        public int Length;
+        public TerminalCell[] Cells = [];
+        public CachedRun[] Runs = [];
+    }
+
+    private readonly record struct CachedRun(TerminalRun Run, Color Foreground, Color Background, FormattedText? Text);
 
     private readonly TerminalViewport _viewport = new();
     private bool _dragging;
@@ -178,43 +192,47 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         var columns = _engine.Columns;
         var visibleRows = Math.Min(_engine.Rows, _metrics.RowsIn(Bounds.Height, Inset));
         var firstRow = _viewport.TopRow(_engine.TotalRows, _engine.Rows);
-
-        var cells = new TerminalCell[columns];
+        if (_rowCells.Length != columns) _rowCells = new TerminalCell[columns];
+        if (_cachedRows.Length != visibleRows)
+        {
+            _cachedRows = Enumerable.Range(0, visibleRows).Select(_ => new CachedTerminalRow()).ToArray();
+            _cacheOffset = 0;
+            _cachedFirstRow = firstRow;
+        }
+        else if (visibleRows > 0 && firstRow != _cachedFirstRow)
+        {
+            // A scrolling viewport reuses nearly all its rows. Rotate the row cache so the old
+            // second row becomes the new first row; only incoming rows need text shaping.
+            var shift = (firstRow - _cachedFirstRow) % visibleRows;
+            _cacheOffset = (_cacheOffset + shift + visibleRows) % visibleRows;
+            _cachedFirstRow = firstRow;
+        }
 
         for (var row = 0; row < visibleRows; row++)
         {
-            Array.Clear(cells);
-            var info = _engine.CopyRow(firstRow + row, cells);
+            var rowIndex = firstRow + row;
+            var info = _engine.CopyRow(rowIndex, _rowCells);
+            var cached = _cachedRows[(row + _cacheOffset) % visibleRows];
+            var length = Math.Min(info.Length, columns);
+            if (cached.Index != rowIndex || cached.Length != length ||
+                !cached.Cells.AsSpan(0, cached.Length).SequenceEqual(_rowCells.AsSpan(0, length)))
+                CacheRow(cached, rowIndex, length);
             var y = Inset + row * CellHeight;
 
             // Cell backgrounds and the glyphs on top of them, run by run. One FormattedText for
             // the whole row is what discarded every colour the engine had already parsed.
-            foreach (var run in TerminalRunSplitter.Split(cells, Math.Min(info.Length, columns)))
+            foreach (var shaped in cached.Runs)
             {
-                var inverse = (run.Attributes & TerminalCellAttributes.Inverse) != 0;
-                var foreground = TerminalPalette.Resolve(inverse ? run.Background : run.Foreground, inverse);
-                var background = TerminalPalette.Resolve(inverse ? run.Foreground : run.Background, !inverse);
-
+                var run = shaped.Run;
                 var x = Inset + run.Column * CellWidth;
                 var width = run.Columns * CellWidth;
 
-                if (background != TerminalPalette.DefaultBackground)
-                    context.FillRectangle(BrushFor(background), new Rect(x, y, width, CellHeight), 0);
+                if (shaped.Background != TerminalPalette.DefaultBackground)
+                    context.FillRectangle(BrushFor(shaped.Background), new Rect(x, y, width, CellHeight), 0);
 
-                if ((run.Attributes & TerminalCellAttributes.Invisible) != 0) continue;
-                if ((run.Attributes & TerminalCellAttributes.Faint) != 0)
-                    foreground = TerminalPalette.Faint(foreground, background);
-
-                var text = new FormattedText(
-                    run.Text,
-                    CultureInfo.CurrentCulture,
-                    FlowDirection.LeftToRight,
-                    TypefaceFor(run.Attributes),
-                    FontSize,
-                    BrushFor(foreground));
+                if (shaped.Text is not { } text) continue;
                 context.DrawText(text, new Point(x, y));
-
-                DrawDecorations(context, run, foreground, x, y, width);
+                DrawDecorations(context, run, shaped.Foreground, x, y, width);
             }
         }
 
@@ -275,6 +293,27 @@ internal sealed class TerminalPaneControl : Control, IDisposable
                 FlowDirection.LeftToRight, new Typeface(Chrome.Palette.UiFont), 13,
                 Chrome.Palette.TextBrush), new Point(banner.X + 14, banner.Y + 18));
         }
+    }
+
+    private void CacheRow(CachedTerminalRow cached, int rowIndex, int length)
+    {
+        if (cached.Cells.Length != _rowCells.Length) cached.Cells = new TerminalCell[_rowCells.Length];
+        _rowCells.AsSpan(0, length).CopyTo(cached.Cells);
+        cached.Index = rowIndex;
+        cached.Length = length;
+        cached.Runs = TerminalRunSplitter.Split(_rowCells, length).Select(run =>
+        {
+            var inverse = (run.Attributes & TerminalCellAttributes.Inverse) != 0;
+            var foreground = TerminalPalette.Resolve(inverse ? run.Background : run.Foreground, inverse);
+            var background = TerminalPalette.Resolve(inverse ? run.Foreground : run.Background, !inverse);
+            if ((run.Attributes & TerminalCellAttributes.Faint) != 0)
+                foreground = TerminalPalette.Faint(foreground, background);
+            var text = (run.Attributes & TerminalCellAttributes.Invisible) != 0
+                ? null
+                : new FormattedText(run.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                    TypefaceFor(run.Attributes), FontSize, BrushFor(foreground));
+            return new CachedRun(run, foreground, background, text);
+        }).ToArray();
     }
 
     /// <summary>Underlines, strikethrough and overline, which are lines rather than font choices.</summary>
@@ -382,6 +421,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     private void ApplyFont(string? family, double fontSize)
     {
         _metrics = TerminalFontMetrics.Measure(family, fontSize);
+        _cachedRows = [];
 
         var resolved = _metrics.Typeface.FontFamily;
         _regular = _metrics.Typeface;
@@ -815,6 +855,7 @@ internal sealed class TerminalPaneControl : Control, IDisposable
         }
 
         Settings.ShellSettings.Changed -= OnSettingsChanged;
+        _repaintTimer?.Stop();
         _engine.Updated -= OnEngineUpdated;
         _engine.TitleChanged -= OnEngineTitleChanged;
         _engine.WorkingDirectoryChanged -= OnEngineWorkingDirectoryChanged;
@@ -1014,26 +1055,52 @@ internal sealed class TerminalPaneControl : Control, IDisposable
     });
 
     /// <summary>
-    /// One queued repaint at a time. See <see cref="CoalescedRepaint"/> for why that is not merely
-    /// an optimisation: input is delivered as dispatcher jobs below Render, so a pane that posts
-    /// repaints faster than they drain starves the user's own clicks.
+    /// One timer at 60 Hz while output is changing. Input is delivered as dispatcher jobs below
+    /// Render, so an output stream must not post paint jobs faster than they can drain.
     /// </summary>
-    private CoalescedRepaint? _repaint;
+    private DispatcherTimer? _repaintTimer;
+    private int _terminalDirty;
+    private int _repaintRunning;
     private CoalescedRepaint? _titleRepaint;
     private string? _pendingTitle;
 
     private void OnEngineUpdated()
     {
         if (_disposed != 0) return;
-
-        // Told about growth before redrawing: while the user is reading history, new output must
-        // not drag the text upward under them.
-        (_repaint ??= new CoalescedRepaint(() =>
+        Volatile.Write(ref _terminalDirty, 1);
+        // Only the transition from idle posts a dispatcher job. While streaming, timer ticks
+        // absorb all other updates so the dispatcher queue stays bounded.
+        if (Interlocked.Exchange(ref _repaintRunning, 1) != 0) return;
+        Dispatcher.UIThread.Post(() =>
         {
             if (_disposed != 0) return;
-            _viewport.OnBufferChanged(_engine.TotalRows, _engine.ScrollbackCount);
-            InvalidateVisual();
-        })).Request();
+            if (_repaintTimer is null)
+            {
+                _repaintTimer = new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(1000.0 / 60),
+                };
+                _repaintTimer.Tick += PaintTerminalTick;
+            }
+            _repaintTimer.Start();
+        }, DispatcherPriority.Background);
+    }
+
+    private void PaintTerminalTick(object? sender, EventArgs e)
+    {
+        if (_disposed != 0) { _repaintTimer?.Stop(); return; }
+        if (Interlocked.Exchange(ref _terminalDirty, 0) == 0)
+        {
+            _repaintTimer?.Stop();
+            Volatile.Write(ref _repaintRunning, 0);
+            if (Volatile.Read(ref _terminalDirty) != 0 &&
+                Interlocked.Exchange(ref _repaintRunning, 1) == 0)
+                _repaintTimer?.Start();
+            return;
+        }
+        // Told about growth before redrawing: reading history must not jump under the user.
+        _viewport.OnBufferChanged(_engine.TotalRows, _engine.ScrollbackCount);
+        InvalidateVisual();
     }
 
     private void OnEngineTitleChanged(string title)
