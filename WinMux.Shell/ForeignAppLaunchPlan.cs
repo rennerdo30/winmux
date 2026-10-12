@@ -46,9 +46,14 @@ internal sealed record ForeignAppLaunchPlan(
         var selectionMode = string.IsNullOrWhiteSpace(configuredClass)
             ? rule.WindowSelection.Mode
             : ForeignWindowSelectionMode.ClassName;
-        var processName = selectionMode == ForeignWindowSelectionMode.ProcessName
-            ? rule.WindowSelection.ProcessName
-            : null;
+        // Class names are shared across apps (Chrome_WidgetWin_1, ApplicationFrameWindow).
+        // A class rule needs its expected window process as well as the class.
+        var processName = selectionMode switch
+        {
+            ForeignWindowSelectionMode.ProcessName => rule.WindowSelection.ProcessName,
+            ForeignWindowSelectionMode.ClassName => rule.WindowSelection.ProcessName ?? rule.Match.ExecutableImage,
+            _ => null,
+        };
 
         var settle = rule.LaunchDelayMilliseconds;
         if (restore.Extras.GetValueOrDefault("launch_delay_ms") is { Length: > 0 } configuredDelay &&

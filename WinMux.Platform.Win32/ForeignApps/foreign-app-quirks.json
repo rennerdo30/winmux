@@ -82,7 +82,7 @@
       "strategy": "embed",
       "windowSelection": {
         "mode": "ClassName",
-        "processName": "",
+        "processName": "explorer.exe",
         "className": "CabinetWClass"
       },
       "launchDelayMs": 2000,
@@ -154,7 +154,7 @@
       "strategy": "embed",
       "windowSelection": {
         "mode": "ClassName",
-        "processName": "",
+        "processName": "Code.exe",
         "className": "Chrome_WidgetWin_1"
       },
       "launchDelayMs": 3500,
@@ -174,12 +174,13 @@
       "match": {
         "exe": "ApplicationFrameHost.exe",
         "launchExe": "calc.exe",
-        "windowClass": "ApplicationFrameWindow"
+        "windowClass": "ApplicationFrameWindow",
+        "titleContains": "Calculator"
       },
       "strategy": "attach",
       "windowSelection": {
         "mode": "ClassName",
-        "processName": "",
+        "processName": "ApplicationFrameHost.exe",
         "className": "ApplicationFrameWindow"
       },
       "launchDelayMs": 2500,

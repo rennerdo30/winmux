@@ -177,6 +177,35 @@ internal enum WindowMatchMode
     ClassName,
 }
 
+/// <summary>Only a newly observed window with the expected application identity is eligible.</summary>
+internal static class WindowCandidateMatcher
+{
+    public static IntPtr LastNewMatch(IEnumerable<IntPtr> windows, IReadOnlySet<IntPtr> before,
+        IReadOnlySet<IntPtr> excluded, Func<IntPtr, bool> matches) =>
+        windows.LastOrDefault(hwnd => !before.Contains(hwnd) && !excluded.Contains(hwnd) && matches(hwnd));
+
+    public static bool Matches(LaunchSpec launch, uint launchedPid, uint candidatePid,
+        string candidateProcess, string candidateClass, string candidateTitle)
+    {
+        if (!string.IsNullOrWhiteSpace(launch.WindowTitleContains) &&
+            !candidateTitle.Contains(launch.WindowTitleContains, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var expectedProcess = launch.ProcessName ?? Path.GetFileName(launch.Program);
+        return launch.MatchMode switch
+        {
+            WindowMatchMode.Pid => candidatePid == launchedPid,
+            WindowMatchMode.ProcessName => !string.IsNullOrWhiteSpace(expectedProcess) &&
+                                           candidateProcess.Equals(expectedProcess, StringComparison.OrdinalIgnoreCase),
+            WindowMatchMode.ClassName => !string.IsNullOrWhiteSpace(launch.WindowClass) &&
+                                         candidateClass.Equals(launch.WindowClass, StringComparison.OrdinalIgnoreCase) &&
+                                         !string.IsNullOrWhiteSpace(expectedProcess) &&
+                                         candidateProcess.Equals(expectedProcess, StringComparison.OrdinalIgnoreCase),
+            _ => false,
+        };
+    }
+}
+
 internal static class HostProtocol
 {
     public static string Strategy(HostStrategy strategy) =>
@@ -293,8 +322,8 @@ internal sealed class PaneHostWindow : IDisposable
                                    TimeSpan.FromMilliseconds(_launch.SettleMilliseconds);
             while (stopwatch.Elapsed < discoveryTimeout && !_shutdown.IsCancellationRequested)
             {
-                var latest = AdoptableWindows().LastOrDefault(hwnd =>
-                    !before.Contains(hwnd) && !_launch.ExcludedWindows.Contains(hwnd) && Matches(hwnd));
+                var latest = WindowCandidateMatcher.LastNewMatch(
+                    AdoptableWindows(), before, _launch.ExcludedWindows, Matches);
                 if (latest != IntPtr.Zero)
                 {
                     if (candidate != latest) candidateFoundAt = stopwatch.Elapsed;
@@ -313,11 +342,8 @@ internal sealed class PaneHostWindow : IDisposable
                 Thread.Sleep(100);
             }
 
-            var existing = AdoptableWindows().LastOrDefault(hwnd =>
-                before.Contains(hwnd) && !_launch.ExcludedWindows.Contains(hwnd) && Matches(hwnd));
-            if (existing != IntPtr.Zero) { PostMessageW(_hostWindow, WmAppAdopt, existing, IntPtr.Zero); return; }
             if (!_shutdown.IsCancellationRequested)
-                WriteProtocol($"ERROR=no matching window appeared within {discoveryTimeout.TotalSeconds:0.#} seconds");
+                WriteProtocol($"ERROR=no new matching window appeared within {discoveryTimeout.TotalSeconds:0.#} seconds; use Adopt an open window to choose an existing one");
         }
         catch (Exception ex)
         {
@@ -369,20 +395,10 @@ internal sealed class PaneHostWindow : IDisposable
 
     private bool Matches(IntPtr hwnd)
     {
-        var identityMatches = _launch.MatchMode switch
-        {
-            WindowMatchMode.Pid => GetWindowProcessId(hwnd) == _launchedProcessId,
-            WindowMatchMode.ClassName => !string.IsNullOrWhiteSpace(_launch.WindowClass) &&
-                                         GetClassName(hwnd).Equals(
-                                             _launch.WindowClass,
-                                             StringComparison.OrdinalIgnoreCase),
-            _ => GetProcessImageName(hwnd).Equals(
-                _launch.ProcessName ?? Path.GetFileName(_launch.Program),
-                StringComparison.OrdinalIgnoreCase),
-        };
-        return identityMatches &&
-               (string.IsNullOrWhiteSpace(_launch.WindowTitleContains) ||
-                GetWindowText(hwnd).Contains(_launch.WindowTitleContains, StringComparison.OrdinalIgnoreCase));
+        return WindowCandidateMatcher.Matches(_launch, _launchedProcessId, GetWindowProcessId(hwnd),
+            _launch.MatchMode == WindowMatchMode.Pid ? string.Empty : GetProcessImageName(hwnd),
+            _launch.MatchMode == WindowMatchMode.ClassName ? GetClassName(hwnd) : string.Empty,
+            string.IsNullOrWhiteSpace(_launch.WindowTitleContains) ? string.Empty : GetWindowText(hwnd));
     }
 
     private static uint GetWindowProcessId(IntPtr hwnd)
