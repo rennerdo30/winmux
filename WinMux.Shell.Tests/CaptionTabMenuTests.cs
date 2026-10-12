@@ -18,7 +18,7 @@ public sealed class CaptionTabMenuTests
         var stack = new StackNode([new LeafNode(pane), new LeafNode(Pane.Terminal("second"))]);
         var dispatched = new List<string>();
         var commands = new TabStripCommands(
-            Activate: _ => { }, Rename: _ => { }, CloseTab: _ => { }, TogglePin: _ => { },
+            Activate: _ => { }, Rename: _ => { }, CloseTab: _ => Task.CompletedTask, TogglePin: _ => { },
             MoveTabToGroup: (_, _, _) => { }, AddTab: _ => { }, MoveStrip: (_, _) => { },
             MoveTab: _ => { }, Dispatch: dispatched.Add);
         var view = TabStripView.Build(new TabStrip(stack, new Rect(0, 0, 800, 40),

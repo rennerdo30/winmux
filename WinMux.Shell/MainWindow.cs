@@ -242,7 +242,8 @@ internal sealed partial class MainWindow : Window
         // The toolbar is the caption row's left half rather than a bar beneath the system one.
         // Two stacked bars is the most visible way an app can fail to look like Windows 11.
         _captionToolbar = toolbar;
-        var caption = Chrome.TitleBar.Build(this, toolbar, out _captionTabsHost);
+        var help = ShellToolbar.BuildHelpButton(action => DispatchNamedAction(action), _updates);
+        var caption = Chrome.TitleBar.Build(this, toolbar, out _captionTabsHost, help);
         DockPanel.SetDock(caption, Dock.Top);
         dock.Children.Add(caption);
         var statusBar = new Border
@@ -642,7 +643,7 @@ internal sealed partial class MainWindow : Window
         var commands = new TabStripCommands(
             Activate: FocusPane,
             Rename: node => Run(RenameTabAsync(node)),
-            CloseTab: pane => Run(CloseTabAsync(pane)),
+            CloseTab: CloseTabAsync,
             TogglePin: TogglePin,
             MoveTabToGroup: MoveTabToGroup,
             AddTab: stack => Run(AddTabToStackAsync(stack)),
@@ -669,7 +670,7 @@ internal sealed partial class MainWindow : Window
                     _tree.Focused, _attention.WaitingMessage))
             {
                 _captionTabView = TabStripView.Build(captionStrip, _tree.Focused, commands,
-                    _attention.WaitingMessage);
+                    _attention.WaitingMessage, isCaption: true);
                 _captionTabsHost.Content = _captionTabView;
             }
         }

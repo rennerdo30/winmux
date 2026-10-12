@@ -65,6 +65,32 @@ public sealed class SessionAutosaverTests
     }
 
     [Fact]
+    public async Task Deduplicated_durable_intent_clears_an_earlier_failure()
+    {
+        var writes = 0;
+        var notifications = 0;
+        await using var saver = new SessionAutosaver("ignored", TimeSpan.FromMinutes(1), (_, snapshot) =>
+        {
+            writes++;
+            if (snapshot.Windows.Single().Title == "fails") throw new IOException("disk unavailable");
+        });
+        saver.SaveCompleted += _ => notifications++;
+        var durable = Snapshot("durable");
+        saver.RequestSave(durable);
+        Assert.True((await saver.FlushAsync()).Succeeded);
+        saver.RequestSave(Snapshot("fails"));
+        Assert.False((await saver.FlushAsync()).Succeeded);
+
+        saver.RequestSave(durable);
+        var recovered = await saver.FlushAsync();
+
+        Assert.True(recovered.Succeeded);
+        Assert.Same(recovered, saver.LastResult);
+        Assert.Equal(2, writes);
+        Assert.Equal(2, notifications);
+    }
+
+    [Fact]
     public async Task Unchanged_intent_recreates_a_removed_session_file()
     {
         var directory = Path.Combine(Path.GetTempPath(), "winmux-save-review-" + Guid.NewGuid().ToString("N"));

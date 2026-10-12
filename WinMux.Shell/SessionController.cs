@@ -171,9 +171,20 @@ internal sealed class SessionController : IDisposable
         if (!_windows.Contains(window)) return new SessionSaveResult(true);
         // A roaming or offline profile must not freeze the UI or leave closing stuck forever.
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        try { return await SaveNowAsync(timeout.Token); }
-        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        return await AwaitShutdownSaveAsync(SaveNowAsync(timeout.Token), timeout.Token);
+    }
+
+    internal static async Task<SessionSaveResult> AwaitShutdownSaveAsync(
+        Task<SessionSaveResult> save, CancellationToken deadline)
+    {
+        // Cancellation stops a queued writer, but Task.Run cannot interrupt a filesystem call
+        // already in progress. Bound this await separately. The atomic writer may finish later;
+        // keep the window open and observe any late fault.
+        try { return await save.WaitAsync(deadline); }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
         {
+            _ = save.ContinueWith(task => { _ = task.Exception; },
+                CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
             return new SessionSaveResult(false, new TimeoutException(
                 "saving the session took more than 10 seconds; WinMux stayed open"));
         }

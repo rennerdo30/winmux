@@ -286,14 +286,16 @@ internal sealed class TerminalPaneControl : Control, IDisposable
             var banner = new Rect(12, Math.Max(12, Bounds.Height - 68), Math.Max(1, Bounds.Width - 24), 56);
             context.DrawRectangle(Chrome.Palette.RaisedBrush, new Pen(Chrome.Palette.EdgeBrush, 1),
                 new RoundedRect(banner, 8));
-            var message = _restartError is null
-                ? $"Process exited with code {exitCode}  ·  Enter to restart  ·  Ctrl+W to close"
-                : $"Restart failed: {_restartError}  ·  Enter to retry  ·  Ctrl+W to close";
+            var message = ExitBannerText(exitCode, _restartError);
             context.DrawText(new FormattedText(message, CultureInfo.CurrentCulture,
                 FlowDirection.LeftToRight, new Typeface(Chrome.Palette.UiFont), 13,
                 Chrome.Palette.TextBrush), new Point(banner.X + 14, banner.Y + 18));
         }
     }
+
+    internal static string ExitBannerText(int exitCode, string? restartError) => restartError is null
+        ? $"Process exited with code {exitCode}  ·  Enter to restart"
+        : $"Restart failed: {restartError}  ·  Enter to retry";
 
     private void CacheRow(CachedTerminalRow cached, int rowIndex, int length)
     {

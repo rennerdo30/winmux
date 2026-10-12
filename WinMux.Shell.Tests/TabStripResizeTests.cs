@@ -26,7 +26,7 @@ public sealed class TabStripResizeTests
         var resizeCalls = 0;
         var refreshes = new List<bool>();
         var commands = new TabStripCommands(
-            Activate: _ => { }, Rename: _ => { }, CloseTab: _ => { }, TogglePin: _ => { },
+            Activate: _ => { }, Rename: _ => { }, CloseTab: _ => Task.CompletedTask, TogglePin: _ => { },
             MoveTabToGroup: (_, _, _) => { }, AddTab: _ => { }, MoveStrip: (_, _) => { },
             MoveTab: _ => { }, ResizeStrip: (owner, width) =>
             {

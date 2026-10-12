@@ -16,7 +16,7 @@ namespace WinMux.Shell.Tests;
 public sealed class WaitingTabTests
 {
     private static TabStripCommands NoCommands() => new(
-        _ => { }, _ => { }, _ => { }, _ => { }, (_, _, _) => { }, _ => { }, (_, _) => { }, _ => { });
+        _ => { }, _ => { }, _ => Task.CompletedTask, _ => { }, (_, _, _) => { }, _ => { }, (_, _) => { }, _ => { });
 
     /// <summary>The three panes a strip is built from: a plain tab, and a tab holding a split.</summary>
     private sealed record Panes(Pane Plain, Pane Visible, Pane Buried)

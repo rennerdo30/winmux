@@ -27,7 +27,7 @@ public sealed class WrappedTabLabelTests
             var leaf = Assert.IsType<LeafNode>(node);
             leaf.Pane.Title = "Inner renamed";
             leaf.Pane.Restore = leaf.Pane.Restore with { Title = leaf.Pane.Title, TitleIsCustom = true };
-        }, _ => { }, _ => { }, (_, _, _) => { }, _ => { }, (_, _) => { }, _ => { });
+        }, _ => Task.CompletedTask, _ => { }, (_, _, _) => { }, _ => { }, (_, _) => { }, _ => { });
         var outerStrip = new WinMux.Core.Layout.TabStrip(outer, new Rect(0, 0, 480, 40), TabStripPlacement.Top);
         var innerStrip = new WinMux.Core.Layout.TabStrip(inner, new Rect(0, 0, 480, 40), TabStripPlacement.Top);
         var outerView = TabStripView.Build(outerStrip, tree.Focused, commands);

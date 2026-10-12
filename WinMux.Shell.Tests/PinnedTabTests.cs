@@ -22,7 +22,7 @@ public sealed class PinnedTabTests
         public TabStripCommands Commands => new(
             Activate: _ => { },
             Rename: _ => { },
-            CloseTab: Closed.Add,
+            CloseTab: id => { Closed.Add(id); return Task.CompletedTask; },
             TogglePin: Pinned.Add,
             MoveTabToGroup: (_, _, _) => { },
             AddTab: _ => { },

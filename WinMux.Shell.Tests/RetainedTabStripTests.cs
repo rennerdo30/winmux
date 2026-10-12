@@ -11,7 +11,7 @@ namespace WinMux.Shell.Tests;
 public sealed class RetainedTabStripTests
 {
     private static TabStripCommands Commands(Action<PaneId>? activate = null, Action<LayoutNode>? rename = null) =>
-        new(activate ?? (_ => { }), rename ?? (_ => { }), _ => { }, _ => { },
+        new(activate ?? (_ => { }), rename ?? (_ => { }), _ => Task.CompletedTask, _ => { },
             (_, _, _) => { }, _ => { }, (_, _) => { }, _ => { });
 
     private static TabStrip Strip(StackNode stack) => new(stack, new Rect(0, 0, 480, 40), TabStripPlacement.Top);
@@ -28,6 +28,73 @@ public sealed class RetainedTabStripTests
 
     private static Button[] Tabs(Control strip) => strip.GetVisualDescendants().OfType<Button>()
         .Where(b => b.Classes.Contains(Theme.Tab)).ToArray();
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public Task Horizontal_tabs_are_compact_with_accessible_pin_and_close_targets(bool caption) =>
+        Headless.RunSync(() =>
+        {
+            var pinned = Pane.Terminal("Pinned workspace");
+            pinned.IsPinned = true;
+            var regular = Pane.Terminal("Regular workspace");
+            var stack = new StackNode([new LeafNode(pinned), new LeafNode(regular)]);
+            var view = TabStripView.Build(Strip(stack), regular.Id, Commands(), isCaption: caption);
+            using var window = new WindowScope(Show(view));
+            foreach (var tab in Tabs(view))
+            {
+                Assert.Equal(TabStripView.CompactTabHeight, tab.Bounds.Height);
+                Assert.InRange(tab.Bounds.Width, TabStripView.CompactTabMinWidth,
+                    TabStripView.CompactTabMaxWidth);
+                var title = tab.GetVisualDescendants().OfType<TextBlock>()
+                    .Single(text => text.Text?.Contains("workspace") == true);
+                Assert.Equal(TabStripView.CompactTabTitleSize, title.FontSize);
+                var action = tab.GetVisualDescendants().OfType<Button>()
+                    .Single(button => button.Classes.Contains(Theme.PinButton) ||
+                                      button.Classes.Contains(Theme.CloseButton));
+                Assert.Equal(24, action.Width);
+                Assert.Equal(24, action.Height);
+                if (action.IsVisible)
+                {
+                    Assert.Equal(24, action.Bounds.Width);
+                    Assert.Equal(24, action.Bounds.Height);
+                }
+                Assert.True(action.Width * 1.5 >= 36);
+            }
+        });
+
+    [Fact]
+    public Task Cancelled_animated_close_restores_the_retained_tab() => Headless.RunAsync(async () =>
+    {
+        var first = Pane.Terminal("keep");
+        var stack = new StackNode([new LeafNode(first), new LeafNode(Pane.Terminal("other"))]);
+        var closeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resolveClose = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commands = Commands() with
+        {
+            CloseTab = _ => { closeStarted.TrySetResult(); return resolveClose.Task; },
+        };
+        var view = TabStripView.Build(Strip(stack), first.Id, commands, closeMotionOverride: true);
+        using var window = new WindowScope(Show(view));
+        var tab = Tabs(view)[0];
+        var oldWidth = tab.Width;
+        var close = tab.GetVisualDescendants().OfType<Button>()
+            .Single(button => button.Classes.Contains(Theme.CloseButton));
+        try
+        {
+            close.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await closeStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.False(tab.IsHitTestVisible);
+            resolveClose.SetResult(); // the confirmation was cancelled; the tree is unchanged
+            await Task.Delay(40);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(tab.IsHitTestVisible);
+            Assert.Equal(oldWidth, tab.Width);
+            Assert.Equal(1, tab.Opacity);
+            Assert.True(TabStripView.TryRefresh(view, Strip(stack), first.Id));
+        }
+        finally { resolveClose.TrySetResult(); }
+    });
 
     [Fact]
     public Task Overflow_tabs_keep_navigation_visible_and_scrollable() => Headless.RunSync(() =>

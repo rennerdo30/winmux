@@ -70,7 +70,7 @@ public sealed class UpdateScriptTests : IDisposable
         // The user's quirks are kept beside the shipped ones, not lost to them.
         Assert.Equal("{ \"edited\": \"by the user\" }", Read("foreign-app-quirks.json.before-update"));
 
-        Assert.Equal("ok|0.9.9", File.ReadAllText(Result).Trim());
+        Assert.Equal("ok|0.8.1", File.ReadAllText(Result).Trim());
         Assert.False(Directory.Exists(Staged), "a finished update clears its staging directory");
         Assert.Contains("installed", File.ReadAllText(Log));
     }
@@ -112,13 +112,13 @@ public sealed class UpdateScriptTests : IDisposable
         using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(_appKey))
         {
             key.SetValue("InstallLocation", Current + Path.DirectorySeparatorChar);
-            key.SetValue("DisplayVersion", "0.7.0");
+            key.SetValue("DisplayVersion", "0.8.0");
         }
 
         Run(attempts: 40);
 
         using var after = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(_appKey)!;
-        Assert.Equal("0.9.9", after.GetValue("DisplayVersion"));
+        Assert.Equal("0.8.1", after.GetValue("DisplayVersion"));
     }
 
     [Fact]
@@ -129,14 +129,14 @@ public sealed class UpdateScriptTests : IDisposable
         using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(_appKey))
         {
             key.SetValue("InstallLocation", Path.Combine(_root, "Programs", "WinMux"));
-            key.SetValue("DisplayVersion", "0.7.0");
+            key.SetValue("DisplayVersion", "0.8.0");
         }
 
         Run(attempts: 40);
 
-        Assert.Equal("ok|0.9.9", File.ReadAllText(Result).Trim());
+        Assert.Equal("ok|0.8.1", File.ReadAllText(Result).Trim());
         using var after = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(_appKey)!;
-        Assert.Equal("0.7.0", after.GetValue("DisplayVersion"));
+        Assert.Equal("0.8.0", after.GetValue("DisplayVersion"));
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public sealed class UpdateScriptTests : IDisposable
 
         var script = Path.Combine(_root, "update.ps1");
         File.WriteAllText(script, UpdateInstaller.BuildScript(
-            finished.Id, Current, Staged, Path.Combine(_root, "session.toml"), "0.9.9", Log, Result,
+            finished.Id, Current, Staged, Path.Combine(_root, "session.toml"), "0.8.1", Log, Result,
             relaunch: false, attempts: attempts, installedAppKey: @"HKCU:\" + _appKey));
 
         using var powershell = Process.Start(new ProcessStartInfo("powershell.exe")
