@@ -51,3 +51,8 @@ and 30.28 CPU-s, within run-to-run variation and no improvement over a later 20.
 run without the fast path. A `dotnet-sampled-thread-time` trace was dominated by waiting threads,
 so it did not identify the remaining CPU hotspot. The proposed fast path was reverted rather than
 keeping unproved complexity in the parser.
+
+A final Windows Performance Recorder CPU sampling pass was attempted after the caption work.
+`wpr -status` showed no recording, but `wpr -start CPU -filemode` returned `0xc5585011`:
+"Failed to enable the policy to profile system performance." No sampling trace was captured,
+so the remaining process CPU cannot yet be attributed to the parser, ConPTY, or another thread.
