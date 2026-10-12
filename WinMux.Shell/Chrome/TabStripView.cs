@@ -279,7 +279,7 @@ internal static class TabStripView
             surface = TopLevel.GetTopLevel(handle);
             if (surface is null) return;
             origin = e.GetPosition(surface);
-            originalWidth = (int)Math.Round((handle.Parent?.Parent as Control)?.Bounds.Width ?? strip.Rect.Width);
+            originalWidth = strip.Stack.TabStripWidth ?? strip.Rect.Width;
             e.Pointer.Capture(handle);
             e.Handled = true;
         };

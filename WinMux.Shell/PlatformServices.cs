@@ -38,6 +38,9 @@ internal static class PlatformServices
     /// <summary>Claiming our own maximise button, so Windows 11 still offers snap layouts.</summary>
     public static ISnapLayoutService SnapLayouts { get; } = new Win32SnapLayoutService();
 
+    /// <summary>The user's preference for short client-area transitions.</summary>
+    public static IMotionPreferences Motion { get; } = new Win32MotionPreferences();
+
     /// <summary>Somewhere to keep a password that is not a file WinMux owns.</summary>
     public static ICredentialStore Credentials { get; } = new Win32CredentialStore();
 
