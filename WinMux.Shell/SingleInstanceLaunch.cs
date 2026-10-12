@@ -2,6 +2,7 @@ using System.IO.Pipes;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using WinMux.Core;
 
 namespace WinMux.Shell;
 
@@ -50,7 +51,7 @@ internal sealed class SingleInstanceLaunch : IDisposable
     {
         var user = (Environment.UserDomainName + "\\" + Environment.UserName).ToUpperInvariant();
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(user)))[..24];
-        return "winmux-launch-v1-" + hash;
+        return "winmux-launch-v1-" + hash + WinMuxDataDirectory.EndpointSuffix;
     }
 
     private NamedPipeServerStream CreateServer() => new(_pipeName, PipeDirection.InOut,

@@ -122,6 +122,16 @@ public sealed class LaunchSpecTests
     }
 
     [Fact]
+    public void Saved_adoption_requires_both_identity_fields()
+    {
+        var spec = LaunchSpec.Parse(["--adopt", "123456", "--adopt-pid", "42", "--adopt-start", "638000000000000000"]);
+        Assert.Equal((uint)42, spec.ExpectedAdoptPid);
+        Assert.Equal(638000000000000000L, spec.ExpectedAdoptStartTicks);
+        Assert.Throws<ArgumentException>(() => LaunchSpec.Parse(["--adopt", "123456", "--adopt-pid", "42"]));
+        Assert.Throws<ArgumentException>(() => LaunchSpec.Parse(["--adopt", "123456", "--adopt-start", "638000000000000000"]));
+    }
+
+    [Fact]
     public void Without_a_program_or_a_window_the_error_names_both_ways_in()
     {
         var error = Assert.Throws<ArgumentException>(() => LaunchSpec.Parse(["--strategy", "embed"]));

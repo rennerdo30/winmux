@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using System.Text;
+using WinMux.Core;
 
 namespace WinMux.Shell;
 
@@ -25,9 +26,10 @@ public sealed class CommandServer
 
     public CommandServer(
         Func<string, CancellationToken, ValueTask<string?>> invoke,
-        string pipeName = DefaultPipeName)
+        string? pipeName = null)
     {
         ArgumentNullException.ThrowIfNull(invoke);
+        pipeName ??= WinMuxDataDirectory.CommandPipeName;
         ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
 
         _invoke = invoke;

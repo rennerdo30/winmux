@@ -7,6 +7,54 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## 0.8.0 — 2026-10-12
+
+### Changed
+
+- **Tabs join the pane surface and the root's top tabs occupy the caption** (WM-1). Smaller
+  labels, neutral close buttons, separators, a moving focus indicator, proportional sizing,
+  scrolling overflow and drag previews keep caption actions reachable. Motion respects the
+  Windows client-area animation preference.
+- **Terminal frames reuse shaped rows and are paced at 60 Hz** (WM-4), reducing measured UI
+  thread CPU. **The total CPU target is not yet met:** the matched implementation runs measured
+  about 1.39 cores against the 0.5-core target. Native typing latency and pixel equivalence remain
+  open; see [ADR 0035](docs/adr/0035-terminal-row-cache-and-frame-clock.md).
+- **ReadyToRun packaging and deferred App Paths registration** shorten startup (WM-14), while
+  the legacy-instance safety probe still runs before session load.
+- **Plain panes have title/action headers and routine toolbar actions use icons** (WM-15).
+  Foreign-app placeholders use theme colours, app identity and explicit recovery actions (WM-12).
+  Inactive windows and canvas gutters use opaque theme backgrounds (WM-13).
+
+### Fixed
+
+- Foreign hosts use the canvas arrangement's origin on restore (WM-2).
+- Failed attach hosts stay hidden, and attach restore failures permit safe shutdown with a
+  visible explanation (WM-3).
+- Class-based discovery also checks the expected application process, and never falls back to
+  a pre-existing window after launch (WM-5).
+- Surviving foreign apps reattach only when their saved HWND, PID and process start time match;
+  otherwise the pane waits for explicit launch, preventing silent duplication (WM-6).
+- Exited foreign and terminal panes display their exit state and offer restart actions (WM-7).
+- Initial hosting falls back to attach for unaware/system-aware apps on scaled displays,
+  including the measured IExpress rule (WM-8).
+- Unchanged restore intent no longer rewrites an idle session (WM-9). If the session file is
+  removed, a subsequent save recreates it instead of reporting success with no file.
+- Crash logs report the informational product version and tests use isolated data (WM-10).
+  `WINMUX_DATA_DIR` isolates profile files, logs and IPC endpoints; checkout runs skip Explorer
+  registration and legacy-session migration (WM-11).
+- Explicit saves await disk writes without blocking UI dispatch (WM-16).
+
+### Known limits
+
+- Independent Release validation: **1,308 passed, 6 live FTP/SFTP skipped**, zero build warnings
+  or errors. Owner visual checks remain open; these results do not establish native acceptance.
+- P2 review follow-ups remain: cancelling an animated tab close can leave its retained header
+  hidden; the shutdown save token does not interrupt an already active synchronous disk write;
+  live attach-to-embed switching bypasses the initial DPI fallback. Recorded in WM-1, WM-16 and
+  WM-8 respectively.
+- Mixed-DPI moves, broad app compatibility and the complete nested/foreign-pane visual matrix
+  remain unmeasured. Calculator title matching may need a localized quirks override.
+
 ## 0.7.9 — 2026-10-09
 
 ### Changed

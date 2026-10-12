@@ -103,13 +103,18 @@ public static class Layouter
     private const int MinimumContentExtent = 8;
 
     /// <summary>Lay the tree out inside <paramref name="bounds"/>.</summary>
-    public static Arrangement Arrange(LayoutNode root, Rect bounds, LayoutMetrics? metrics = null)
+    public static Arrangement Arrange(LayoutNode root, Rect bounds, LayoutMetrics? metrics = null,
+        StackNode? captionStack = null)
     {
         var m = metrics ?? LayoutMetrics.Default;
         var rects = new Dictionary<PaneId, Rect>();
         var dividers = new List<Divider>();
         var strips = new List<TabStrip>();
-        Place(root, bounds, rects, dividers, strips, Math.Max(0, m.DividerThickness), m);
+        // The only legal external strip is the root's top strip. Its buttons live in the custom
+        // caption, outside the pane canvas; its active child can therefore use the full bounds.
+        var placed = captionStack is not null && ReferenceEquals(root, captionStack) &&
+            captionStack.TabStrip == TabStripPlacement.Top ? captionStack.Active : root;
+        Place(placed, bounds, rects, dividers, strips, Math.Max(0, m.DividerThickness), m);
         return new Arrangement(bounds, rects, dividers, strips);
     }
 

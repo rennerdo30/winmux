@@ -76,6 +76,10 @@ Two strategies are implemented:
 user-editable `foreign-app-quirks.json`; unknown apps use an explicitly unverified embed default.
 If embedding is refused, PaneHost keeps the same application alive, explains why, and switches it
 to attach. `Ctrl+Shift+P`, then `A`, switches the focused foreign pane live and persists the result.
+When WinMux closes, it detaches foreign windows. On the next start it reattaches one only when the
+saved window handle, process ID, and process start time still match. If it cannot verify that
+identity, the pane waits for an explicit **Launch new** action, so a surviving app is not silently
+duplicated. **Reattach surviving applications** in Settings can disable automatic reattachment.
 
 Known-hard cases, handled by falling back to *attach* or by refusing cleanly:
 
@@ -137,6 +141,13 @@ the target; portability is a design discipline, not a promise.
 .\run.cmd                                                   # build and launch
 .\scripts\run.ps1 -Session .\examples\tabs-and-splits.toml  # nested tab groups
 ```
+
+`run.cmd` and `scripts/run.ps1` use an isolated profile in this checkout's ignored
+`artifacts/dev-data` directory. Development runs do not change the installed copy's settings,
+session, crash log, launch endpoint or Explorer registration. Set `WINMUX_DATA_DIR` to an absolute
+directory when launching `WinMux.exe` or `wmux.exe` directly to use a separate profile. Use the
+same value for the GUI and CLI so CLI actions reach the intended instance. Without the variable,
+the installed per-user profile remains the default.
 
 `run.cmd` and `publish.cmd` are double-clickable and need no execution-policy change.
 

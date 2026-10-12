@@ -25,6 +25,19 @@ public sealed class HostProtocolTests
         Assert.Equal("NOTICE=fell back safely", HostProtocol.Notice("fell back safely"));
     }
 
+    [Fact]
+    public void Exit_reports_a_process_code_or_a_closed_window()
+    {
+        Assert.Equal("EXITED=-1", HostProtocol.Exited(-1));
+        Assert.Equal("EXITED=window closed", HostProtocol.Exited(null));
+    }
+
+    [Fact]
+    public void Identity_carries_process_id_and_start_time()
+    {
+        Assert.Equal("IDENTITY=42,638000000000000000", HostProtocol.Identity(42, 638000000000000000));
+    }
+
     [Theory]
     [InlineData(5, "elevated or higher-integrity", "win32=5", "fallback=attach")]
     [InlineData(87, "refused embedding", "win32=87", "fallback=attach")]

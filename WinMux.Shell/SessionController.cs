@@ -15,9 +15,9 @@ internal sealed class SessionController : IDisposable
     private MainWindow? _activeWindow;
     private int _disposed;
 
-    public SessionController(string path)
+    public SessionController(string path, Action<string, SessionSnapshot>? save = null)
     {
-        _autosaver = new SessionAutosaver(path);
+        _autosaver = new SessionAutosaver(path, save: save);
         _autosaver.SaveCompleted += OnSaveCompleted;
         _commandServer = new CommandServer(DispatchRemoteAsync);
         SessionPath = Path.GetFullPath(path);
@@ -96,14 +96,14 @@ internal sealed class SessionController : IDisposable
         _autosaver.RequestSave(CaptureSnapshot());
     }
 
-    public SessionSaveResult SaveNow()
+    public async Task<SessionSaveResult> SaveNowAsync(CancellationToken token = default)
     {
         if (_disposed != 0) return new SessionSaveResult(false, new ObjectDisposedException(nameof(SessionController)));
         if (_windows.Count == 0) return new SessionSaveResult(false, new InvalidOperationException("The session has no windows."));
         // An explicit save is not a request; take the snapshot now rather than waiting out a debounce.
         _captureDebounce.Stop();
         _autosaver.RequestSave(CaptureSnapshot());
-        return _autosaver.FlushAsync().GetAwaiter().GetResult();
+        return await _autosaver.FlushAsync(token);
     }
 
     /// <summary>
@@ -120,7 +120,7 @@ internal sealed class SessionController : IDisposable
             return new SessionSaveResult(false, new InvalidOperationException("The session has no windows."));
 
         var destination = Path.GetFullPath(path);
-        if (string.Equals(destination, SessionPath, StringComparison.OrdinalIgnoreCase)) return SaveNow();
+        if (string.Equals(destination, SessionPath, StringComparison.OrdinalIgnoreCase)) return await SaveNowAsync();
 
         _captureDebounce.Stop();
         var pending = await _autosaver.FlushAsync().ConfigureAwait(true);
@@ -132,7 +132,7 @@ internal sealed class SessionController : IDisposable
         _autosaver = new SessionAutosaver(destination);
         _autosaver.SaveCompleted += OnSaveCompleted;
         SessionPath = destination;
-        return SaveNow();
+        return await SaveNowAsync();
     }
 
     /// <summary>
@@ -166,10 +166,17 @@ internal sealed class SessionController : IDisposable
     }
 
     /// <summary>Persist current intent before any foreign application is detached.</summary>
-    public SessionSaveResult PrepareWindowClosing(MainWindow window)
+    public async Task<SessionSaveResult> PrepareWindowClosingAsync(MainWindow window)
     {
         if (!_windows.Contains(window)) return new SessionSaveResult(true);
-        return SaveNow();
+        // A roaming or offline profile must not freeze the UI or leave closing stuck forever.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try { return await SaveNowAsync(timeout.Token); }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            return new SessionSaveResult(false, new TimeoutException(
+                "saving the session took more than 10 seconds; WinMux stayed open"));
+        }
     }
 
     /// <summary>
@@ -191,7 +198,25 @@ internal sealed class SessionController : IDisposable
         // Stop before the autosaver goes away, or a pending tick captures against a disposed sink.
         _captureDebounce.Stop();
         _autosaver.SaveCompleted -= OnSaveCompleted;
-        _autosaver.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        // Every normal close awaited a save. This final cleanup runs after the windows are gone;
+        // bound it so an unavailable profile cannot hold the process open indefinitely.
+        var cleanup = _autosaver.DisposeAsync().AsTask();
+        try
+        {
+            if (!cleanup.Wait(TimeSpan.FromSeconds(2)))
+            {
+                CrashLog.Write("session autosaver cleanup exceeded 2 seconds after window close", null);
+                _ = cleanup.ContinueWith(task =>
+                {
+                    if (task.Exception is { } error)
+                        CrashLog.Write("session autosaver cleanup failed after timeout", error);
+                }, TaskScheduler.Default);
+            }
+        }
+        catch (AggregateException ex)
+        {
+            CrashLog.Write("session autosaver cleanup failed", ex);
+        }
         _lifetime.Dispose();
     }
 

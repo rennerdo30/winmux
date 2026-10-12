@@ -41,7 +41,7 @@ public sealed class ForeignAppLaunchPlanTests
         Assert.Equal(HostStrategy.Attach, plan.Strategy);
         Assert.Equal("attach", plan.StrategyArgument);
         Assert.Equal("ApplicationFrameWindow", plan.WindowClass);
-        Assert.Null(plan.ProcessName);
+        Assert.Equal("ApplicationFrameHost.exe", plan.ProcessName);
         Assert.Equal(ForeignWindowSelectionMode.ClassName, plan.SelectionMode);
         Assert.Equal("class-name", plan.MatchModeArgument);
         Assert.Equal(2500, plan.SettleMilliseconds);

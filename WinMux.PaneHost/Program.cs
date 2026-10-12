@@ -59,7 +59,9 @@ internal sealed record LaunchSpec(
     int SettleMilliseconds,
     IntPtr OwnerWindow,
     IReadOnlySet<IntPtr> ExcludedWindows,
-    IntPtr AdoptWindow)
+    IntPtr AdoptWindow,
+    uint? ExpectedAdoptPid = null,
+    long? ExpectedAdoptStartTicks = null)
 {
     /// <summary>
     /// True when this host was asked to take a window that already exists rather than start a
@@ -79,6 +81,8 @@ internal sealed record LaunchSpec(
         var settleMilliseconds = 400;
         var ownerWindow = IntPtr.Zero;
         var adoptWindow = IntPtr.Zero;
+        uint? expectedAdoptPid = null;
+        long? expectedAdoptStartTicks = null;
         var arguments = new List<string>();
         var excluded = new HashSet<IntPtr>();
         var afterSeparator = false;
@@ -134,6 +138,20 @@ internal sealed record LaunchSpec(
                 adoptWindow = new IntPtr(adopt);
                 continue;
             }
+            if (!afterSeparator && args[i] == "--adopt-pid")
+            {
+                if (++i >= args.Length || !uint.TryParse(args[i], out var adoptPid) || adoptPid == 0)
+                    throw new ArgumentException("--adopt-pid must be a positive process id");
+                expectedAdoptPid = adoptPid;
+                continue;
+            }
+            if (!afterSeparator && args[i] == "--adopt-start")
+            {
+                if (++i >= args.Length || !long.TryParse(args[i], out var adoptStart) || adoptStart <= 0)
+                    throw new ArgumentException("--adopt-start must be positive UTC ticks");
+                expectedAdoptStartTicks = adoptStart;
+                continue;
+            }
             if (!afterSeparator && args[i] == "--owner" && ++i < args.Length && long.TryParse(args[i], out var owner))
             {
                 ownerWindow = new IntPtr(owner);
@@ -151,9 +169,11 @@ internal sealed record LaunchSpec(
         // inventing one that must never be launched.
         if (string.IsNullOrWhiteSpace(program) && adoptWindow == IntPtr.Zero)
             throw new ArgumentException("missing --program <path> or --adopt <hwnd>");
+        if ((expectedAdoptPid is null) != (expectedAdoptStartTicks is null))
+            throw new ArgumentException("--adopt-pid and --adopt-start must be supplied together");
         program ??= string.Empty;
         return new LaunchSpec(program, arguments, windowClass, windowTitleContains, processName, matchMode, strategy,
-            settleMilliseconds, ownerWindow, excluded, adoptWindow);
+            settleMilliseconds, ownerWindow, excluded, adoptWindow, expectedAdoptPid, expectedAdoptStartTicks);
     }
 
     private static HostStrategy ParseStrategy(string value) => value.ToLowerInvariant() switch
@@ -177,6 +197,42 @@ internal enum WindowMatchMode
     ClassName,
 }
 
+internal static class DpiCompatibility
+{
+    // GetAwarenessFromDpiAwarenessContext: -1 invalid, 0 unaware, 1 system aware, 2 per-monitor.
+    public static bool NeedsAttach(int awareness, uint monitorDpi) =>
+        monitorDpi != 0 && monitorDpi != 96 && awareness is 0 or 1;
+}
+
+/// <summary>Only a newly observed window with the expected application identity is eligible.</summary>
+internal static class WindowCandidateMatcher
+{
+    public static IntPtr LastNewMatch(IEnumerable<IntPtr> windows, IReadOnlySet<IntPtr> before,
+        IReadOnlySet<IntPtr> excluded, Func<IntPtr, bool> matches) =>
+        windows.LastOrDefault(hwnd => !before.Contains(hwnd) && !excluded.Contains(hwnd) && matches(hwnd));
+
+    public static bool Matches(LaunchSpec launch, uint launchedPid, uint candidatePid,
+        string candidateProcess, string candidateClass, string candidateTitle)
+    {
+        if (!string.IsNullOrWhiteSpace(launch.WindowTitleContains) &&
+            !candidateTitle.Contains(launch.WindowTitleContains, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var expectedProcess = launch.ProcessName ?? Path.GetFileName(launch.Program);
+        return launch.MatchMode switch
+        {
+            WindowMatchMode.Pid => candidatePid == launchedPid,
+            WindowMatchMode.ProcessName => !string.IsNullOrWhiteSpace(expectedProcess) &&
+                                           candidateProcess.Equals(expectedProcess, StringComparison.OrdinalIgnoreCase),
+            WindowMatchMode.ClassName => !string.IsNullOrWhiteSpace(launch.WindowClass) &&
+                                         candidateClass.Equals(launch.WindowClass, StringComparison.OrdinalIgnoreCase) &&
+                                         !string.IsNullOrWhiteSpace(expectedProcess) &&
+                                         candidateProcess.Equals(expectedProcess, StringComparison.OrdinalIgnoreCase),
+            _ => false,
+        };
+    }
+}
+
 internal static class HostProtocol
 {
     public static string Strategy(HostStrategy strategy) =>
@@ -185,6 +241,11 @@ internal static class HostProtocol
     public static string Ready(IntPtr child) => $"READY={child.ToInt64()}";
 
     public static string Notice(string message) => "NOTICE=" + message;
+
+    public static string Exited(int? exitCode) => "EXITED=" +
+        (exitCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "window closed");
+
+    public static string Identity(uint pid, long startTicks) => $"IDENTITY={pid},{startTicks}";
 
     public static string EmbedFailure(int error) => error switch
     {
@@ -200,13 +261,14 @@ internal sealed class PaneHostWindow : IDisposable
 {
     private const string WindowClassName = "WinMux.PaneHost.Window";
     private const int GwlStyle = -16, GwlExStyle = -20, SwHide = 0, SwShowNormal = 1, SwRestore = 9;
-    private const int WsPopup = unchecked((int)0x80000000), WsVisible = 0x10000000;
+    private const int WsPopup = unchecked((int)0x80000000);
     private const long WsPopupStyle = 0x80000000L, WsChildStyle = 0x40000000L;
     private const long ForeignFrameStyles = 0x00CF0000L;
     private const uint GaParent = 1, GwOwner = 4, WmClose = 0x0010, WmDestroy = 0x0002, WmShowWindow = 0x0018;
     private const uint WmMove = 0x0003, WmSize = 0x0005, WmActivate = 0x0006, WmWindowPosChanged = 0x0047;
     private const uint WmAppAdopt = 0x8001, WmAppClosePane = 0x8002;
-    private const uint WmAppAttach = 0x8003, WmAppEmbed = 0x8004;
+    private const uint WmAppAttach = 0x8003, WmAppEmbed = 0x8004, WmAppAbandonAttach = 0x8005;
+    private const uint WmAppChildExited = 0x8006;
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const uint SwpNoSize = 0x0001, SwpNoMove = 0x0002, SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010, SwpShowWindow = 0x0040, SwpFrameChanged = 0x0020;
@@ -228,11 +290,12 @@ internal sealed class PaneHostWindow : IDisposable
     {
         _ = SetThreadDpiHostingBehavior(new IntPtr(-3)); // DPI_HOSTING_BEHAVIOR_MIXED
         RegisterWindowClass();
-        _hostWindow = CreateWindowExW(0, WindowClassName, "WinMux pane host", WsPopup | WsVisible,
+        // The shell places and reveals the host only after an application is ready. A failed
+        // attach must never leave the default black rectangle on the desktop.
+        _hostWindow = CreateWindowExW(0, WindowClassName, "WinMux pane host", WsPopup,
             100, 100, 900, 600, _launch.OwnerWindow, IntPtr.Zero, GetModuleHandleW(null), IntPtr.Zero);
         if (_hostWindow == IntPtr.Zero) ThrowLastError("CreateWindowEx");
 
-        ShowWindow(_hostWindow, SwShowNormal);
         WriteProtocol($"HOST_HWND={_hostWindow.ToInt64()}");
         _ = Task.Run(FindApplicationWindow);
         _ = Task.Run(ReadCommands);
@@ -273,6 +336,16 @@ internal sealed class PaneHostWindow : IDisposable
                 }
 
                 GetWindowThreadProcessId(_launch.AdoptWindow, out var adoptedOwner);
+                if (_launch.ExpectedAdoptPid is not null || _launch.ExpectedAdoptStartTicks is not null)
+                {
+                    if (_launch.ExpectedAdoptPid != adoptedOwner ||
+                        !TryGetProcessStartTicks(adoptedOwner, out var startTicks) ||
+                        startTicks != _launch.ExpectedAdoptStartTicks)
+                    {
+                        WriteProtocol("ERROR=saved application window identity changed; WinMux did not launch another copy");
+                        return;
+                    }
+                }
                 _launchedProcessId = adoptedOwner;
                 PostMessageW(_hostWindow, WmAppAdopt, _launch.AdoptWindow, IntPtr.Zero);
                 return;
@@ -292,8 +365,8 @@ internal sealed class PaneHostWindow : IDisposable
                                    TimeSpan.FromMilliseconds(_launch.SettleMilliseconds);
             while (stopwatch.Elapsed < discoveryTimeout && !_shutdown.IsCancellationRequested)
             {
-                var latest = AdoptableWindows().LastOrDefault(hwnd =>
-                    !before.Contains(hwnd) && !_launch.ExcludedWindows.Contains(hwnd) && Matches(hwnd));
+                var latest = WindowCandidateMatcher.LastNewMatch(
+                    AdoptableWindows(), before, _launch.ExcludedWindows, Matches);
                 if (latest != IntPtr.Zero)
                 {
                     if (candidate != latest) candidateFoundAt = stopwatch.Elapsed;
@@ -312,11 +385,8 @@ internal sealed class PaneHostWindow : IDisposable
                 Thread.Sleep(100);
             }
 
-            var existing = AdoptableWindows().LastOrDefault(hwnd =>
-                before.Contains(hwnd) && !_launch.ExcludedWindows.Contains(hwnd) && Matches(hwnd));
-            if (existing != IntPtr.Zero) { PostMessageW(_hostWindow, WmAppAdopt, existing, IntPtr.Zero); return; }
             if (!_shutdown.IsCancellationRequested)
-                WriteProtocol($"ERROR=no matching window appeared within {discoveryTimeout.TotalSeconds:0.#} seconds");
+                WriteProtocol($"ERROR=no new matching window appeared within {discoveryTimeout.TotalSeconds:0.#} seconds; use Adopt an open window to choose an existing one");
         }
         catch (Exception ex)
         {
@@ -349,10 +419,18 @@ internal sealed class PaneHostWindow : IDisposable
 
             // Redirected stdin closes when the shell crashes. Restore autonomously so the app
             // cannot remain an invisible orphaned child after its owner disappears.
+            var attempts = 0;
             while (!_shutdown.IsCancellationRequested && IsWindow(_hostWindow))
             {
                 PostMessageW(_hostWindow, WmClose, IntPtr.Zero, IntPtr.Zero);
                 await Task.Delay(1_000, _shutdown.Token);
+                // An embedded child must not be abandoned in the host. An attach-mode child
+                // remains a top-level window, so a broken restore cannot justify an orphan host.
+                if (++attempts >= 5 && _hosted?.Strategy != HostStrategy.Embed)
+                {
+                    PostMessageW(_hostWindow, WmAppAbandonAttach, IntPtr.Zero, IntPtr.Zero);
+                    break;
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -360,26 +438,35 @@ internal sealed class PaneHostWindow : IDisposable
 
     private bool Matches(IntPtr hwnd)
     {
-        var identityMatches = _launch.MatchMode switch
-        {
-            WindowMatchMode.Pid => GetWindowProcessId(hwnd) == _launchedProcessId,
-            WindowMatchMode.ClassName => !string.IsNullOrWhiteSpace(_launch.WindowClass) &&
-                                         GetClassName(hwnd).Equals(
-                                             _launch.WindowClass,
-                                             StringComparison.OrdinalIgnoreCase),
-            _ => GetProcessImageName(hwnd).Equals(
-                _launch.ProcessName ?? Path.GetFileName(_launch.Program),
-                StringComparison.OrdinalIgnoreCase),
-        };
-        return identityMatches &&
-               (string.IsNullOrWhiteSpace(_launch.WindowTitleContains) ||
-                GetWindowText(hwnd).Contains(_launch.WindowTitleContains, StringComparison.OrdinalIgnoreCase));
+        return WindowCandidateMatcher.Matches(_launch, _launchedProcessId, GetWindowProcessId(hwnd),
+            _launch.MatchMode == WindowMatchMode.Pid ? string.Empty : GetProcessImageName(hwnd),
+            _launch.MatchMode == WindowMatchMode.ClassName ? GetClassName(hwnd) : string.Empty,
+            string.IsNullOrWhiteSpace(_launch.WindowTitleContains) ? string.Empty : GetWindowText(hwnd));
     }
 
     private static uint GetWindowProcessId(IntPtr hwnd)
     {
         GetWindowThreadProcessId(hwnd, out var processId);
         return processId;
+    }
+
+    private static bool TryGetProcessStartTicks(uint pid, out long ticks)
+    {
+        ticks = 0;
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            ticks = process.StartTime.ToUniversalTime().Ticks;
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception) { return false; }
+    }
+
+    private static void WriteIdentity(IntPtr child)
+    {
+        var pid = GetWindowProcessId(child);
+        if (pid != 0 && TryGetProcessStartTicks(pid, out var ticks))
+            WriteProtocol(HostProtocol.Identity(pid, ticks));
     }
 
     private void HostApplication(IntPtr child)
@@ -391,12 +478,45 @@ internal sealed class PaneHostWindow : IDisposable
 
         if (IsIconic(child)) ShowWindow(child, SwRestore);
         if (_launch.Strategy == HostStrategy.Attach)
-        {
             Attach(original with { Strategy = HostStrategy.Attach });
-            return;
+        else if (DpiCompatibility.NeedsAttach(
+                     GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(child)),
+                     GetDpiForWindow(_hostWindow)))
+        {
+            WriteProtocol(HostProtocol.Notice(
+                "this application uses Windows DPI scaling; attach mode keeps it readable at this display scale"));
+            Attach(original with { Strategy = HostStrategy.Attach });
         }
+        else
+            Embed(original with { Strategy = HostStrategy.Embed });
+        if (_hosted is not null && _childWindow != IntPtr.Zero)
+            _ = Task.Run(() => WatchApplicationWindow(child));
+    }
 
-        Embed(original with { Strategy = HostStrategy.Embed });
+    private async Task WatchApplicationWindow(IntPtr child)
+    {
+        var pid = GetWindowProcessId(child);
+        Process? process = null;
+        try { process = Process.GetProcessById((int)pid); }
+        catch (ArgumentException) { }
+        try
+        {
+            while (!_shutdown.IsCancellationRequested && IsWindow(_hostWindow))
+            {
+                if (!IsWindow(child) || GetWindowProcessId(child) != pid)
+                {
+                    int? code = null;
+                    try { if (process?.HasExited == true) code = process.ExitCode; }
+                    catch (InvalidOperationException) { }
+                    PostMessageW(_hostWindow, WmAppChildExited, child,
+                        new IntPtr(code ?? int.MinValue));
+                    return;
+                }
+                await Task.Delay(250, _shutdown.Token);
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally { process?.Dispose(); }
     }
 
     private void Embed(HostedWindowState state)
@@ -436,6 +556,7 @@ internal sealed class PaneHostWindow : IDisposable
         SetWindowPos(child, IntPtr.Zero, 0, 0, 0, 0,
             SwpNoSize | SwpNoMove | SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
         WriteProtocol(HostProtocol.Strategy(HostStrategy.Embed));
+        WriteIdentity(child);
         WriteProtocol(HostProtocol.Ready(child));
     }
 
@@ -445,12 +566,16 @@ internal sealed class PaneHostWindow : IDisposable
         _childWindow = state.Child;
         if (!PositionAttachedWindow())
         {
-            if (RestoreForeignWindow())
-                WriteProtocol("ERROR=Windows refused to position the application in attach mode");
+            // SetWindowPos failed, so this window was never adopted. Restoring the same
+            // untouched rectangle would hit the same UIPI denial and prevent shutdown forever.
+            _hosted = null;
+            _childWindow = IntPtr.Zero;
+            WriteProtocol("ERROR=Windows refused to position the application in attach mode; it remains outside WinMux");
             return;
         }
 
         WriteProtocol(HostProtocol.Strategy(HostStrategy.Attach));
+        WriteIdentity(state.Child);
         WriteProtocol(HostProtocol.Ready(state.Child));
     }
 
@@ -556,8 +681,16 @@ internal sealed class PaneHostWindow : IDisposable
                     hosted.OriginalRect.Bottom - hosted.OriginalRect.Top,
                     restoreFlags))
             {
-                WriteProtocol($"ERROR=could not restore application rectangle (win32={Marshal.GetLastPInvokeError()})");
-                return false;
+                var error = Marshal.GetLastPInvokeError();
+                if (hosted.Strategy == HostStrategy.Embed)
+                {
+                    WriteProtocol($"ERROR=could not restore application rectangle (win32={error})");
+                    return false;
+                }
+                // An attached window is already top-level and visible. Let the shell close,
+                // while making the unsuccessful rectangle restore explicit to the user.
+                WriteProtocol(HostProtocol.Notice(
+                    $"could not restore application rectangle (win32={error}); application remains on desktop"));
             }
         }
         _hosted = null;
@@ -577,6 +710,21 @@ internal sealed class PaneHostWindow : IDisposable
                 return IntPtr.Zero;
             case WmAppEmbed:
                 try { SwitchStrategy(HostStrategy.Embed); } catch (Exception ex) { WriteProtocol("ERROR=" + ex.Message); }
+                return IntPtr.Zero;
+            case WmAppAbandonAttach:
+                if (_hosted?.Strategy == HostStrategy.Embed) return IntPtr.Zero;
+                if (_childWindow != IntPtr.Zero && IsWindow(_childWindow))
+                    ShowWindow(_childWindow, SwShowNormal);
+                _hosted = null;
+                _childWindow = IntPtr.Zero;
+                DestroyWindow(hwnd);
+                return IntPtr.Zero;
+            case WmAppChildExited:
+                if (_hosted?.Child != wParam) return IntPtr.Zero;
+                _hosted = null;
+                _childWindow = IntPtr.Zero;
+                WriteProtocol(HostProtocol.Exited(lParam.ToInt32() == int.MinValue ? null : lParam.ToInt32()));
+                DestroyWindow(hwnd);
                 return IntPtr.Zero;
             case WmMove:
             case WmSize:
@@ -695,6 +843,9 @@ internal sealed class PaneHostWindow : IDisposable
     [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern bool PostMessageW(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiHostingBehavior(IntPtr value);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindowDpiAwarenessContext(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("kernel32.dll")] private static extern IntPtr GetModuleHandleW(string? name);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, char[] buffer, ref int size);

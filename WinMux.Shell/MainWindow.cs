@@ -38,6 +38,10 @@ internal sealed partial class MainWindow : Window
     /// There is one per stack, drawn where that stack is — see <see cref="TabStripView"/>.
     /// </summary>
     private readonly List<Control> _tabStrips = [];
+    private Control _captionToolbar = null!;
+    private ContentControl _captionTabsHost = null!;
+    private Control? _captionTabView;
+    private readonly Dictionary<PaneId, Border> _paneHeaders = [];
 
     /// <summary>
     /// The visible handle in each divider gutter, rebuilt with the strips on every layout.
@@ -145,6 +149,7 @@ internal sealed partial class MainWindow : Window
     private Divider? _dragDivider;
     private Avalonia.Point _lastDragPoint;
     private bool _shutdownStarted;
+    private bool _isActive;
 
     /// <summary>Closing because an update is waiting to install, which changes what a stuck close should say.</summary>
     private bool _closingForUpdate;
@@ -236,7 +241,8 @@ internal sealed partial class MainWindow : Window
             () => Settings.ShellProfiles.All);
         // The toolbar is the caption row's left half rather than a bar beneath the system one.
         // Two stacked bars is the most visible way an app can fail to look like Windows 11.
-        var caption = Chrome.TitleBar.Build(this, toolbar);
+        _captionToolbar = toolbar;
+        var caption = Chrome.TitleBar.Build(this, toolbar, out _captionTabsHost);
         DockPanel.SetDock(caption, Dock.Top);
         dock.Children.Add(caption);
         var statusBar = new Border
@@ -266,7 +272,9 @@ internal sealed partial class MainWindow : Window
         // runs to the window edge on three sides and to the toolbar on the fourth, and the rounded
         // corners it now draws have nothing to sit against.
         _canvas.Margin = new Thickness(Palette.GapSmall, 4, Palette.GapSmall, Palette.GapSmall);
-        _canvas.Background = Palette.WindowBrush;
+        // Gutters expose the desktop next to native app windows if this is translucent. Keep
+        // the canvas opaque even when Mica is active in the caption above it.
+        _canvas.Background = Palette.OpaqueWindowBrush;
         _canvas.PropertyChanged += (_, e) => { if (e.Property == BoundsProperty) Relayout(); };
 
         // Focus is explicit, and the OS is the authority on it (CLAUDE.md section 6). Without this
@@ -297,6 +305,12 @@ internal sealed partial class MainWindow : Window
         {
             if (ActualTransparencyLevel == WindowTransparencyLevel.None)
                 _message = "Mica is unavailable on this system; using an opaque window";
+            _isActive = IsActive;
+            UpdateBackdrop();
+        };
+        PropertyChanged += (_, change) =>
+        {
+            if (change.Property == ActualTransparencyLevelProperty) UpdateBackdrop();
         };
         _canvas.PointerPressed += BeginDividerDrag;
         _canvas.PointerMoved += ContinueDividerDrag;
@@ -337,6 +351,8 @@ internal sealed partial class MainWindow : Window
         // buries them. Re-assert placement (and z-order) whenever we come forward.
         Activated += (_, _) =>
         {
+            _isActive = true;
+            UpdateBackdrop();
             _session.Activate(this);
             _foreignProvider.Refresh();
             Relayout();
@@ -345,7 +361,20 @@ internal sealed partial class MainWindow : Window
             // the user anyway.
             PlatformServices.ClearNotifications();
         };
-        Deactivated += (_, _) => Relayout();
+        Deactivated += (_, _) =>
+        {
+            _isActive = false;
+            UpdateBackdrop();
+            Relayout();
+        };
+    }
+
+    private void UpdateBackdrop()
+    {
+        Background = _isActive && ActualTransparencyLevel == WindowTransparencyLevel.Mica
+            ? Palette.WindowBrush
+            : Palette.OpaqueWindowBrush;
+        CrashLog.Write($"backdrop {ActualTransparencyLevel}, active {_isActive}", null);
     }
 
     // ---------------- pane lifecycle ----------------
@@ -399,7 +428,7 @@ internal sealed partial class MainWindow : Window
         {
             // Hiding a previously active group can dispatch a late focus event from its view.
             // Only a currently visible runtime can change the user's selected nested tabs.
-            if (_tree.Focused == pane.Id || !runtime.View.IsVisible || !_tree.Arrange().IsVisible(pane.Id)) return;
+            if (_tree.Focused == pane.Id || !runtime.View.IsVisible || !ArrangeShell().IsVisible(pane.Id)) return;
             _tree.Focus(pane.Id);
             Relayout();
         };
@@ -407,6 +436,15 @@ internal sealed partial class MainWindow : Window
         {
             handoff.TerminalHandoffRequested += (_, _) =>
                 Dispatcher.UIThread.Post(() => _ = OpenTerminalHereAsync(runtime));
+        }
+        if (runtime is IPaneCloseRequest closeRequest)
+        {
+            closeRequest.CloseRequested += (_, _) =>
+            {
+                if (_runtimes.GetValueOrDefault(pane.Id) != runtime) return;
+                _tree.Focus(pane.Id);
+                _ = CloseFocusedAsync();
+            };
         }
         WireAttention(pane, runtime);
         SyncRuntimeState(pane, runtime);
@@ -431,17 +469,29 @@ internal sealed partial class MainWindow : Window
             _message = $"{pane.Title}: {runtime.StatusMessage}";
         }
         UpdateStatus();
-        UpdateTabStrips(_tree.Arrange());
+        UpdateTabStrips(ArrangeShell());
         _session.RequestSave();
     }
 
     // ---------------- layout ----------------
 
+    private StackNode? CaptionStack() =>
+        _tree.Root is StackNode { TabStrip: TabStripPlacement.Top } root ? root : null;
+
+    private Arrangement ArrangeShell() =>
+        Layouter.Arrange(_tree.Root, _tree.Bounds, captionStack: CaptionStack());
+
+    private Arrangement ArrangeShell(CoreRect bounds)
+    {
+        _tree.Bounds = bounds;
+        return ArrangeShell();
+    }
+
     private void Relayout()
     {
         if (_canvas.Bounds.Width < 4 || _canvas.Bounds.Height < 4) return;
 
-        var arrangement = _tree.Arrange(new CoreRect(0, 0, (int)_canvas.Bounds.Width, (int)_canvas.Bounds.Height));
+        var arrangement = ArrangeShell(new CoreRect(0, 0, (int)_canvas.Bounds.Width, (int)_canvas.Bounds.Height));
 
         foreach (var pane in _tree.Panes)
         {
@@ -449,17 +499,24 @@ internal sealed partial class MainWindow : Window
             var view = runtime.View;
             var visible = arrangement.IsVisible(pane.Id);
             var rect = arrangement[pane.Id];
+            var contentRect = UpdatePaneHeader(pane, rect, visible);
 
             view.IsVisible = visible;
             if (visible)
             {
-                Canvas.SetLeft(view, rect.X);
-                Canvas.SetTop(view, rect.Y);
-                view.Width = rect.Width;
-                view.Height = rect.Height;
+                Canvas.SetLeft(view, contentRect.X);
+                Canvas.SetTop(view, contentRect.Y);
+                view.Width = contentRect.Width;
+                view.Height = contentRect.Height;
             }
 
-            runtime.Arrange(new PaneArrangement(rect, visible));
+            runtime.Arrange(new PaneArrangement(contentRect, visible));
+        }
+
+        foreach (var stale in _paneHeaders.Keys.Where(id => _tree.Find(id) is null).ToArray())
+        {
+            _canvas.Children.Remove(_paneHeaders[stale]);
+            _paneHeaders.Remove(stale);
         }
 
         UpdateStatus();
@@ -475,15 +532,90 @@ internal sealed partial class MainWindow : Window
     {
         if (_canvas.Bounds.Width < 4 || _canvas.Bounds.Height < 4) return;
 
-        var arrangement = _tree.Arrange();
+        var arrangement = ArrangeShell();
         foreach (var pane in _tree.Panes)
         {
             if (!_runtimes.TryGetValue(pane.Id, out var runtime)) continue;
-            runtime.Arrange(new PaneArrangement(arrangement[pane.Id], arrangement.IsVisible(pane.Id)));
+            var rect = arrangement[pane.Id];
+            runtime.Arrange(new PaneArrangement(PaneContentRect(pane, rect), arrangement.IsVisible(pane.Id)));
         }
 
         // The window's own bounds are persisted, so this still needs saving — just not per frame.
         _session.RequestSave();
+    }
+
+    private CoreRect PaneContentRect(Pane pane, CoreRect rect)
+    {
+        // A stack already names its panes in its reserved tab band. Split leaves need their own
+        // band: an overlay would disappear behind an embedded native window.
+        for (var node = _tree.Find(pane.Id)?.Parent; node is not null; node = node.Parent)
+            if (node is StackNode) return rect;
+        const int headerHeight = 28;
+        return new CoreRect(rect.X, rect.Y + headerHeight, rect.Width,
+            Math.Max(0, rect.Height - headerHeight));
+    }
+
+    private CoreRect UpdatePaneHeader(Pane pane, CoreRect rect, bool visible)
+    {
+        var content = PaneContentRect(pane, rect);
+        var needsHeader = content.Y != rect.Y;
+        if (!needsHeader)
+        {
+            if (_paneHeaders.Remove(pane.Id, out var old)) _canvas.Children.Remove(old);
+            return content;
+        }
+        if (!_paneHeaders.TryGetValue(pane.Id, out var header))
+        {
+            var title = new TextBlock
+            {
+                FontSize = Palette.CaptionSize,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = Palette.TextBrush,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Margin = new Thickness(10, 0, 0, 0),
+            };
+            var menuButton = new Button
+            {
+                Content = Icons.More(),
+                Width = 28,
+                Height = 26,
+                [ToolTip.TipProperty] = "Pane actions",
+            };
+            menuButton.Classes.Add(Chrome.Theme.IconButton);
+            var rename = new MenuItem { Header = "Rename pane…" };
+            rename.Click += (_, _) => Run(RenamePaneAsync(pane.Id));
+            var close = new MenuItem { Header = "Close pane" };
+            close.Click += (_, _) => Run(CloseTabAsync(pane.Id));
+            var menu = new ContextMenu
+            {
+                ItemsSource = new Control[]
+                {
+                    rename, close,
+                },
+            };
+            menuButton.Click += (_, _) => { menu.PlacementTarget = menuButton; menu.Open(menuButton); };
+            var row = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(menuButton, Dock.Right);
+            row.Children.Add(menuButton);
+            row.Children.Add(title);
+            header = new Border
+            {
+                Child = row,
+                Background = Palette.RaisedBrush,
+                BorderBrush = Palette.EdgeBrush,
+                BorderThickness = new Thickness(0, 0, 0, 1),
+            };
+            _paneHeaders[pane.Id] = header;
+            _canvas.Children.Add(header);
+        }
+        ((TextBlock)((DockPanel)header.Child!).Children[1]).Text = pane.Title;
+        header.IsVisible = visible;
+        Canvas.SetLeft(header, rect.X);
+        Canvas.SetTop(header, rect.Y);
+        header.Width = rect.Width;
+        header.Height = content.Y - rect.Y;
+        return content;
     }
 
     private void UpdateTabStrips(Arrangement arrangement)
@@ -516,7 +648,36 @@ internal sealed partial class MainWindow : Window
             AddTab: stack => Run(AddTabToStackAsync(stack)),
             MoveStrip: SetTabPlacement,
             MoveTab: MoveTab,
-            ResizeStrip: ResizeTabStrip);
+            ResizeStrip: ResizeTabStrip,
+            Dispatch: action => DispatchNamedAction(action),
+            OpenProfile: (profile, split) => Run(OpenProfileAsync(profile, split)),
+            Profiles: () => Settings.ShellProfiles.All);
+
+        var captionStack = CaptionStack();
+        var canvasTop = captionStack is null ? 4 : 0;
+        if (_canvas.Margin.Top != canvasTop)
+            _canvas.Margin = new Thickness(Palette.GapSmall, canvasTop,
+                Palette.GapSmall, Palette.GapSmall);
+        _captionTabsHost.IsVisible = captionStack is not null;
+        _captionToolbar.IsVisible = captionStack is null;
+        if (captionStack is not null)
+        {
+            var captionStrip = new WinMux.Core.Layout.TabStrip(captionStack,
+                new CoreRect(0, 0, Math.Max(0, (int)_captionTabsHost.Bounds.Width),
+                    (int)Palette.CaptionHeight), TabStripPlacement.Top);
+            if (_captionTabView is null || !TabStripView.TryRefresh(_captionTabView, captionStrip,
+                    _tree.Focused, _attention.WaitingMessage))
+            {
+                _captionTabView = TabStripView.Build(captionStrip, _tree.Focused, commands,
+                    _attention.WaitingMessage);
+                _captionTabsHost.Content = _captionTabView;
+            }
+        }
+        else if (_captionTabView is not null)
+        {
+            _captionTabsHost.Content = null;
+            _captionTabView = null;
+        }
 
         foreach (var strip in arrangement.TabStrips)
         {
@@ -557,10 +718,13 @@ internal sealed partial class MainWindow : Window
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
         const int Thickness = 2;
+        var joinedTop = CaptionStack() is not null || arrangement.TabStrips.Any(strip => strip.Placement == TabStripPlacement.Top &&
+            strip.Rect.Bottom == rect.Y && strip.Rect.X == rect.X && strip.Rect.Width == rect.Width);
         var ring = new Border
         {
             BorderBrush = Palette.AccentBrush,
-            BorderThickness = new Thickness(Thickness),
+            BorderThickness = new Thickness(Thickness, joinedTop ? 0 : Thickness,
+                Thickness, Thickness),
             CornerRadius = new CornerRadius(10),
             IsHitTestVisible = false,
         };
@@ -895,7 +1059,7 @@ internal sealed partial class MainWindow : Window
     {
         if (!e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed) return;
         var point = e.GetPosition(_canvas);
-        var arrangement = _tree.Arrange();
+        var arrangement = ArrangeShell();
         var divider = arrangement.Dividers.FirstOrDefault(item => item.Rect.Contains((int)point.X, (int)point.Y));
         if (divider.Split is null) return;
 
@@ -930,7 +1094,7 @@ internal sealed partial class MainWindow : Window
 
     private double SplitExtent(SplitNode split, SplitDirection direction)
     {
-        var arrangement = _tree.Arrange();
+        var arrangement = ArrangeShell();
         var rectangles = split.Leaves()
             .Select(leaf => arrangement.PaneRects.GetValueOrDefault(leaf.Pane.Id))
             .Where(rect => !rect.IsEmpty)
@@ -964,12 +1128,16 @@ internal sealed partial class MainWindow : Window
             ],
         };
 
-        var left = new StackPanel
+        var left = new Grid
         {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Spacing = Palette.GapMedium,
-            Children = { _statusLocation, _statusMessage },
+            ColumnDefinitions = [new ColumnDefinition(new GridLength(2, GridUnitType.Star)),
+                new ColumnDefinition(new GridLength(3, GridUnitType.Star))],
         };
+        Grid.SetColumn(_statusLocation, 0);
+        Grid.SetColumn(_statusMessage, 1);
+        _statusMessage.Margin = new Thickness(Palette.GapMedium, 0, 0, 0);
+        left.Children.Add(_statusLocation);
+        left.Children.Add(_statusMessage);
 
         Grid.SetColumn(left, 0);
         Grid.SetColumn(_statusSession, 1);
@@ -1085,7 +1253,7 @@ internal sealed partial class MainWindow : Window
         _actions.RegisterAsync(ShellActionNames.ShowSettings, _ => new ValueTask(ShowSettingsAsync()));
         _actions.RegisterAsync(ShellActionNames.ShowConnections, _ => new ValueTask(ShowConnectionsAsync()));
         _actions.RegisterAsync(ShellActionNames.OpenSession, _ => new ValueTask(OpenSessionAsync()));
-        _actions.Register(ShellActionNames.SaveSession, SaveSession);
+        _actions.RegisterAsync(ShellActionNames.SaveSession, _ => new ValueTask(SaveSessionAsync()));
         _actions.RegisterAsync(ShellActionNames.SaveSessionAs, _ => new ValueTask(SaveSessionAsAsync()));
         _actions.Register(ShellActionNames.ResizeLeft, () => ResizeFocused(FocusDirection.Left));
         _actions.Register(ShellActionNames.ResizeRight, () => ResizeFocused(FocusDirection.Right));
@@ -1187,7 +1355,7 @@ internal sealed partial class MainWindow : Window
 
             _tree.Focus(pane);
             UpdateStatus();
-            UpdateTabStrips(_tree.Arrange());
+            UpdateTabStrips(ArrangeShell());
         });
     }
 
@@ -1245,7 +1413,7 @@ internal sealed partial class MainWindow : Window
     /// <summary>Which visible pane covers a point in canvas coordinates.</summary>
     private PaneId? PaneAt(Avalonia.Point point)
     {
-        var arrangement = _tree.Arrange();
+        var arrangement = ArrangeShell();
         foreach (var pane in _tree.Panes)
         {
             if (!arrangement.IsVisible(pane.Id)) continue;
@@ -1340,23 +1508,38 @@ internal sealed partial class MainWindow : Window
     /// No further question. The button says "Restart WinMux" beneath a line saying programs in panes
     /// are closed and started again; asking a second time teaches people to click through both.
     /// </summary>
-    private void RestartIntoUpdate()
+    private void RestartIntoUpdate() => _ = RestartIntoUpdateAsync();
+
+    private async Task RestartIntoUpdateAsync()
     {
-        if (_updates is not { State: UpdateState.ReadyToRestart, StagedDirectory: { } staged, Release: { } release })
-            return;
-
-        // Persistence is priority 1; do it before handing control to a script that will end us.
-        _session.SaveNow();
-
-        if (!UpdateInstaller.LaunchSwapAndExit(staged, _session.SessionPath, release.Version.ToString()))
+        try
         {
-            ShowMessage("the update is downloaded but the installer could not be started", StatusMessageKind.Error);
-            return;
-        }
+            if (_updates is not { State: UpdateState.ReadyToRestart, StagedDirectory: { } staged, Release: { } release })
+                return;
 
-        _closingForUpdate = true;
-        _about?.Close();
-        Close();
+            // Persistence is priority 1; do it before handing control to a script that will end us.
+            var saved = await _session.SaveNowAsync();
+            if (!saved.Succeeded)
+            {
+                ShowMessage("the update is downloaded but the session could not be saved: " +
+                    saved.Error?.Message, StatusMessageKind.Error);
+                return;
+            }
+
+            if (!UpdateInstaller.LaunchSwapAndExit(staged, _session.SessionPath, release.Version.ToString()))
+            {
+                ShowMessage("the update is downloaded but the installer could not be started", StatusMessageKind.Error);
+                return;
+            }
+
+            _closingForUpdate = true;
+            _about?.Close();
+            Close();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("could not restart into the update: " + ex.Message, StatusMessageKind.Error);
+        }
     }
 
     /// <summary>
@@ -1475,7 +1658,7 @@ internal sealed partial class MainWindow : Window
             return;
         }
 
-        var bounds = _tree.Arrange(new CoreRect(0, 0, (int)_canvas.Bounds.Width, (int)_canvas.Bounds.Height))
+        var bounds = ArrangeShell(new CoreRect(0, 0, (int)_canvas.Bounds.Width, (int)_canvas.Bounds.Height))
             [_tree.Focused];
 
         var search = new TerminalSearchWindow(terminal);
@@ -2247,10 +2430,10 @@ internal sealed partial class MainWindow : Window
         UpdateStatus();
     }
 
-    private void SaveSession()
+    private async Task SaveSessionAsync()
     {
         RefreshPaneRestoreStates();
-        var result = _session.SaveNow();
+        var result = await _session.SaveNowAsync();
         if (result.Succeeded)
         {
             _message = "wrote " + _session.SessionPath;
@@ -2330,7 +2513,7 @@ internal sealed partial class MainWindow : Window
         }
         _cwdCaptureTimer.Stop();
         RefreshPaneRestoreStates();
-        var saved = _session.PrepareWindowClosing(this);
+        var saved = await _session.PrepareWindowClosingAsync(this);
         if (!saved.Succeeded)
         {
             _shutdownStarted = false;

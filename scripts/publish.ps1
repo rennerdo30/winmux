@@ -67,6 +67,7 @@ $common = @(
     '--self-contained', $(if ($SelfContained) { 'true' } else { 'false' }),
     '-o', $Destination
 )
+$readyToRun = '-p:PublishReadyToRun=true'
 
 Write-Host "Packaging WinMux $version ($Configuration, win-x64)..." -ForegroundColor Cyan
 
@@ -86,9 +87,15 @@ foreach ($lockFile in $lockFiles) {
 }
 
 try {
-    # The shell carries PaneHost and the quirks database with it (see CopyPaneHostOnPublish).
-    dotnet publish $shellProject @common
+    # Compile the UI's startup path ahead of time. This is a local build step; no package is
+    # released or uploaded by dotnet publish.
+    dotnet publish $shellProject @common $readyToRun
     if ($LASTEXITCODE -ne 0) { throw "Publishing WinMux.Shell failed with exit code $LASTEXITCODE." }
+
+    # Shell's project reference copies the normal PaneHost build. Publish PaneHost into the same
+    # folder afterwards so its own executable and DLL are ReadyToRun too.
+    dotnet publish (Join-Path $repo 'WinMux.PaneHost\WinMux.PaneHost.csproj') @common $readyToRun
+    if ($LASTEXITCODE -ne 0) { throw "Publishing WinMux.PaneHost failed with exit code $LASTEXITCODE." }
 
     dotnet publish (Join-Path $repo 'WinMux.Cli\WinMux.Cli.csproj') @common
     if ($LASTEXITCODE -ne 0) { throw "Publishing WinMux.Cli failed with exit code $LASTEXITCODE." }

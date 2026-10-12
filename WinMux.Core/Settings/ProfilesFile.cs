@@ -24,10 +24,7 @@ public static class ProfilesFile
     /// <param name="Warning">What was skipped and why, or null when nothing was.</param>
     public readonly record struct LoadResult(IReadOnlyList<LaunchProfile> Profiles, string? Warning);
 
-    public static string DefaultPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "WinMux",
-        FileName);
+    public static string DefaultPath => Path.Combine(WinMuxDataDirectory.RoamingPath, FileName);
 
     public static LoadResult Load(string path)
     {

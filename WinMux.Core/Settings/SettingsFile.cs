@@ -26,10 +26,7 @@ public static class SettingsFile
     public readonly record struct LoadResult(WinMuxSettings Settings, string? Warning);
 
     /// <summary><c>%APPDATA%\WinMux\settings.toml</c>.</summary>
-    public static string DefaultPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "WinMux",
-        FileName);
+    public static string DefaultPath => Path.Combine(WinMuxDataDirectory.RoamingPath, FileName);
 
     public static LoadResult Load(string path)
     {
@@ -71,6 +68,8 @@ public static class SettingsFile
             DefaultTabPlacement = Enum(root, "default_tab_placement", WinMuxSettings.Defaults.DefaultTabPlacement, problems),
             ConfirmBeforeClosingPanes =
                 Bool(root, "confirm_before_closing_panes", WinMuxSettings.Defaults.ConfirmBeforeClosingPanes, problems),
+            ReattachSurvivingApps =
+                Bool(root, "reattach_surviving_apps", WinMuxSettings.Defaults.ReattachSurvivingApps, problems),
             CheckForUpdates = Bool(root, "check_for_updates", WinMuxSettings.Defaults.CheckForUpdates, problems),
             UpdateChannel = Enum(root, "update_channel", WinMuxSettings.Defaults.UpdateChannel, problems),
             TerminalFontFamily = String(root, "terminal_font_family", WinMuxSettings.Defaults.TerminalFontFamily),
@@ -122,6 +121,10 @@ public static class SettingsFile
 
             # Ask before an action closes panes that are still running.
             confirm_before_closing_panes = {(settings.ConfirmBeforeClosingPanes ? "true" : "false")}
+
+            # Reuse a surviving application window only when its saved handle, PID and start time still match.
+            # Off leaves the pane waiting for you to launch a new copy explicitly.
+            reattach_surviving_apps      = {(settings.ReattachSurvivingApps ? "true" : "false")}
 
             # Look for a newer release on startup. Nothing is downloaded or installed without asking.
             check_for_updates            = {(settings.CheckForUpdates ? "true" : "false")}

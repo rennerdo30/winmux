@@ -74,6 +74,9 @@ public sealed record WinMuxSettings
     /// </summary>
     public bool ConfirmBeforeClosingPanes { get; init; } = true;
 
+    /// <summary>Reattach a saved foreign window only when its handle, PID and process start match.</summary>
+    public bool ReattachSurvivingApps { get; init; } = true;
+
     /// <summary>
     /// Whether to look for a newer release on startup.
     ///

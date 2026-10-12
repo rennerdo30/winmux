@@ -13,6 +13,25 @@ namespace WinMux.Shell.Tests;
 /// <summary>Exercise real control event routing and VT parsing against a recording PTY, without processes.</summary>
 public sealed class TerminalControlIntegrationTests
 {
+    [Fact]
+    public Task Exited_terminal_stops_accepting_input_and_keeps_an_exit_state() => Headless.RunAsync(async () =>
+    {
+        using var terminal = new Fixture();
+        var observe = typeof(TerminalPaneControl).GetMethod("ObserveExitAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var pending = (Task)observe.Invoke(terminal.Control, [terminal.Pty])!;
+        terminal.Pty.CompleteExit(-1);
+        await pending;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Null(terminal.Control.ProcessId);
+        terminal.Control.RaiseEvent(new KeyEventArgs
+        {
+            RoutedEvent = InputElement.KeyDownEvent, Key = Key.B, KeyModifiers = KeyModifiers.None,
+        });
+        Assert.Empty(terminal.Pty.Writes);
+    });
+
     [Theory]
     [InlineData(Key.C, KeyModifiers.Control, "\u0003")]
     [InlineData(Key.V, KeyModifiers.Control, "\u0016")]
@@ -150,9 +169,11 @@ public sealed class TerminalControlIntegrationTests
 
     private sealed class RecordingPty : IPtySession
     {
+        private readonly TaskCompletionSource<int> _exit = new();
         public int ProcessId => 12345;
         public Stream Output => Stream.Null;
-        public Task<int> Exited { get; } = new TaskCompletionSource<int>().Task;
+        public Task<int> Exited => _exit.Task;
+        public void CompleteExit(int code) => _exit.SetResult(code);
         public List<string> Writes { get; } = [];
         public Action<string>? OnWrite { get; set; }
         public ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)

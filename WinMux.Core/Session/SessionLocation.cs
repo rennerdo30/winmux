@@ -15,10 +15,7 @@ namespace WinMux.Core.Session;
 public static class SessionLocation
 {
     /// <summary><c>%APPDATA%\WinMux\session.toml</c>.</summary>
-    public static string DefaultPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "WinMux",
-        SessionFile.DefaultFileName);
+    public static string DefaultPath => Path.Combine(WinMuxDataDirectory.RoamingPath, SessionFile.DefaultFileName);
 
     /// <summary>The session to use, and where it was brought from if it was just moved.</summary>
     public sealed record Resolution(string Path, string? MigratedFrom);
@@ -38,6 +35,10 @@ public static class SessionLocation
 
         var target = defaultPath ?? DefaultPath;
         if (File.Exists(target)) return new Resolution(target, null);
+
+        // An isolated development profile must start empty. Migrating a session found in the
+        // checkout or installation would copy production state into the scratch profile.
+        if (defaultPath is null && WinMuxDataDirectory.IsIsolated) return new Resolution(target, null);
 
         var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         foreach (var directory in legacyDirectories)

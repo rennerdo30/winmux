@@ -76,13 +76,36 @@
     },
     {
       "match": {
+        "exe": "iexpress.exe"
+      },
+      "strategy": "attach",
+      "windowSelection": {
+        "mode": "Pid",
+        "processName": "",
+        "className": ""
+      },
+      "launchDelayMs": 1000,
+      "observedFindMs": 227,
+      "dpiAwareness": "Unaware",
+      "limitations": "At 150% DPI, embedding loses Windows bitmap scaling. Attach preserves readability. Discovery time is estimated from 1227 ms ready time minus 1000 ms settle; mixed-DPI moves are unmeasured.",
+      "verified": {
+        "date": "2026-10-12",
+        "os": "10.0.26200.0",
+        "result": "ATTACH DPI FALLBACK AT 150%",
+        "resizeFollows": true,
+        "moveFollows": true,
+        "detachExact": true
+      }
+    },
+    {
+      "match": {
         "exe": "explorer.exe",
         "windowClass": "CabinetWClass"
       },
       "strategy": "embed",
       "windowSelection": {
         "mode": "ClassName",
-        "processName": "",
+        "processName": "explorer.exe",
         "className": "CabinetWClass"
       },
       "launchDelayMs": 2000,
@@ -154,7 +177,7 @@
       "strategy": "embed",
       "windowSelection": {
         "mode": "ClassName",
-        "processName": "",
+        "processName": "Code.exe",
         "className": "Chrome_WidgetWin_1"
       },
       "launchDelayMs": 3500,
@@ -174,12 +197,13 @@
       "match": {
         "exe": "ApplicationFrameHost.exe",
         "launchExe": "calc.exe",
-        "windowClass": "ApplicationFrameWindow"
+        "windowClass": "ApplicationFrameWindow",
+        "titleContains": "Calculator"
       },
       "strategy": "attach",
       "windowSelection": {
         "mode": "ClassName",
-        "processName": "",
+        "processName": "ApplicationFrameHost.exe",
         "className": "ApplicationFrameWindow"
       },
       "launchDelayMs": 2500,

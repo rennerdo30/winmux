@@ -58,6 +58,8 @@
        the old path. A missing PaneHost.exe only surfaces much later, as a foreign-app pane that
        refuses to start, so this fails the build instead (CLAUDE.md section 8: no silent failure). -->
   <Target Name="ResolvePaneHostOutput">
+    <!-- A solution build can otherwise copy yesterday's PaneHost before its own project runs. -->
+    <MSBuild Projects="..\WinMux.PaneHost\WinMux.PaneHost.csproj" Targets="Build" Properties="Configuration=$(Configuration);Platform=$(Platform)" />
     <MSBuild Projects="..\WinMux.PaneHost\WinMux.PaneHost.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);Platform=$(Platform)">
       <Output TaskParameter="TargetOutputs" ItemName="PaneHostTarget" />
     </MSBuild>

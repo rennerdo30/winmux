@@ -13,12 +13,14 @@ public sealed class SessionAutosaver : IAsyncDisposable
     private readonly string _path;
     private readonly TimeSpan _debounce;
     private readonly Action<string, SessionSnapshot> _save;
+    private readonly bool _fileBacked;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
 
     private CancellationTokenSource? _delayCancellation;
     private SessionSnapshot? _latest;
     private long _latestVersion;
     private long _savedVersion;
+    private string? _lastWrittenContent;
     private Task _scheduled = Task.CompletedTask;
     private bool _disposed;
 
@@ -32,6 +34,7 @@ public sealed class SessionAutosaver : IAsyncDisposable
         _debounce = debounce ?? TimeSpan.FromMilliseconds(500);
         if (_debounce < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(debounce));
         _save = save ?? SessionFile.Save;
+        _fileBacked = save is null;
     }
 
     public event Action<SessionSaveResult>? SaveCompleted;
@@ -140,9 +143,22 @@ public sealed class SessionAutosaver : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         SessionSaveResult result;
+        var written = false;
         try
         {
-            await Task.Run(() => _save(_path, snapshot), cancellationToken).ConfigureAwait(false);
+            written = await Task.Run(() =>
+            {
+                // SavedAt records when a real write happened; it must not turn an otherwise
+                // identical snapshot into a change. Work on the writer thread, never the UI.
+                var content = SessionFile.Serialize(snapshot with { SavedAt = DateTimeOffset.UnixEpoch });
+                // A cached snapshot is not durable once its file has been removed. Custom sinks
+                // own their storage contract and need not create a file at this path.
+                if (string.Equals(content, _lastWrittenContent, StringComparison.Ordinal) &&
+                    (!_fileBacked || File.Exists(_path))) return false;
+                _save(_path, snapshot);
+                _lastWrittenContent = content;
+                return true;
+            }, cancellationToken).ConfigureAwait(false);
             result = new SessionSaveResult(true);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -150,8 +166,11 @@ public sealed class SessionAutosaver : IAsyncDisposable
             result = new SessionSaveResult(false, ex);
         }
 
-        LastResult = result;
-        SaveCompleted?.Invoke(result);
+        if (written || !result.Succeeded)
+        {
+            LastResult = result;
+            SaveCompleted?.Invoke(result);
+        }
         return result;
     }
 }

@@ -26,11 +26,14 @@ namespace WinMux.Shell.Chrome;
 internal static class Palette
 {
     public static readonly SolidColorBrush WindowBrush = new();
+    public static readonly SolidColorBrush OpaqueWindowBrush = new();
     public static readonly SolidColorBrush SurfaceBrush = new();
     public static readonly SolidColorBrush RaisedBrush = new();
     public static readonly SolidColorBrush HoverBrush = new();
     public static readonly SolidColorBrush PressedBrush = new();
     public static readonly SolidColorBrush ActiveTabBrush = new();
+    public static readonly SolidColorBrush TabStripBrush = new();
+    public static readonly SolidColorBrush TerminalTabBrush = new(Color.FromRgb(0x0C, 0x0C, 0x0C));
     public static readonly SolidColorBrush EdgeBrush = new();
     public static readonly SolidColorBrush AccentBrush = new();
     public static readonly SolidColorBrush AccentMutedBrush = new();
@@ -126,7 +129,8 @@ internal static class Palette
             Set(RaisedBrush, 0xCC, 0x2B, 0x2B, 0x2B);
             Set(HoverBrush, 0x1A, 0xFF, 0xFF, 0xFF);
             Set(PressedBrush, 0x0F, 0xFF, 0xFF, 0xFF);
-            Set(ActiveTabBrush, 0xFF, 0x3A, 0x3A, 0x3A);
+            Set(ActiveTabBrush, 0xFF, 0x0C, 0x0C, 0x0C);
+            Set(TabStripBrush, 0xFF, 0x2B, 0x2B, 0x2B);
             Set(EdgeBrush, 0x24, 0xFF, 0xFF, 0xFF);
             Set(TextBrush, 0xFF, 0xF2, 0xF2, 0xF2);
             Set(MutedTextBrush, 0xC8, 0xF2, 0xF2, 0xF2);
@@ -142,6 +146,7 @@ internal static class Palette
             Set(HoverBrush, 0x0F, 0x00, 0x00, 0x00);
             Set(PressedBrush, 0x1A, 0x00, 0x00, 0x00);
             Set(ActiveTabBrush, 0xFF, 0xFF, 0xFF, 0xFF);
+            Set(TabStripBrush, 0xFF, 0xE1, 0xE1, 0xE1);
             Set(EdgeBrush, 0x18, 0x00, 0x00, 0x00);
             Set(TextBrush, 0xFF, 0x1A, 0x1A, 0x1A);
             Set(MutedTextBrush, 0xC8, 0x1A, 0x1A, 0x1A);
@@ -151,6 +156,7 @@ internal static class Palette
         }
 
         AccentMutedBrush.Color = Color.FromArgb(0x66, AccentBrush.Color.R, AccentBrush.Color.G, AccentBrush.Color.B);
+        OpaqueWindowBrush.Color = OpaqueWindowFallback;
 
         DialogBrush.Color = IsDark ? Color.FromRgb(0x2B, 0x2B, 0x2B) : Color.FromRgb(0xF9, 0xF9, 0xF9);
         DialogFooterBrush.Color = IsDark ? Color.FromRgb(0x20, 0x20, 0x20) : Color.FromRgb(0xF0, 0xF0, 0xF0);
@@ -199,7 +205,9 @@ internal static class Theme
     public const string VerticalTab = "vertical-tab";
     public const string VerticalTabCorner = "vertical-tab-corner";
     public const string ActiveTab = "active-tab";
+    public const string TerminalTab = "terminal-tab";
     public const string CloseButton = "close-button";
+    public const string TerminalCloseButton = "terminal-close-button";
     public const string DialogButton = "dialog-button";
 
     /// <summary>A button that destroys something. Ordinary until the pointer is on it.</summary>
@@ -226,8 +234,27 @@ internal static class Theme
 
         AddButton(styles, ToolbarButton, Palette.TextBrush, Palette.ControlRadius, new Thickness(12, 6));
         AddButton(styles, IconButton, Palette.MutedTextBrush, Palette.ControlRadius, new Thickness(10, 6));
-        AddButton(styles, Tab, Palette.MutedTextBrush, new CornerRadius(6, 6, 0, 0), new Thickness(14, 7));
-        AddButton(styles, CloseButton, Palette.FaintTextBrush, Palette.ControlRadius, new Thickness(6, 3));
+        AddButton(styles, Tab, Palette.MutedTextBrush, new CornerRadius(7, 7, 0, 0), new Thickness(12, 5));
+        styles.Add(new Style(x => x.OfType<Button>().Class(Tab).Template().OfType<ContentPresenter>())
+        {
+            Setters = { new Setter(ContentPresenter.TransitionsProperty, CaptionMotion.HoverTransitions(167)) },
+        });
+        styles.Add(new Style(x => x.OfType<Button>().Class(Tab).Class(":pointerover")
+            .Template().OfType<ContentPresenter>())
+        {
+            Setters = { new Setter(ContentPresenter.TransitionsProperty, CaptionMotion.HoverTransitions(83)) },
+        });
+        AddButton(styles, CloseButton, Palette.FaintTextBrush, Palette.ControlRadius, new Thickness(4, 2));
+        foreach (var selector in new Func<Style>[]
+        {
+            () => new Style(x => x.OfType<Button>().Class(CloseButton)),
+            () => new Style(x => x.OfType<Button>().Class(CloseButton).Template().OfType<ContentPresenter>()),
+        })
+        {
+            var style = selector();
+            style.Setters.Add(new Setter(Layoutable.MinHeightProperty, 0.0));
+            styles.Add(style);
+        }
 
         // The caption buttons. Square, full-height and flush to the window edge, because that is
         // what the system's own are — rounding them or insetting them is the giveaway that an app
@@ -333,9 +360,17 @@ internal static class Theme
         {
             Setters = { new Setter(ContentPresenter.BackgroundProperty, Palette.ActiveTabBrush) },
         });
+        styles.Add(new Style(x => x.OfType<Button>().Class(ActiveTab).Class(TerminalTab).Template().OfType<ContentPresenter>())
+        {
+            Setters = { new Setter(ContentPresenter.BackgroundProperty, Palette.TerminalTabBrush) },
+        });
         styles.Add(new Style(x => x.OfType<Button>().Class(ActiveTab))
         {
             Setters = { new Setter(TemplatedControl.ForegroundProperty, Palette.TextBrush) },
+        });
+        styles.Add(new Style(x => x.OfType<Button>().Class(ActiveTab).Class(TerminalTab))
+        {
+            Setters = { new Setter(TemplatedControl.ForegroundProperty, Brushes.White) },
         });
 
         // A destructive button reads as ordinary until you are about to press it, which is the
@@ -383,10 +418,14 @@ internal static class Theme
             },
         });
 
-        // Closing is the one destructive thing on a tab, so it says so on hover.
+        // A tab close is a small secondary action; the hover fill and glyph stay neutral.
         styles.Add(new Style(x => x.OfType<Button>().Class(CloseButton).Class(":pointerover"))
         {
-            Setters = { new Setter(TemplatedControl.ForegroundProperty, Palette.DangerBrush) },
+            Setters = { new Setter(TemplatedControl.ForegroundProperty, Palette.TextBrush) },
+        });
+        styles.Add(new Style(x => x.OfType<Button>().Class(TerminalCloseButton))
+        {
+            Setters = { new Setter(TemplatedControl.ForegroundProperty, Brushes.White) },
         });
 
         styles.Add(new Style(x => x.OfType<TextBlock>())
