@@ -18,11 +18,11 @@ internal static class CaptionMotion
         ]
         : [];
 
-    public static Transitions HoverTransitions() => Enabled
+    public static Transitions HoverTransitions(int milliseconds) => Enabled
         ? [new BrushTransition
         {
             Property = ContentPresenter.BackgroundProperty,
-            Duration = TimeSpan.FromMilliseconds(83),
+            Duration = TimeSpan.FromMilliseconds(milliseconds),
         }]
         : [];
 }

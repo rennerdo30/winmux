@@ -648,9 +648,16 @@ internal sealed partial class MainWindow : Window
             AddTab: stack => Run(AddTabToStackAsync(stack)),
             MoveStrip: SetTabPlacement,
             MoveTab: MoveTab,
-            ResizeStrip: ResizeTabStrip);
+            ResizeStrip: ResizeTabStrip,
+            Dispatch: action => DispatchNamedAction(action),
+            OpenProfile: (profile, split) => Run(OpenProfileAsync(profile, split)),
+            Profiles: () => Settings.ShellProfiles.All);
 
         var captionStack = CaptionStack();
+        var canvasTop = captionStack is null ? 4 : 0;
+        if (_canvas.Margin.Top != canvasTop)
+            _canvas.Margin = new Thickness(Palette.GapSmall, canvasTop,
+                Palette.GapSmall, Palette.GapSmall);
         _captionTabsHost.IsVisible = captionStack is not null;
         _captionToolbar.IsVisible = captionStack is null;
         if (captionStack is not null)
@@ -711,7 +718,7 @@ internal sealed partial class MainWindow : Window
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
         const int Thickness = 2;
-        var joinedTop = arrangement.TabStrips.Any(strip => strip.Placement == TabStripPlacement.Top &&
+        var joinedTop = CaptionStack() is not null || arrangement.TabStrips.Any(strip => strip.Placement == TabStripPlacement.Top &&
             strip.Rect.Bottom == rect.Y && strip.Rect.X == rect.X && strip.Rect.Width == rect.Width);
         var ring = new Border
         {

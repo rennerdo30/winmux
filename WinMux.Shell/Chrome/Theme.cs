@@ -129,7 +129,7 @@ internal static class Palette
             Set(RaisedBrush, 0xCC, 0x2B, 0x2B, 0x2B);
             Set(HoverBrush, 0x1A, 0xFF, 0xFF, 0xFF);
             Set(PressedBrush, 0x0F, 0xFF, 0xFF, 0xFF);
-            Set(ActiveTabBrush, 0xFF, 0x3A, 0x3A, 0x3A);
+            Set(ActiveTabBrush, 0xFF, 0x0C, 0x0C, 0x0C);
             Set(TabStripBrush, 0xFF, 0x2B, 0x2B, 0x2B);
             Set(EdgeBrush, 0x24, 0xFF, 0xFF, 0xFF);
             Set(TextBrush, 0xFF, 0xF2, 0xF2, 0xF2);
@@ -237,7 +237,12 @@ internal static class Theme
         AddButton(styles, Tab, Palette.MutedTextBrush, new CornerRadius(7, 7, 0, 0), new Thickness(12, 5));
         styles.Add(new Style(x => x.OfType<Button>().Class(Tab).Template().OfType<ContentPresenter>())
         {
-            Setters = { new Setter(ContentPresenter.TransitionsProperty, CaptionMotion.HoverTransitions()) },
+            Setters = { new Setter(ContentPresenter.TransitionsProperty, CaptionMotion.HoverTransitions(167)) },
+        });
+        styles.Add(new Style(x => x.OfType<Button>().Class(Tab).Class(":pointerover")
+            .Template().OfType<ContentPresenter>())
+        {
+            Setters = { new Setter(ContentPresenter.TransitionsProperty, CaptionMotion.HoverTransitions(83)) },
         });
         AddButton(styles, CloseButton, Palette.FaintTextBrush, Palette.ControlRadius, new Thickness(4, 2));
         foreach (var selector in new Func<Style>[]
@@ -353,7 +358,7 @@ internal static class Theme
         // Windows 11 marks the selected item with a filled card, not a heavier font.
         styles.Add(new Style(x => x.OfType<Button>().Class(ActiveTab).Template().OfType<ContentPresenter>())
         {
-            Setters = { new Setter(ContentPresenter.BackgroundProperty, Palette.OpaqueWindowBrush) },
+            Setters = { new Setter(ContentPresenter.BackgroundProperty, Palette.ActiveTabBrush) },
         });
         styles.Add(new Style(x => x.OfType<Button>().Class(ActiveTab).Class(TerminalTab).Template().OfType<ContentPresenter>())
         {

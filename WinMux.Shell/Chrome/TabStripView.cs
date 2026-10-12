@@ -10,6 +10,8 @@ using Avalonia.Threading;
 using System.Runtime.CompilerServices;
 using WinMux.Core.Layout;
 using WinMux.Core.Model;
+using WinMux.Core.Settings;
+using WinMux.Shell.Actions;
 
 // Avalonia has a TabStrip control of its own, and it is not this. Ours is a rectangle the layout
 // engine reserved; theirs is a widget. Aliased so the two can never be confused silently.
@@ -32,7 +34,10 @@ internal sealed record TabStripCommands(
     Action<StackNode> AddTab,
     Action<StackNode, TabStripPlacement> MoveStrip,
     Action<int> MoveTab,
-    Action<StackNode, int>? ResizeStrip = null);
+    Action<StackNode, int>? ResizeStrip = null,
+    Action<string>? Dispatch = null,
+    Action<LaunchProfile, bool>? OpenProfile = null,
+    Func<IReadOnlyList<LaunchProfile>>? Profiles = null);
 
 /// <summary>
 /// One stack's tabs, drawn in the band the layout engine reserved for them.
@@ -91,11 +96,26 @@ internal static class TabStripView
         var stackHasFocus = strip.Stack.Leaves().Any(leaf => leaf.Pane.Id == focused);
 
         var tabs = new List<Control>();
+        var separators = new List<Border>();
         var refreshers = new List<Action<PaneId>>();
         var seenBefore = Seen.TryGetValue(strip.Stack, out var seen);
         seen ??= Seen.GetOrCreateValue(strip.Stack);
         for (var index = 0; index < strip.Stack.Children.Count; index++)
         {
+            if (!vertical && index > 0)
+            {
+                var separator = new Border
+                {
+                    Width = 1,
+                    Height = 16,
+                    Margin = new Thickness(1, 0),
+                    Background = Palette.EdgeBrush,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    IsHitTestVisible = false,
+                };
+                separators.Add(separator);
+                items.Children.Add(separator);
+            }
             var child = strip.Stack.Children[index];
             // Any pane under this tab, because a tab can hold a whole split and the pane that rang
             // may not be the one whose title the tab shows.
@@ -119,11 +139,27 @@ internal static class TabStripView
         }
         seen.Nodes.Clear();
         foreach (var child in strip.Stack.Children) seen.Nodes.Add(child);
+        void UpdateSeparators()
+        {
+            for (var i = 1; i < tabs.Count; i++)
+                separators[i - 1].Opacity = i == strip.Stack.ActiveIndex || i - 1 == strip.Stack.ActiveIndex ||
+                    tabs[i].IsPointerOver || tabs[i - 1].IsPointerOver ? 0 : 1;
+        }
+        if (!vertical)
+        {
+            foreach (var tab in tabs)
+            {
+                tab.PointerEntered += (_, _) => UpdateSeparators();
+                tab.PointerExited += (_, _) => UpdateSeparators();
+            }
+            refreshers.Add(_ => UpdateSeparators());
+            UpdateSeparators();
+        }
 
         EnableDragAndDrop(items, tabs, strip, vertical, commands);
 
         var add = Icon(Icons.Add(), "Add a tab to this group", () => commands.AddTab(strip.Stack), false);
-        var more = PlacementButton(strip, commands, false);
+        var more = PlacementButton(strip, commands, vertical);
         if (vertical)
         {
             items.Children.Add(new StackPanel
@@ -133,6 +169,12 @@ internal static class TabStripView
                 Margin = new Thickness(0, 4, 0, 0),
                 Children = { add, more },
             });
+        }
+        else
+        {
+            SizeCaptionActions(add, more);
+            items.Children.Add(add);
+            items.Children.Add(more);
         }
 
         // The caret that shows where a dragged tab will land, drawn over the tabs and inside the
@@ -199,15 +241,36 @@ internal static class TabStripView
             VerticalScrollBarVisibility = vertical ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled,
             Padding = vertical ? new Thickness(6, 6) : new Thickness(6, 0, 0, 0),
         };
+        if (!vertical)
+            scroller.PointerWheelChanged += (_, e) =>
+            {
+                var maximum = Math.Max(0, scroller.Extent.Width - scroller.Viewport.Width);
+                if (maximum <= 0) return;
+                scroller.Offset = new Vector(Math.Clamp(scroller.Offset.X - e.Delta.Y * 80, 0, maximum), 0);
+                e.Handled = true;
+            };
 
         Control contents = scroller;
         if (!vertical)
         {
+            var fixedAdd = Icon(Icons.Add(), "Add a tab to this group", () => commands.AddTab(strip.Stack), false);
+            var fixedMore = PlacementButton(strip, commands, false);
+            SizeCaptionActions(fixedAdd, fixedMore);
+            fixedAdd.IsVisible = false;
+            fixedMore.IsVisible = false;
             var previous = Icon(new TextBlock { Text = "‹", FontSize = 20 }, "Scroll tabs left", () =>
                 scroller.Offset = new Vector(Math.Max(0, scroller.Offset.X - 160), 0), false);
             var next = Icon(new TextBlock { Text = "›", FontSize = 20 }, "Scroll tabs right", () =>
                 scroller.Offset = new Vector(Math.Min(scroller.Extent.Width - scroller.Viewport.Width,
                     scroller.Offset.X + 160), 0), false);
+            foreach (var arrow in new[] { previous, next })
+                if (arrow is Button button)
+                {
+                    button.Width = 32;
+                    button.Height = 24;
+                    button.MinHeight = 0;
+                    button.Padding = new Thickness(0);
+                }
             previous.IsVisible = false;
             next.IsVisible = false;
             void UpdateScrollButtons()
@@ -215,16 +278,22 @@ internal static class TabStripView
                 var overflow = scroller.Extent.Width > scroller.Viewport.Width + 1;
                 previous.IsVisible = overflow && scroller.Offset.X > 1;
                 next.IsVisible = overflow && scroller.Offset.X + scroller.Viewport.Width < scroller.Extent.Width - 1;
+                fixedAdd.IsVisible = overflow;
+                fixedMore.IsVisible = overflow;
+                add.Opacity = overflow ? 0 : 1;
+                more.Opacity = overflow ? 0 : 1;
+                add.IsHitTestVisible = !overflow;
+                more.IsHitTestVisible = !overflow;
             }
             scroller.ScrollChanged += (_, _) => UpdateScrollButtons();
             scroller.SizeChanged += (_, _) => UpdateScrollButtons();
             var row = new DockPanel { LastChildFill = true };
-            DockPanel.SetDock(more, Dock.Right);
-            DockPanel.SetDock(add, Dock.Right);
+            DockPanel.SetDock(fixedMore, Dock.Right);
+            DockPanel.SetDock(fixedAdd, Dock.Right);
             DockPanel.SetDock(next, Dock.Right);
             DockPanel.SetDock(previous, Dock.Left);
-            row.Children.Add(more);
-            row.Children.Add(add);
+            row.Children.Add(fixedMore);
+            row.Children.Add(fixedAdd);
             row.Children.Add(next);
             row.Children.Add(previous);
             row.Children.Add(scroller);
@@ -249,6 +318,28 @@ internal static class TabStripView
             strip.Stack.Children.Select(c => c.Leaves().First().Pane.IsPinned).ToArray(),
             strip.Stack.Children.Select(c => WaitingFor(c, waiting)).ToArray(), refreshers.ToArray()));
         return band;
+    }
+
+    private static void SizeCaptionActions(Control add, Control more)
+    {
+        if (add is Button addButton)
+        {
+            addButton.Width = 32;
+            addButton.Height = 28;
+            addButton.MinHeight = 0;
+            addButton.Padding = new Thickness(0);
+            addButton.CornerRadius = new CornerRadius(4, 0, 0, 4);
+            addButton.Margin = new Thickness(4, 3, 0, 0);
+        }
+        if (more is Button moreButton)
+        {
+            moreButton.Width = 20;
+            moreButton.Height = 28;
+            moreButton.MinHeight = 0;
+            moreButton.Padding = new Thickness(0);
+            moreButton.CornerRadius = new CornerRadius(0, 4, 4, 0);
+            moreButton.Margin = new Thickness(0, 3, 0, 0);
+        }
     }
 
     internal static int WidthAfterDrag(int originalWidth, double horizontalDelta, TabStripPlacement placement) =>
@@ -819,27 +910,50 @@ internal static class TabStripView
     {
         var button = new Button
         {
-            Content = Icons.More(),
+            Content = vertical ? Icons.More() : Icons.Chevron(),
             HorizontalAlignment = vertical ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
             HorizontalContentAlignment = vertical ? HorizontalAlignment.Left : HorizontalAlignment.Center,
             [ToolTip.TipProperty] = "More tab actions",
         };
         button.Classes.Add(Theme.IconButton);
 
-        // A kebab means "more actions", so it holds them rather than only the strip's placement.
-        var menu = new ContextMenu
+        // Build on open so profiles added in Settings appear without rebuilding the tab strip.
+        List<Control> BuildMenuItems()
         {
-            ItemsSource = new Control[]
+            var items = new List<Control>();
+            if (commands.Dispatch is { } dispatch)
             {
-                Item("Move this tab earlier", () => commands.MoveTab(-1)),
-                Item("Move this tab later", () => commands.MoveTab(1)),
-                new Separator(),
-                PlacementItem(strip, commands, TabStripPlacement.Top, "Tabs on top"),
-                PlacementItem(strip, commands, TabStripPlacement.Bottom, "Tabs on the bottom"),
-                PlacementItem(strip, commands, TabStripPlacement.Left, "Tabs on the left"),
-                PlacementItem(strip, commands, TabStripPlacement.Right, "Tabs on the right"),
-            },
-        };
+                items.Add(Item("New terminal tab", () => dispatch(ShellActionNames.NewTab)));
+                items.Add(Item("File browser tab", () => dispatch(ShellActionNames.NewFileBrowser)));
+                if (commands.Profiles is { } profiles && commands.OpenProfile is { } openProfile)
+                {
+                    var profileItems = profiles().Select(profile =>
+                        Item(profile.Name, () => openProfile(profile, false))).ToArray();
+                    if (profileItems.Length > 0)
+                        items.Add(new MenuItem { Header = "Open profile", ItemsSource = profileItems });
+                }
+                items.Add(new Separator());
+                items.Add(Item("Split right", () => dispatch(ShellActionNames.SplitColumns)));
+                items.Add(Item("Split down", () => dispatch(ShellActionNames.SplitRows)));
+                items.Add(Item("New tab group", () => dispatch(ShellActionNames.NewTabGroup)));
+                items.Add(Item("Close pane", () => dispatch(ShellActionNames.ClosePane)));
+                items.Add(new Separator());
+                items.Add(Item("Save session", () => dispatch(ShellActionNames.SaveSession)));
+                items.Add(Item("Settings", () => dispatch(ShellActionNames.ShowSettings)));
+                items.Add(Item("All commands…", () => dispatch(ShellActionNames.ShowPalette)));
+                items.Add(new Separator());
+            }
+            items.Add(Item("Move this tab earlier", () => commands.MoveTab(-1)));
+            items.Add(Item("Move this tab later", () => commands.MoveTab(1)));
+            items.Add(new Separator());
+            items.Add(PlacementItem(strip, commands, TabStripPlacement.Top, "Tabs on top"));
+            items.Add(PlacementItem(strip, commands, TabStripPlacement.Bottom, "Tabs on the bottom"));
+            items.Add(PlacementItem(strip, commands, TabStripPlacement.Left, "Tabs on the left"));
+            items.Add(PlacementItem(strip, commands, TabStripPlacement.Right, "Tabs on the right"));
+            return items;
+        }
+        var menu = new ContextMenu { ItemsSource = BuildMenuItems() };
+        menu.Opening += (_, _) => menu.ItemsSource = BuildMenuItems();
 
         // Opens on a plain left click too: a menu reachable only by right-clicking a three-dot
         // button is a menu most people never find.
