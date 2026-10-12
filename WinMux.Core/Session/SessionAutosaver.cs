@@ -19,6 +19,7 @@ public sealed class SessionAutosaver : IAsyncDisposable
     private SessionSnapshot? _latest;
     private long _latestVersion;
     private long _savedVersion;
+    private string? _lastWrittenContent;
     private Task _scheduled = Task.CompletedTask;
     private bool _disposed;
 
@@ -140,9 +141,19 @@ public sealed class SessionAutosaver : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         SessionSaveResult result;
+        var written = false;
         try
         {
-            await Task.Run(() => _save(_path, snapshot), cancellationToken).ConfigureAwait(false);
+            written = await Task.Run(() =>
+            {
+                // SavedAt records when a real write happened; it must not turn an otherwise
+                // identical snapshot into a change. Work on the writer thread, never the UI.
+                var content = SessionFile.Serialize(snapshot with { SavedAt = DateTimeOffset.UnixEpoch });
+                if (string.Equals(content, _lastWrittenContent, StringComparison.Ordinal)) return false;
+                _save(_path, snapshot);
+                _lastWrittenContent = content;
+                return true;
+            }, cancellationToken).ConfigureAwait(false);
             result = new SessionSaveResult(true);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -150,8 +161,11 @@ public sealed class SessionAutosaver : IAsyncDisposable
             result = new SessionSaveResult(false, ex);
         }
 
-        LastResult = result;
-        SaveCompleted?.Invoke(result);
+        if (written || !result.Succeeded)
+        {
+            LastResult = result;
+            SaveCompleted?.Invoke(result);
+        }
         return result;
     }
 }

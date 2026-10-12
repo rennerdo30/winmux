@@ -152,7 +152,12 @@ internal sealed class TerminalPaneRuntime : IPaneRuntime, ITerminalInputRuntime,
         var result = WorkingDirectories.Resolve(processId, disablePebForWsl: _isWsl);
         if (!result.Succeeded) return;
         var capture = new WorkingDirectory(result.Path!, result.Provenance, DateTimeOffset.UtcNow);
-        _pane.Restore = _pane.Restore with { Cwd = WorkingDirectory.Better(_pane.Restore.Cwd, capture) };
+        var previous = _pane.Restore.Cwd;
+        var better = WorkingDirectory.Better(previous, capture);
+        // A poll of the same directory is not new restore intent. Updating only its timestamp
+        // would rewrite an idle session every ten seconds.
+        if (better.Path == previous.Path && better.Source == previous.Source) return;
+        _pane.Restore = _pane.Restore with { Cwd = better };
     }
 
     public RestoreDescriptor CaptureRestoreDescriptor()
