@@ -13,6 +13,7 @@ public sealed class SessionAutosaver : IAsyncDisposable
     private readonly string _path;
     private readonly TimeSpan _debounce;
     private readonly Action<string, SessionSnapshot> _save;
+    private readonly bool _fileBacked;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
 
     private CancellationTokenSource? _delayCancellation;
@@ -33,6 +34,7 @@ public sealed class SessionAutosaver : IAsyncDisposable
         _debounce = debounce ?? TimeSpan.FromMilliseconds(500);
         if (_debounce < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(debounce));
         _save = save ?? SessionFile.Save;
+        _fileBacked = save is null;
     }
 
     public event Action<SessionSaveResult>? SaveCompleted;
@@ -149,7 +151,10 @@ public sealed class SessionAutosaver : IAsyncDisposable
                 // SavedAt records when a real write happened; it must not turn an otherwise
                 // identical snapshot into a change. Work on the writer thread, never the UI.
                 var content = SessionFile.Serialize(snapshot with { SavedAt = DateTimeOffset.UnixEpoch });
-                if (string.Equals(content, _lastWrittenContent, StringComparison.Ordinal)) return false;
+                // A cached snapshot is not durable once its file has been removed. Custom sinks
+                // own their storage contract and need not create a file at this path.
+                if (string.Equals(content, _lastWrittenContent, StringComparison.Ordinal) &&
+                    (!_fileBacked || File.Exists(_path))) return false;
                 _save(_path, snapshot);
                 _lastWrittenContent = content;
                 return true;

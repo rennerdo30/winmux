@@ -65,6 +65,29 @@ public sealed class SessionAutosaverTests
     }
 
     [Fact]
+    public async Task Unchanged_intent_recreates_a_removed_session_file()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "winmux-save-review-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "session.toml");
+        try
+        {
+            await using var saver = new SessionAutosaver(path, TimeSpan.FromMinutes(1));
+            var snapshot = Snapshot("keep this layout");
+            saver.RequestSave(snapshot);
+            Assert.True((await saver.FlushAsync()).Succeeded);
+            File.Delete(path);
+
+            saver.RequestSave(snapshot);
+            Assert.True((await saver.FlushAsync()).Succeeded);
+            Assert.Equal("keep this layout", SessionFile.Load(path).Windows.Single().Title);
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Background_write_failure_is_observable()
     {
         var completion = new TaskCompletionSource<SessionSaveResult>(TaskCreationOptions.RunContinuationsAsynchronously);
