@@ -197,6 +197,13 @@ internal enum WindowMatchMode
     ClassName,
 }
 
+internal static class DpiCompatibility
+{
+    // GetAwarenessFromDpiAwarenessContext: -1 invalid, 0 unaware, 1 system aware, 2 per-monitor.
+    public static bool NeedsAttach(int awareness, uint monitorDpi) =>
+        monitorDpi != 0 && monitorDpi != 96 && awareness is 0 or 1;
+}
+
 /// <summary>Only a newly observed window with the expected application identity is eligible.</summary>
 internal static class WindowCandidateMatcher
 {
@@ -472,6 +479,14 @@ internal sealed class PaneHostWindow : IDisposable
         if (IsIconic(child)) ShowWindow(child, SwRestore);
         if (_launch.Strategy == HostStrategy.Attach)
             Attach(original with { Strategy = HostStrategy.Attach });
+        else if (DpiCompatibility.NeedsAttach(
+                     GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(child)),
+                     GetDpiForWindow(_hostWindow)))
+        {
+            WriteProtocol(HostProtocol.Notice(
+                "this application uses Windows DPI scaling; attach mode keeps it readable at this display scale"));
+            Attach(original with { Strategy = HostStrategy.Attach });
+        }
         else
             Embed(original with { Strategy = HostStrategy.Embed });
         if (_hosted is not null && _childWindow != IntPtr.Zero)
@@ -828,6 +843,9 @@ internal sealed class PaneHostWindow : IDisposable
     [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern bool PostMessageW(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiHostingBehavior(IntPtr value);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindowDpiAwarenessContext(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("kernel32.dll")] private static extern IntPtr GetModuleHandleW(string? name);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, char[] buffer, ref int size);

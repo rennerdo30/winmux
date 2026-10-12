@@ -12,7 +12,7 @@ public sealed class ForeignAppQuirksDatabaseTests
 
         Assert.Equal(1, database.Version);
         Assert.Equal("spikes/02-reparent", database.GeneratedBy);
-        Assert.Equal(8, database.Entries.Count);
+        Assert.Equal(9, database.Entries.Count);
 
         var taskManager = database.Select(@"C:\Windows\System32\TASKMGR.EXE", "taskmanagerwindow");
         Assert.False(taskManager.IsDefault);
@@ -44,6 +44,12 @@ public sealed class ForeignAppQuirksDatabaseTests
         Assert.Equal(ForeignWindowSelectionMode.Pid, characterMap.Rule.WindowSelection.Mode);
         Assert.Null(characterMap.Rule.Limitations);
         Assert.True(Assert.IsType<ForeignAppVerification>(characterMap.Rule.Verification).DetachExact);
+
+        var iexpress = database.Select("iexpress.exe");
+        Assert.False(iexpress.IsDefault);
+        Assert.Equal(HostStrategy.Attach, iexpress.Rule.Strategy);
+        Assert.Equal(ForeignAppDpiAwareness.Unaware, iexpress.Rule.DpiAwareness);
+        Assert.Equal("ATTACH DPI FALLBACK AT 150%", iexpress.Rule.Verification?.Result);
     }
 
     [Fact]
