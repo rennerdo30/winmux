@@ -36,6 +36,7 @@ public sealed class VerticalTabStyleTests
                 Assert.Equal(2, tabs.Length);
                 Assert.All(tabs, tab => Assert.Equal(Palette.ControlHeight, tab.Bounds.Height));
                 var labels = tabs.Select(tab => tab.GetVisualDescendants().OfType<TextBlock>().First()).ToArray();
+                Assert.All(labels, label => Assert.Equal(Palette.CaptionSize, label.FontSize));
                 Assert.Equal(labels[0].TranslatePoint(default, strip)!.Value.X,
                     labels[1].TranslatePoint(default, strip)!.Value.X);
                 var corners = tabs.Select(tab => tab.GetVisualDescendants().OfType<Button>().Single()).ToArray();

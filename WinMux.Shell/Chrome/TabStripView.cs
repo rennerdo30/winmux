@@ -490,7 +490,7 @@ internal static class TabStripView
         var previewTitle = new TextBlock
         {
             Foreground = Palette.TextBrush,
-            FontSize = CompactTabTitleSize,
+            FontSize = vertical ? Palette.CaptionSize : CompactTabTitleSize,
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = 170,
             VerticalAlignment = VerticalAlignment.Center,
@@ -778,7 +778,7 @@ internal static class TabStripView
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = vertical ? double.PositiveInfinity : 170,
             TextAlignment = TextAlignment.Left,
-            FontSize = CompactTabTitleSize,
+            FontSize = vertical ? Palette.CaptionSize : CompactTabTitleSize,
         };
 
         // A pinned tab shows a pin where its close button was. Leaving a close button that refuses
