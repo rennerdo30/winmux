@@ -1085,7 +1085,7 @@ internal sealed partial class MainWindow : Window
         _actions.RegisterAsync(ShellActionNames.ShowSettings, _ => new ValueTask(ShowSettingsAsync()));
         _actions.RegisterAsync(ShellActionNames.ShowConnections, _ => new ValueTask(ShowConnectionsAsync()));
         _actions.RegisterAsync(ShellActionNames.OpenSession, _ => new ValueTask(OpenSessionAsync()));
-        _actions.Register(ShellActionNames.SaveSession, SaveSession);
+        _actions.RegisterAsync(ShellActionNames.SaveSession, _ => new ValueTask(SaveSessionAsync()));
         _actions.RegisterAsync(ShellActionNames.SaveSessionAs, _ => new ValueTask(SaveSessionAsAsync()));
         _actions.Register(ShellActionNames.ResizeLeft, () => ResizeFocused(FocusDirection.Left));
         _actions.Register(ShellActionNames.ResizeRight, () => ResizeFocused(FocusDirection.Right));
@@ -1340,23 +1340,38 @@ internal sealed partial class MainWindow : Window
     /// No further question. The button says "Restart WinMux" beneath a line saying programs in panes
     /// are closed and started again; asking a second time teaches people to click through both.
     /// </summary>
-    private void RestartIntoUpdate()
+    private void RestartIntoUpdate() => _ = RestartIntoUpdateAsync();
+
+    private async Task RestartIntoUpdateAsync()
     {
-        if (_updates is not { State: UpdateState.ReadyToRestart, StagedDirectory: { } staged, Release: { } release })
-            return;
-
-        // Persistence is priority 1; do it before handing control to a script that will end us.
-        _session.SaveNow();
-
-        if (!UpdateInstaller.LaunchSwapAndExit(staged, _session.SessionPath, release.Version.ToString()))
+        try
         {
-            ShowMessage("the update is downloaded but the installer could not be started", StatusMessageKind.Error);
-            return;
-        }
+            if (_updates is not { State: UpdateState.ReadyToRestart, StagedDirectory: { } staged, Release: { } release })
+                return;
 
-        _closingForUpdate = true;
-        _about?.Close();
-        Close();
+            // Persistence is priority 1; do it before handing control to a script that will end us.
+            var saved = await _session.SaveNowAsync();
+            if (!saved.Succeeded)
+            {
+                ShowMessage("the update is downloaded but the session could not be saved: " +
+                    saved.Error?.Message, StatusMessageKind.Error);
+                return;
+            }
+
+            if (!UpdateInstaller.LaunchSwapAndExit(staged, _session.SessionPath, release.Version.ToString()))
+            {
+                ShowMessage("the update is downloaded but the installer could not be started", StatusMessageKind.Error);
+                return;
+            }
+
+            _closingForUpdate = true;
+            _about?.Close();
+            Close();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("could not restart into the update: " + ex.Message, StatusMessageKind.Error);
+        }
     }
 
     /// <summary>
@@ -2247,10 +2262,10 @@ internal sealed partial class MainWindow : Window
         UpdateStatus();
     }
 
-    private void SaveSession()
+    private async Task SaveSessionAsync()
     {
         RefreshPaneRestoreStates();
-        var result = _session.SaveNow();
+        var result = await _session.SaveNowAsync();
         if (result.Succeeded)
         {
             _message = "wrote " + _session.SessionPath;
@@ -2330,7 +2345,7 @@ internal sealed partial class MainWindow : Window
         }
         _cwdCaptureTimer.Stop();
         RefreshPaneRestoreStates();
-        var saved = _session.PrepareWindowClosing(this);
+        var saved = await _session.PrepareWindowClosingAsync(this);
         if (!saved.Succeeded)
         {
             _shutdownStarted = false;
