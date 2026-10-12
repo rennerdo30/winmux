@@ -200,13 +200,13 @@ internal sealed class PaneHostWindow : IDisposable
 {
     private const string WindowClassName = "WinMux.PaneHost.Window";
     private const int GwlStyle = -16, GwlExStyle = -20, SwHide = 0, SwShowNormal = 1, SwRestore = 9;
-    private const int WsPopup = unchecked((int)0x80000000), WsVisible = 0x10000000;
+    private const int WsPopup = unchecked((int)0x80000000);
     private const long WsPopupStyle = 0x80000000L, WsChildStyle = 0x40000000L;
     private const long ForeignFrameStyles = 0x00CF0000L;
     private const uint GaParent = 1, GwOwner = 4, WmClose = 0x0010, WmDestroy = 0x0002, WmShowWindow = 0x0018;
     private const uint WmMove = 0x0003, WmSize = 0x0005, WmActivate = 0x0006, WmWindowPosChanged = 0x0047;
     private const uint WmAppAdopt = 0x8001, WmAppClosePane = 0x8002;
-    private const uint WmAppAttach = 0x8003, WmAppEmbed = 0x8004;
+    private const uint WmAppAttach = 0x8003, WmAppEmbed = 0x8004, WmAppAbandonAttach = 0x8005;
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const uint SwpNoSize = 0x0001, SwpNoMove = 0x0002, SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010, SwpShowWindow = 0x0040, SwpFrameChanged = 0x0020;
@@ -228,11 +228,12 @@ internal sealed class PaneHostWindow : IDisposable
     {
         _ = SetThreadDpiHostingBehavior(new IntPtr(-3)); // DPI_HOSTING_BEHAVIOR_MIXED
         RegisterWindowClass();
-        _hostWindow = CreateWindowExW(0, WindowClassName, "WinMux pane host", WsPopup | WsVisible,
+        // The shell places and reveals the host only after an application is ready. A failed
+        // attach must never leave the default black rectangle on the desktop.
+        _hostWindow = CreateWindowExW(0, WindowClassName, "WinMux pane host", WsPopup,
             100, 100, 900, 600, _launch.OwnerWindow, IntPtr.Zero, GetModuleHandleW(null), IntPtr.Zero);
         if (_hostWindow == IntPtr.Zero) ThrowLastError("CreateWindowEx");
 
-        ShowWindow(_hostWindow, SwShowNormal);
         WriteProtocol($"HOST_HWND={_hostWindow.ToInt64()}");
         _ = Task.Run(FindApplicationWindow);
         _ = Task.Run(ReadCommands);
@@ -349,10 +350,18 @@ internal sealed class PaneHostWindow : IDisposable
 
             // Redirected stdin closes when the shell crashes. Restore autonomously so the app
             // cannot remain an invisible orphaned child after its owner disappears.
+            var attempts = 0;
             while (!_shutdown.IsCancellationRequested && IsWindow(_hostWindow))
             {
                 PostMessageW(_hostWindow, WmClose, IntPtr.Zero, IntPtr.Zero);
                 await Task.Delay(1_000, _shutdown.Token);
+                // An embedded child must not be abandoned in the host. An attach-mode child
+                // remains a top-level window, so a broken restore cannot justify an orphan host.
+                if (++attempts >= 5 && _hosted?.Strategy != HostStrategy.Embed)
+                {
+                    PostMessageW(_hostWindow, WmAppAbandonAttach, IntPtr.Zero, IntPtr.Zero);
+                    break;
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -445,8 +454,11 @@ internal sealed class PaneHostWindow : IDisposable
         _childWindow = state.Child;
         if (!PositionAttachedWindow())
         {
-            if (RestoreForeignWindow())
-                WriteProtocol("ERROR=Windows refused to position the application in attach mode");
+            // SetWindowPos failed, so this window was never adopted. Restoring the same
+            // untouched rectangle would hit the same UIPI denial and prevent shutdown forever.
+            _hosted = null;
+            _childWindow = IntPtr.Zero;
+            WriteProtocol("ERROR=Windows refused to position the application in attach mode; it remains outside WinMux");
             return;
         }
 
@@ -556,8 +568,16 @@ internal sealed class PaneHostWindow : IDisposable
                     hosted.OriginalRect.Bottom - hosted.OriginalRect.Top,
                     restoreFlags))
             {
-                WriteProtocol($"ERROR=could not restore application rectangle (win32={Marshal.GetLastPInvokeError()})");
-                return false;
+                var error = Marshal.GetLastPInvokeError();
+                if (hosted.Strategy == HostStrategy.Embed)
+                {
+                    WriteProtocol($"ERROR=could not restore application rectangle (win32={error})");
+                    return false;
+                }
+                // An attached window is already top-level and visible. Let the shell close,
+                // while making the unsuccessful rectangle restore explicit to the user.
+                WriteProtocol(HostProtocol.Notice(
+                    $"could not restore application rectangle (win32={error}); application remains on desktop"));
             }
         }
         _hosted = null;
@@ -577,6 +597,14 @@ internal sealed class PaneHostWindow : IDisposable
                 return IntPtr.Zero;
             case WmAppEmbed:
                 try { SwitchStrategy(HostStrategy.Embed); } catch (Exception ex) { WriteProtocol("ERROR=" + ex.Message); }
+                return IntPtr.Zero;
+            case WmAppAbandonAttach:
+                if (_hosted?.Strategy == HostStrategy.Embed) return IntPtr.Zero;
+                if (_childWindow != IntPtr.Zero && IsWindow(_childWindow))
+                    ShowWindow(_childWindow, SwShowNormal);
+                _hosted = null;
+                _childWindow = IntPtr.Zero;
+                DestroyWindow(hwnd);
                 return IntPtr.Zero;
             case WmMove:
             case WmSize:
