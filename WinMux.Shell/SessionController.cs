@@ -15,9 +15,9 @@ internal sealed class SessionController : IDisposable
     private MainWindow? _activeWindow;
     private int _disposed;
 
-    public SessionController(string path)
+    public SessionController(string path, Action<string, SessionSnapshot>? save = null)
     {
-        _autosaver = new SessionAutosaver(path);
+        _autosaver = new SessionAutosaver(path, save: save);
         _autosaver.SaveCompleted += OnSaveCompleted;
         _commandServer = new CommandServer(DispatchRemoteAsync);
         SessionPath = Path.GetFullPath(path);
