@@ -1,10 +1,13 @@
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
+using System.Runtime.CompilerServices;
 using WinMux.Core.Layout;
 using WinMux.Core.Model;
 
@@ -46,6 +49,8 @@ internal static class TabStripView
     private sealed record RetainedStrip(StackNode Stack, TabStripPlacement Placement,
         LayoutNode[] Children, PaneId[] Leaves, bool[] Pinned, string?[] Waiting, Action<PaneId>[] Refresh);
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, RetainedStrip> Retained = new();
+    private sealed class SeenChildren { public HashSet<LayoutNode> Nodes { get; } = []; }
+    private static readonly ConditionalWeakTable<StackNode, SeenChildren> Seen = new();
 
     /// <summary>Refresh labels and selection without replacing buttons or their open menus.</summary>
     public static bool TryRefresh(Control view, LayoutTabStrip strip, PaneId focused,
@@ -87,6 +92,8 @@ internal static class TabStripView
 
         var tabs = new List<Control>();
         var refreshers = new List<Action<PaneId>>();
+        var seenBefore = Seen.TryGetValue(strip.Stack, out var seen);
+        seen ??= Seen.GetOrCreateValue(strip.Stack);
         for (var index = 0; index < strip.Stack.Children.Count; index++)
         {
             var child = strip.Stack.Children[index];
@@ -104,11 +111,14 @@ internal static class TabStripView
                 strip.Placement,
                 commands,
                 asking,
-                refreshers);
+                refreshers,
+                opening: seenBefore && !seen.Nodes.Contains(child));
 
             tabs.Add(tab);
             items.Children.Add(tab);
         }
+        seen.Nodes.Clear();
+        foreach (var child in strip.Stack.Children) seen.Nodes.Add(child);
 
         EnableDragAndDrop(items, tabs, strip, vertical, commands);
 
@@ -137,9 +147,54 @@ internal static class TabStripView
             VerticalAlignment = VerticalAlignment.Top,
         };
 
+        // One indicator moves between tabs instead of abruptly swapping a mark on each button.
+        // It shares the scroller with the buttons, so overflow cannot detach it from its tab.
+        var indicator = new Border
+        {
+            Width = 16,
+            Height = 3,
+            CornerRadius = new CornerRadius(2),
+            Background = Palette.AccentBrush,
+            IsHitTestVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Opacity = 0,
+            Transitions = CaptionMotion.IndicatorTransitions(),
+        };
+        var indicatorPlaced = false;
+        var focusedPane = focused;
+        void UpdateIndicator()
+        {
+            if (vertical) return;
+            var active = strip.Stack.ActiveIndex;
+            var focused = strip.Stack.Leaves().Any(l => l.Pane.Id == focusedPane);
+            if (!focused || active < 0 || active >= tabs.Count || tabs[active].Bounds.Width <= 0)
+            {
+                indicator.Opacity = 0;
+                return;
+            }
+            var tab = tabs[active];
+            var left = tab.Bounds.X + (tab.Bounds.Width - indicator.Width) / 2;
+            if (!indicatorPlaced)
+            {
+                indicator.Transitions = null;
+                indicator.Margin = new Thickness(left, 0, 0, 0);
+                indicator.Transitions = CaptionMotion.IndicatorTransitions();
+                indicatorPlaced = true;
+            }
+            else indicator.Margin = new Thickness(left, 0, 0, 0);
+            indicator.Opacity = 1;
+        }
+        items.SizeChanged += (_, _) => UpdateIndicator();
+        refreshers.Add(current =>
+        {
+            focusedPane = current;
+            Dispatcher.UIThread.Post(UpdateIndicator);
+        });
+
         var scroller = new ScrollViewer
         {
-            Content = new Panel { Children = { items, caret } },
+            Content = new Panel { Children = { items, indicator, caret } },
             HorizontalScrollBarVisibility = vertical ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Hidden,
             VerticalScrollBarVisibility = vertical ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled,
             Padding = vertical ? new Thickness(6, 6) : new Thickness(6, 0, 0, 0),
@@ -258,6 +313,8 @@ internal static class TabStripView
     /// </summary>
     private static readonly DataFormat<string> TabFormat =
         DataFormat.CreateStringApplicationFormat("winmux-tab");
+    private static readonly DataFormat<string> TabTitleFormat =
+        DataFormat.CreateStringApplicationFormat("winmux-tab-title");
 
     /// <summary>
     /// Let a tab be dropped on this strip, whichever strip it came from.
@@ -280,16 +337,77 @@ internal static class TabStripView
     {
         DragDrop.SetAllowDrop(band, true);
 
+        var previewTitle = new TextBlock
+        {
+            Foreground = Palette.TextBrush,
+            FontSize = Palette.CaptionSize,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxWidth = 170,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var preview = new Border
+        {
+            Child = previewTitle,
+            Background = Palette.OpaqueWindowBrush,
+            BorderBrush = Palette.EdgeBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(7),
+            Padding = new Thickness(12, 5),
+            Height = vertical ? Palette.ControlHeight : 34,
+            MinWidth = 96,
+            MaxWidth = 240,
+            Opacity = 0.9,
+            BoxShadow = new BoxShadows(new BoxShadow
+            {
+                OffsetY = 4,
+                Blur = 12,
+                Color = Color.FromArgb(0x66, 0, 0, 0),
+            }),
+            IsVisible = false,
+            IsHitTestVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        var oldContents = band.Child!;
+        band.Child = null;
+        band.Child = new Panel { Children = { oldContents, preview } };
+
         var resting = band.BorderBrush;
+        Avalonia.Rect[]? restingTabs = null;
+        if (CaptionMotion.Enabled)
+        {
+            foreach (var tab in tabs)
+            {
+                var transitions = tab.Transitions ?? [];
+                transitions.Add(new ThicknessTransition
+                {
+                    Property = Layoutable.MarginProperty,
+                    Duration = TimeSpan.FromMilliseconds(150),
+                });
+                tab.Transitions = transitions;
+            }
+        }
 
         static bool CarriesTab(DragEventArgs e) => e.DataTransfer.Contains(TabFormat);
 
         int IndexFor(DragEventArgs e) =>
-            TabDropIndex.For([.. tabs.Select(tab => tab.Bounds)], e.GetPosition(items), vertical);
+            TabDropIndex.For(restingTabs ?? [.. tabs.Select(tab => tab.Bounds)], e.GetPosition(items), vertical);
 
-        void Preview(int index)
+        void Preview(int index, DragEventArgs e)
         {
-            if (TabDropIndex.CaretFor([.. tabs.Select(tab => tab.Bounds)], index, vertical) is not { } at)
+            restingTabs ??= [.. tabs.Select(tab => tab.Bounds)];
+            if (CaptionMotion.Enabled)
+                for (var i = 0; i < tabs.Count; i++)
+                    tabs[i].Margin = i == index
+                        ? vertical ? new Thickness(0, 20, 0, 0) : new Thickness(20, 0, 0, 0)
+                        : new Thickness(0);
+            previewTitle.Text = e.DataTransfer.TryGetValue(TabTitleFormat) ?? "Moving tab";
+            var pointer = e.GetPosition(band);
+            preview.Margin = new Thickness(
+                Math.Clamp(pointer.X + 12, 0, Math.Max(0, band.Bounds.Width - 96)),
+                Math.Clamp(pointer.Y + 8, 0, Math.Max(0, band.Bounds.Height - preview.Height)), 0, 0);
+            preview.IsVisible = true;
+            if (TabDropIndex.CaretFor(restingTabs, index, vertical) is not { } at)
             {
                 caret.IsVisible = false;
                 return;
@@ -309,6 +427,9 @@ internal static class TabStripView
         {
             caret.IsVisible = false;
             band.BorderBrush = resting;
+            preview.IsVisible = false;
+            restingTabs = null;
+            foreach (var tab in tabs) tab.Margin = new Thickness(0);
         }
 
         band.AddHandler(DragDrop.DragOverEvent, (object? _, DragEventArgs e) =>
@@ -320,7 +441,7 @@ internal static class TabStripView
             }
 
             e.DragEffects = DragDropEffects.Move;
-            Preview(IndexFor(e));
+            Preview(IndexFor(e), e);
             e.Handled = true;
         });
 
@@ -330,11 +451,12 @@ internal static class TabStripView
 
         band.AddHandler(DragDrop.DropEvent, (object? _, DragEventArgs e) =>
         {
+            var index = IndexFor(e);
             Clear();
             if (!CarriesTab(e)) return;
             if (e.DataTransfer.TryGetValue(TabFormat) is not { } text || !Guid.TryParse(text, out var id)) return;
 
-            commands.MoveTabToGroup(new PaneId(id), strip.Stack, IndexFor(e));
+            commands.MoveTabToGroup(new PaneId(id), strip.Stack, index);
             e.DragEffects = DragDropEffects.Move;
             e.Handled = true;
         });
@@ -388,6 +510,7 @@ internal static class TabStripView
             if (travelled < Threshold) return;
 
             var pane = strip.Stack.Children[pressed].Leaves().First().Pane.Id;
+            var source = strip.Stack.Children[pressed];
             var start = began;
 
             // The tab being carried fades where it sits, so the strip shows the gesture from both
@@ -400,6 +523,8 @@ internal static class TabStripView
 
             using var data = new DataTransfer();
             data.Add(DataTransferItem.Create(TabFormat, pane.Value.ToString("D")));
+            var title = source.Title.Length > 0 ? source.Title : source.ActiveLeaf().Pane.Title;
+            data.Add(DataTransferItem.Create(TabTitleFormat, title));
 
             // Not awaited: the drag runs until the drop, and by the time it finishes this strip has
             // very likely been rebuilt by the relayout the drop caused. Nothing here survives to
@@ -470,7 +595,8 @@ internal static class TabStripView
         TabStripPlacement placement,
         TabStripCommands commands,
         string? waiting,
-        List<Action<PaneId>> refreshers)
+        List<Action<PaneId>> refreshers,
+        bool opening)
     {
         var leaves = child.Leaves().ToArray();
 
@@ -512,6 +638,30 @@ internal static class TabStripView
         {
             ItemsSource = new[] { Item("Unpin tab", () => commands.TogglePin(target)) },
         } : null;
+        Button? tab = null;
+        var closing = false;
+        void CloseWithMotion()
+        {
+            if (closing) return;
+            if (vertical || !CaptionMotion.Enabled || tab is null || tab.Bounds.Width < 1)
+            {
+                commands.CloseTab(target);
+                return;
+            }
+            closing = true;
+            tab.IsHitTestVisible = false;
+            tab.MinWidth = 0;
+            tab.Width = tab.Bounds.Width;
+            tab.Transitions =
+            [
+                new DoubleTransition { Property = Layoutable.WidthProperty, Duration = TimeSpan.FromMilliseconds(167) },
+                new DoubleTransition { Property = Visual.OpacityProperty, Duration = TimeSpan.FromMilliseconds(167) },
+            ];
+            Dispatcher.UIThread.Post(() => { tab.Width = 0; tab.Opacity = 0; });
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(167) };
+            timer.Tick += (_, _) => { timer.Stop(); commands.CloseTab(target); };
+            timer.Start();
+        }
         var corner = new Button
         {
             Content = pinned ? Icons.Pin(12) : Icons.Close(12),
@@ -531,7 +681,7 @@ internal static class TabStripView
         {
             e.Handled = true;
             if (pinned) unpinMenu!.Open(corner);
-            else commands.CloseTab(target);
+            else CloseWithMotion();
         };
 
         var row = new DockPanel { LastChildFill = true };
@@ -560,7 +710,7 @@ internal static class TabStripView
 
         row.Children.Add(label);
 
-        var tab = new Button
+        tab = new Button
         {
             Content = row,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
@@ -583,7 +733,7 @@ internal static class TabStripView
             if (!pinned && e.GetCurrentPoint(tab).Properties.IsMiddleButtonPressed)
             {
                 e.Handled = true;
-                commands.CloseTab(target);
+                CloseWithMotion();
             }
         };
 
@@ -591,7 +741,7 @@ internal static class TabStripView
         // nothing: the first click of the pair has already activated the tab.
         tab.DoubleTapped += (_, e) => { e.Handled = true; commands.Rename(child); };
 
-        var closeTab = Item("Close tab", () => commands.CloseTab(target));
+        var closeTab = Item("Close tab", CloseWithMotion);
         closeTab.IsEnabled = !pinned;
         tab.ContextMenu = new ContextMenu
         {
@@ -616,12 +766,26 @@ internal static class TabStripView
         Control stacked;
         if (!vertical)
         {
-            accent.Width = 16;
-            accent.Height = 3;
-            accent.HorizontalAlignment = HorizontalAlignment.Center;
-            accent.VerticalAlignment = placement == TabStripPlacement.Bottom
-                ? VerticalAlignment.Top : VerticalAlignment.Bottom;
-            stacked = new Panel { Children = { tab, accent } };
+            stacked = tab;
+            if (opening && CaptionMotion.Enabled)
+            {
+                tab.MinWidth = 0;
+                tab.MaxWidth = 0;
+                tab.Opacity = 0;
+                tab.Transitions =
+                [
+                    new DoubleTransition { Property = Layoutable.MaxWidthProperty, Duration = TimeSpan.FromMilliseconds(167) },
+                    new DoubleTransition { Property = Visual.OpacityProperty, Duration = TimeSpan.FromMilliseconds(167) },
+                ];
+                tab.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() =>
+                {
+                    tab.MaxWidth = 240;
+                    tab.Opacity = 1;
+                    var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(167) };
+                    timer.Tick += (_, _) => { timer.Stop(); tab.MinWidth = 96; };
+                    timer.Start();
+                });
+            }
         }
         else
         {
@@ -640,7 +804,7 @@ internal static class TabStripView
             else tab.Classes.Remove(Theme.ActiveTab);
             corner.Classes.Set(Theme.TerminalCloseButton,
                 active && child.ActiveLeaf().Pane.Kind == PaneKind.Terminal);
-            accent.Background = active && focus ? Palette.AccentBrush : Brushes.Transparent;
+            if (vertical) accent.Background = active && focus ? Palette.AccentBrush : Brushes.Transparent;
             corner.IsVisible = vertical || pinned || active || tab.IsPointerOver;
             var current = child.Title.Length > 0 ? child.Title : leaves.Length == 1
                 ? leaves[0].Pane.Title : $"{leaves[0].Pane.Title}  +{leaves.Length - 1}";

@@ -235,6 +235,10 @@ internal static class Theme
         AddButton(styles, ToolbarButton, Palette.TextBrush, Palette.ControlRadius, new Thickness(12, 6));
         AddButton(styles, IconButton, Palette.MutedTextBrush, Palette.ControlRadius, new Thickness(10, 6));
         AddButton(styles, Tab, Palette.MutedTextBrush, new CornerRadius(7, 7, 0, 0), new Thickness(12, 5));
+        styles.Add(new Style(x => x.OfType<Button>().Class(Tab).Template().OfType<ContentPresenter>())
+        {
+            Setters = { new Setter(ContentPresenter.TransitionsProperty, CaptionMotion.HoverTransitions()) },
+        });
         AddButton(styles, CloseButton, Palette.FaintTextBrush, Palette.ControlRadius, new Thickness(4, 2));
         foreach (var selector in new Func<Style>[]
         {
