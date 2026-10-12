@@ -38,6 +38,7 @@ internal sealed partial class MainWindow : Window
     /// There is one per stack, drawn where that stack is — see <see cref="TabStripView"/>.
     /// </summary>
     private readonly List<Control> _tabStrips = [];
+    private readonly Dictionary<PaneId, Border> _paneHeaders = [];
 
     /// <summary>
     /// The visible handle in each divider gutter, rebuilt with the strips on every layout.
@@ -145,6 +146,7 @@ internal sealed partial class MainWindow : Window
     private Divider? _dragDivider;
     private Avalonia.Point _lastDragPoint;
     private bool _shutdownStarted;
+    private bool _isActive;
 
     /// <summary>Closing because an update is waiting to install, which changes what a stuck close should say.</summary>
     private bool _closingForUpdate;
@@ -266,7 +268,9 @@ internal sealed partial class MainWindow : Window
         // runs to the window edge on three sides and to the toolbar on the fourth, and the rounded
         // corners it now draws have nothing to sit against.
         _canvas.Margin = new Thickness(Palette.GapSmall, 4, Palette.GapSmall, Palette.GapSmall);
-        _canvas.Background = Palette.WindowBrush;
+        // Gutters expose the desktop next to native app windows if this is translucent. Keep
+        // the canvas opaque even when Mica is active in the caption above it.
+        _canvas.Background = Palette.OpaqueWindowBrush;
         _canvas.PropertyChanged += (_, e) => { if (e.Property == BoundsProperty) Relayout(); };
 
         // Focus is explicit, and the OS is the authority on it (CLAUDE.md section 6). Without this
@@ -297,6 +301,12 @@ internal sealed partial class MainWindow : Window
         {
             if (ActualTransparencyLevel == WindowTransparencyLevel.None)
                 _message = "Mica is unavailable on this system; using an opaque window";
+            _isActive = IsActive;
+            UpdateBackdrop();
+        };
+        PropertyChanged += (_, change) =>
+        {
+            if (change.Property == ActualTransparencyLevelProperty) UpdateBackdrop();
         };
         _canvas.PointerPressed += BeginDividerDrag;
         _canvas.PointerMoved += ContinueDividerDrag;
@@ -337,6 +347,8 @@ internal sealed partial class MainWindow : Window
         // buries them. Re-assert placement (and z-order) whenever we come forward.
         Activated += (_, _) =>
         {
+            _isActive = true;
+            UpdateBackdrop();
             _session.Activate(this);
             _foreignProvider.Refresh();
             Relayout();
@@ -345,7 +357,20 @@ internal sealed partial class MainWindow : Window
             // the user anyway.
             PlatformServices.ClearNotifications();
         };
-        Deactivated += (_, _) => Relayout();
+        Deactivated += (_, _) =>
+        {
+            _isActive = false;
+            UpdateBackdrop();
+            Relayout();
+        };
+    }
+
+    private void UpdateBackdrop()
+    {
+        Background = _isActive && ActualTransparencyLevel == WindowTransparencyLevel.Mica
+            ? Palette.WindowBrush
+            : Palette.OpaqueWindowBrush;
+        CrashLog.Write($"backdrop {ActualTransparencyLevel}, active {_isActive}", null);
     }
 
     // ---------------- pane lifecycle ----------------
@@ -458,17 +483,24 @@ internal sealed partial class MainWindow : Window
             var view = runtime.View;
             var visible = arrangement.IsVisible(pane.Id);
             var rect = arrangement[pane.Id];
+            var contentRect = UpdatePaneHeader(pane, rect, visible);
 
             view.IsVisible = visible;
             if (visible)
             {
-                Canvas.SetLeft(view, rect.X);
-                Canvas.SetTop(view, rect.Y);
-                view.Width = rect.Width;
-                view.Height = rect.Height;
+                Canvas.SetLeft(view, contentRect.X);
+                Canvas.SetTop(view, contentRect.Y);
+                view.Width = contentRect.Width;
+                view.Height = contentRect.Height;
             }
 
-            runtime.Arrange(new PaneArrangement(rect, visible));
+            runtime.Arrange(new PaneArrangement(contentRect, visible));
+        }
+
+        foreach (var stale in _paneHeaders.Keys.Where(id => _tree.Find(id) is null).ToArray())
+        {
+            _canvas.Children.Remove(_paneHeaders[stale]);
+            _paneHeaders.Remove(stale);
         }
 
         UpdateStatus();
@@ -488,11 +520,86 @@ internal sealed partial class MainWindow : Window
         foreach (var pane in _tree.Panes)
         {
             if (!_runtimes.TryGetValue(pane.Id, out var runtime)) continue;
-            runtime.Arrange(new PaneArrangement(arrangement[pane.Id], arrangement.IsVisible(pane.Id)));
+            var rect = arrangement[pane.Id];
+            runtime.Arrange(new PaneArrangement(PaneContentRect(pane, rect), arrangement.IsVisible(pane.Id)));
         }
 
         // The window's own bounds are persisted, so this still needs saving — just not per frame.
         _session.RequestSave();
+    }
+
+    private CoreRect PaneContentRect(Pane pane, CoreRect rect)
+    {
+        // A stack already names its panes in its reserved tab band. Split leaves need their own
+        // band: an overlay would disappear behind an embedded native window.
+        for (var node = _tree.Find(pane.Id)?.Parent; node is not null; node = node.Parent)
+            if (node is StackNode) return rect;
+        const int headerHeight = 28;
+        return new CoreRect(rect.X, rect.Y + headerHeight, rect.Width,
+            Math.Max(0, rect.Height - headerHeight));
+    }
+
+    private CoreRect UpdatePaneHeader(Pane pane, CoreRect rect, bool visible)
+    {
+        var content = PaneContentRect(pane, rect);
+        var needsHeader = content.Y != rect.Y;
+        if (!needsHeader)
+        {
+            if (_paneHeaders.Remove(pane.Id, out var old)) _canvas.Children.Remove(old);
+            return content;
+        }
+        if (!_paneHeaders.TryGetValue(pane.Id, out var header))
+        {
+            var title = new TextBlock
+            {
+                FontSize = Palette.CaptionSize,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = Palette.TextBrush,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Margin = new Thickness(10, 0, 0, 0),
+            };
+            var menuButton = new Button
+            {
+                Content = Icons.More(),
+                Width = 28,
+                Height = 26,
+                [ToolTip.TipProperty] = "Pane actions",
+            };
+            menuButton.Classes.Add(Chrome.Theme.IconButton);
+            var rename = new MenuItem { Header = "Rename pane…" };
+            rename.Click += (_, _) => Run(RenamePaneAsync(pane.Id));
+            var close = new MenuItem { Header = "Close pane" };
+            close.Click += (_, _) => Run(CloseTabAsync(pane.Id));
+            var menu = new ContextMenu
+            {
+                ItemsSource = new Control[]
+                {
+                    rename, close,
+                },
+            };
+            menuButton.Click += (_, _) => { menu.PlacementTarget = menuButton; menu.Open(menuButton); };
+            var row = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(menuButton, Dock.Right);
+            row.Children.Add(menuButton);
+            row.Children.Add(title);
+            header = new Border
+            {
+                Child = row,
+                Background = Palette.RaisedBrush,
+                BorderBrush = Palette.EdgeBrush,
+                BorderThickness = new Thickness(0, 0, 0, 1),
+            };
+            _paneHeaders[pane.Id] = header;
+            _canvas.Children.Add(header);
+        }
+        ((TextBlock)((DockPanel)header.Child!).Children[1]).Text = pane.Title;
+        header.IsVisible = visible;
+        Canvas.SetLeft(header, rect.X);
+        Canvas.SetTop(header, rect.Y);
+        header.Width = rect.Width;
+        header.Height = content.Y - rect.Y;
+        return content;
     }
 
     private void UpdateTabStrips(Arrangement arrangement)
@@ -566,10 +673,13 @@ internal sealed partial class MainWindow : Window
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
         const int Thickness = 2;
+        var joinedTop = arrangement.TabStrips.Any(strip => strip.Placement == TabStripPlacement.Top &&
+            strip.Rect.Bottom == rect.Y && strip.Rect.X == rect.X && strip.Rect.Width == rect.Width);
         var ring = new Border
         {
             BorderBrush = Palette.AccentBrush,
-            BorderThickness = new Thickness(Thickness),
+            BorderThickness = new Thickness(Thickness, joinedTop ? 0 : Thickness,
+                Thickness, Thickness),
             CornerRadius = new CornerRadius(10),
             IsHitTestVisible = false,
         };
@@ -973,12 +1083,16 @@ internal sealed partial class MainWindow : Window
             ],
         };
 
-        var left = new StackPanel
+        var left = new Grid
         {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Spacing = Palette.GapMedium,
-            Children = { _statusLocation, _statusMessage },
+            ColumnDefinitions = [new ColumnDefinition(new GridLength(2, GridUnitType.Star)),
+                new ColumnDefinition(new GridLength(3, GridUnitType.Star))],
         };
+        Grid.SetColumn(_statusLocation, 0);
+        Grid.SetColumn(_statusMessage, 1);
+        _statusMessage.Margin = new Thickness(Palette.GapMedium, 0, 0, 0);
+        left.Children.Add(_statusLocation);
+        left.Children.Add(_statusMessage);
 
         Grid.SetColumn(left, 0);
         Grid.SetColumn(_statusSession, 1);

@@ -30,6 +30,28 @@ public sealed class RetainedTabStripTests
         .Where(b => b.Classes.Contains(Theme.Tab)).ToArray();
 
     [Fact]
+    public Task Overflow_tabs_keep_navigation_visible_and_scrollable() => Headless.RunSync(() =>
+    {
+        var panes = Enumerable.Range(0, 12).Select(i => Pane.Terminal($"Workspace {i}")).ToArray();
+        var stack = new StackNode(panes.Select(pane => new LeafNode(pane)));
+        var view = TabStripView.Build(Strip(stack), panes[0].Id, Commands());
+        using var window = new WindowScope(Show(view));
+        var scroller = view.GetVisualDescendants().OfType<ScrollViewer>().Single();
+        var left = view.GetVisualDescendants().OfType<Button>()
+            .Single(button => Equals(ToolTip.GetTip(button), "Scroll tabs left"));
+        var right = view.GetVisualDescendants().OfType<Button>()
+            .Single(button => Equals(ToolTip.GetTip(button), "Scroll tabs right"));
+        Assert.True(scroller.Extent.Width > scroller.Viewport.Width);
+        Assert.True(right.IsVisible);
+        Assert.False(left.IsVisible);
+        right.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(scroller.Offset.X > 0);
+        Assert.True(left.IsVisible);
+        Assert.Equal(12, Tabs(view).Length);
+    });
+
+    [Fact]
     public Task Repeated_title_updates_preserve_the_open_menu_and_its_actions() => Headless.RunSync(() =>
     {
         var pane = Pane.Terminal("before");

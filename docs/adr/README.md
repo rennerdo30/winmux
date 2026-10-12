@@ -32,3 +32,10 @@ Copy `0000-template.md`. Every ADR carries a "What failed" section.
 | [0028](0028-tab-width-and-terminal-key-ownership.md) | Resizable tabs, preserved names and terminal key ownership | accepted; native acceptance open |
 | [0029](0029-explorer-single-instance-launch.md) | Explorer folder launches and single-instance routing | accepted; native acceptance open |
 | [0030](0030-installer-and-about-window.md) | A per-user installer, and updating from About | accepted |
+| [0031](0031-isolated-development-profile.md) | Isolated development profile | accepted |
+| [0032](0032-safe-foreign-window-discovery.md) | Safe foreign-window discovery | accepted |
+| [0033](0033-verified-foreign-window-reattachment.md) | Verified foreign-window reattachment | accepted |
+| [0034](0034-dpi-aware-foreign-hosting.md) | DPI-aware foreign hosting | accepted |
+| [0035](0035-terminal-row-cache-and-frame-clock.md) | Terminal row cache and frame clock | accepted |
+| [0036](0036-startup-readytorun-and-safe-deferral.md) | ReadyToRun startup and safe deferral | accepted |
+| [0037](0037-pane-chrome-and-failure-surfaces.md) | Pane chrome and failure surfaces | accepted for owner visual review |

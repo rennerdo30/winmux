@@ -1,6 +1,11 @@
+using System.Diagnostics;
+using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using WinMux.Core.Model;
 using WinMux.Panes;
 using WinMux.Platform;
@@ -80,8 +85,12 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
     private readonly HashSet<WindowHandle> _claimedWindows;
     private readonly WindowHandle _ownerWindow;
     private readonly TextBlock _message;
+    private readonly TextBlock _title;
+    private readonly Image _icon;
     private readonly Button _restartButton;
-    private readonly StackPanel _actions;
+    private readonly Button _outsideButton;
+    private readonly WrapPanel _actions;
+    private Bitmap? _iconBitmap;
     private int _disposed;
 
     public ForeignAppPaneRuntime(
@@ -107,35 +116,60 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
             UpdateMessage();
             StateChanged?.Invoke(this, EventArgs.Empty);
         };
+        _icon = new Image { Width = 20, Height = 20 };
+        _title = new TextBlock
+        {
+            Text = pane.Title,
+            FontFamily = Chrome.Palette.UiFont,
+            FontSize = Chrome.Palette.BodySize,
+            Foreground = Chrome.Palette.TextBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         _message = new TextBlock
         {
-            Margin = new Thickness(14),
             TextWrapping = TextWrapping.Wrap,
-            Foreground = Chrome.Palette.TextBrush,
-            Text = $"{pane.Title}\n\nstarting…",
+            FontFamily = Chrome.Palette.UiFont,
+            FontSize = Chrome.Palette.CaptionSize,
+            Foreground = Chrome.Palette.MutedTextBrush,
+            Text = "starting…",
         };
-        _restartButton = new Button { Content = "Restart", Margin = new Thickness(0, 0, 8, 0) };
+        _restartButton = new Button { Content = "Restart", Margin = new Thickness(0, 0, 8, 8) };
         _restartButton.Click += async (_, _) =>
         {
             _restartButton.IsEnabled = false;
             try { await _app.RestartAsync(_claimedWindows, _ownerWindow, CancellationToken.None); }
             finally { _restartButton.IsEnabled = true; UpdateMessage(); }
         };
-        var close = new Button { Content = "Close pane" };
+        var close = new Button { Content = "Close pane", Margin = new Thickness(0, 0, 8, 8) };
         close.Click += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
-        _actions = new StackPanel
+        _outsideButton = new Button { Content = "Open outside WinMux", Margin = new Thickness(0, 0, 8, 8) };
+        _outsideButton.Click += (_, _) => OpenOutside();
+        _actions = new WrapPanel
         {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Margin = new Thickness(14, 0, 14, 14),
-            Children = { _restartButton, close },
+            Orientation = Orientation.Horizontal,
+            Children = { _restartButton, _outsideButton, close },
+        };
+        var identity = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children = { _icon, _title },
         };
         View = new Border
         {
-            Background = Chrome.Palette.SurfaceBrush,
+            Background = Chrome.Palette.DialogBrush,
             BorderBrush = Chrome.Palette.EdgeBrush,
             BorderThickness = new Thickness(1),
-            Child = new StackPanel { Children = { _message, _actions } },
+            CornerRadius = Chrome.Palette.SurfaceRadius,
+            Child = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children = { identity, _message, _actions },
+            },
         };
+        _ = LoadIconAsync();
         UpdateMessage();
     }
 
@@ -221,14 +255,58 @@ internal sealed class ForeignAppPaneRuntime : IPaneRuntime, IForeignHostStrategy
 
     public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) == 0) _tracker.Forget(PaneId);
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+        {
+            _tracker.Forget(PaneId);
+            _iconBitmap?.Dispose();
+        }
         return ValueTask.CompletedTask;
     }
 
     private void UpdateMessage()
     {
-        _message.Text = $"{_pane.Title}\n\n{_app.Status}";
+        _title.Text = _pane.Title;
+        _message.Text = _app.Status;
         _restartButton.Content = _pane.Restore.Extras.ContainsKey("adopt_window") ? "Launch new" : "Restart";
         _actions.IsVisible = !_app.IsReady && _app.Status != "starting…";
+        _outsideButton.IsVisible = !_app.IsReady && !string.IsNullOrWhiteSpace(_pane.Restore.Program);
+    }
+
+    private async Task LoadIconAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_pane.Restore.Program) || !PlatformServices.AppIcons.IsAvailable) return;
+        try
+        {
+            var png = await Task.Run(() => PlatformServices.AppIcons.GetIconPng(_pane.Restore.Program, 32));
+            if (png is null) return;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (_disposed != 0) return;
+                using var stream = new MemoryStream(png);
+                _iconBitmap = new Bitmap(stream);
+                _icon.Source = _iconBitmap;
+            });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or Win32Exception)
+        {
+            // The title and program path are still visible when Windows has no usable icon.
+        }
+    }
+
+    private void OpenOutside()
+    {
+        try
+        {
+            var start = new ProcessStartInfo(_pane.Restore.Program!) { UseShellExecute = true };
+            foreach (var argument in _pane.Restore.Args) start.ArgumentList.Add(argument);
+            if (_pane.Restore.Cwd.IsKnown && Directory.Exists(_pane.Restore.Cwd.Path))
+                start.WorkingDirectory = _pane.Restore.Cwd.Path;
+            using var launched = Process.Start(start) ?? throw new InvalidOperationException("Windows did not start the application");
+            _message.Text = "Opened outside WinMux. This pane is still available to retry or close.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or Win32Exception)
+        {
+            _message.Text = "Could not open outside WinMux: " + ex.Message;
+        }
     }
 }

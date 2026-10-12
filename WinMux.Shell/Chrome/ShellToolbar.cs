@@ -75,10 +75,6 @@ internal static class ShellToolbar
             ]));
 
         bar.Children.Add(Divider());
-        bar.Children.Add(Command(Icons.Close(16), "Close pane", "Close the focused pane",
-            ShellActionNames.ClosePane, dispatch));
-
-        bar.Children.Add(Divider());
 
         // Session and settings live in the same row as everything else.
         //
@@ -238,7 +234,9 @@ internal static class ShellToolbar
 
     private static Control Command(Control icon, string label, string tip, string action, Action<string> dispatch)
     {
-        var button = Styled(WithLabel(icon, label), tip);
+        var button = Styled(icon, tip);
+        button.Classes.Remove(Theme.ToolbarButton);
+        button.Classes.Add(Theme.IconButton);
         button.Click += (_, _) => dispatch(action);
         return button;
     }
@@ -262,7 +260,9 @@ internal static class ShellToolbar
         Action<string> dispatch,
         (string Header, Action Invoke)[]? extras = null)
     {
-        var main = Styled(WithLabel(icon, label), tip);
+        var main = Styled(icon, tip);
+        main.Classes.Remove(Theme.ToolbarButton);
+        main.Classes.Add(Theme.IconButton);
         main.CornerRadius = new CornerRadius(4, 0, 0, 4);
 
         var chevron = Styled(Icons.Chevron(), "More");

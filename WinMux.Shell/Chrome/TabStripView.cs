@@ -77,7 +77,8 @@ internal static class TabStripView
         var items = new StackPanel
         {
             Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal,
-            Spacing = vertical ? 2 : 1,
+            Spacing = vertical ? 2 : 3,
+            Margin = vertical ? new Thickness(0) : new Thickness(0, 4, 0, 0),
         };
 
         // Does focus live anywhere inside this stack? With several strips on screen, "which tabs do
@@ -123,11 +124,6 @@ internal static class TabStripView
                 Children = { add, more },
             });
         }
-        else
-        {
-            items.Children.Add(add);
-            items.Children.Add(more);
-        }
 
         // The caret that shows where a dragged tab will land, drawn over the tabs and inside the
         // same scrolled space so it stays on the gap when the strip is scrolled.
@@ -146,17 +142,48 @@ internal static class TabStripView
             Content = new Panel { Children = { items, caret } },
             HorizontalScrollBarVisibility = vertical ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Hidden,
             VerticalScrollBarVisibility = vertical ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled,
-            Padding = vertical ? new Thickness(6, 6) : new Thickness(6, 0),
+            Padding = vertical ? new Thickness(6, 6) : new Thickness(6, 0, 0, 0),
         };
+
+        Control contents = scroller;
+        if (!vertical)
+        {
+            var previous = Icon(new TextBlock { Text = "‹", FontSize = 20 }, "Scroll tabs left", () =>
+                scroller.Offset = new Vector(Math.Max(0, scroller.Offset.X - 160), 0), false);
+            var next = Icon(new TextBlock { Text = "›", FontSize = 20 }, "Scroll tabs right", () =>
+                scroller.Offset = new Vector(Math.Min(scroller.Extent.Width - scroller.Viewport.Width,
+                    scroller.Offset.X + 160), 0), false);
+            previous.IsVisible = false;
+            next.IsVisible = false;
+            void UpdateScrollButtons()
+            {
+                var overflow = scroller.Extent.Width > scroller.Viewport.Width + 1;
+                previous.IsVisible = overflow && scroller.Offset.X > 1;
+                next.IsVisible = overflow && scroller.Offset.X + scroller.Viewport.Width < scroller.Extent.Width - 1;
+            }
+            scroller.ScrollChanged += (_, _) => UpdateScrollButtons();
+            scroller.SizeChanged += (_, _) => UpdateScrollButtons();
+            var row = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(more, Dock.Right);
+            DockPanel.SetDock(add, Dock.Right);
+            DockPanel.SetDock(next, Dock.Right);
+            DockPanel.SetDock(previous, Dock.Left);
+            row.Children.Add(more);
+            row.Children.Add(add);
+            row.Children.Add(next);
+            row.Children.Add(previous);
+            row.Children.Add(scroller);
+            contents = row;
+        }
 
         var band = new Border
         {
-            Background = Palette.SurfaceBrush,
+            Background = Palette.TabStripBrush,
             BorderBrush = Palette.EdgeBrush,
             BorderThickness = ContentEdge(strip.Placement, stackHasFocus),
             Child = vertical && commands.ResizeStrip is not null
                 ? new Panel { Children = { scroller, BuildResizeHandle(strip, commands.ResizeStrip) } }
-                : scroller,
+                : contents,
         };
 
         // The whole band accepts a drop, not only the tabs in it: a group of one tab has almost no
@@ -474,7 +501,7 @@ internal static class TabStripView
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = vertical ? double.PositiveInfinity : 170,
             TextAlignment = TextAlignment.Left,
-            FontSize = Palette.BodySize,
+            FontSize = Palette.CaptionSize,
         };
 
         // A pinned tab shows a pin where its close button was. Leaving a close button that refuses
@@ -487,13 +514,18 @@ internal static class TabStripView
         } : null;
         var corner = new Button
         {
-            Content = pinned ? Icons.Pin(10) : Icons.Close(10),
-            Margin = vertical ? new Thickness(6, 0, 0, 0) : new Thickness(6, 0, -2, 0),
+            Content = pinned ? Icons.Pin(12) : Icons.Close(12),
+            Margin = vertical ? new Thickness(6, 0, 0, 0) : new Thickness(6, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
+            Width = 24,
+            Height = 24,
+            IsVisible = vertical || pinned || isActive,
             [ToolTip.TipProperty] = pinned ? "Pinned. Open the menu to unpin." : "Close this tab",
             ContextMenu = unpinMenu,
         };
         corner.Classes.Add(pinned ? Theme.PinButton : Theme.CloseButton);
+        if (isActive && child.ActiveLeaf().Pane.Kind == PaneKind.Terminal)
+            corner.Classes.Add(Theme.TerminalCloseButton);
         if (vertical) corner.Classes.Add(Theme.VerticalTabCorner);
         corner.Click += (_, e) =>
         {
@@ -503,8 +535,9 @@ internal static class TabStripView
         };
 
         var row = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(corner, Dock.Right);
-        row.Children.Add(corner);
+        var cornerSlot = new Border { Width = 24, Height = 24, Child = corner };
+        DockPanel.SetDock(cornerSlot, Dock.Right);
+        row.Children.Add(cornerSlot);
 
         // A dot rather than a bell: OSC 9 is a message as often as it is a ring, and an unread dot
         // is the one mark nobody has to learn. Before the title, where a list is scanned, and in
@@ -532,12 +565,27 @@ internal static class TabStripView
             Content = row,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             HorizontalAlignment = vertical ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
+            MinWidth = vertical ? 0 : 96,
+            MaxWidth = vertical ? double.PositiveInfinity : 240,
+            Height = vertical ? double.NaN : 34,
             [ToolTip.TipProperty] = waiting is null ? title : $"{title}{Environment.NewLine}{waiting}",
         };
         tab.Classes.Add(Theme.Tab);
+        if (child.ActiveLeaf().Pane.Kind == PaneKind.Terminal) tab.Classes.Add(Theme.TerminalTab);
         if (vertical) tab.Classes.Add(Theme.VerticalTab);
         if (isActive) tab.Classes.Add(Theme.ActiveTab);
         tab.Click += (_, _) => commands.Activate(child.ActiveLeaf().Pane.Id);
+        tab.PointerEntered += (_, _) => corner.IsVisible = true;
+        tab.PointerExited += (_, _) => corner.IsVisible = vertical || pinned ||
+            child.Parent is StackNode stack && stack.Active == child;
+        tab.PointerPressed += (_, e) =>
+        {
+            if (!pinned && e.GetCurrentPoint(tab).Properties.IsMiddleButtonPressed)
+            {
+                e.Handled = true;
+                commands.CloseTab(target);
+            }
+        };
 
         // Double-click to rename is the convention every tabbed application uses, and it costs
         // nothing: the first click of the pair has already activated the tab.
@@ -560,42 +608,40 @@ internal static class TabStripView
         // shifted as the selection moved.
         var accent = new Border
         {
-            Background = isActive
-                ? (hasFocus ? Palette.AccentBrush : Palette.MutedTextBrush)
-                : Brushes.Transparent,
-            Opacity = isActive && !hasFocus ? 0.5 : 1,
+            Background = isActive && hasFocus ? Palette.AccentBrush : Brushes.Transparent,
+            CornerRadius = new CornerRadius(2),
+            IsHitTestVisible = false,
         };
 
-        var stacked = new DockPanel { LastChildFill = true };
-        switch (placement)
+        Control stacked;
+        if (!vertical)
         {
-            case TabStripPlacement.Top:
-                accent.Height = AccentWeight;
-                DockPanel.SetDock(accent, Dock.Bottom);
-                break;
-            case TabStripPlacement.Bottom:
-                accent.Height = AccentWeight;
-                DockPanel.SetDock(accent, Dock.Top);
-                break;
-            case TabStripPlacement.Left:
-                accent.Width = AccentWeight;
-                DockPanel.SetDock(accent, Dock.Right);
-                break;
-            default:
-                accent.Width = AccentWeight;
-                DockPanel.SetDock(accent, Dock.Left);
-                break;
+            accent.Width = 16;
+            accent.Height = 3;
+            accent.HorizontalAlignment = HorizontalAlignment.Center;
+            accent.VerticalAlignment = placement == TabStripPlacement.Bottom
+                ? VerticalAlignment.Top : VerticalAlignment.Bottom;
+            stacked = new Panel { Children = { tab, accent } };
         }
-        stacked.Children.Add(accent);
-        stacked.Children.Add(tab);
+        else
+        {
+            var column = new DockPanel { LastChildFill = true };
+            accent.Width = AccentWeight;
+            DockPanel.SetDock(accent, placement == TabStripPlacement.Left ? Dock.Right : Dock.Left);
+            column.Children.Add(accent);
+            column.Children.Add(tab);
+            stacked = column;
+        }
         refreshers.Add(focused =>
         {
             var active = child.Parent is StackNode stack && stack.Active == child;
             var focus = child.Leaves().Any(l => l.Pane.Id == focused);
             if (active) tab.Classes.Add(Theme.ActiveTab);
             else tab.Classes.Remove(Theme.ActiveTab);
-            accent.Background = active ? (focus ? Palette.AccentBrush : Palette.MutedTextBrush) : Brushes.Transparent;
-            accent.Opacity = active && !focus ? 0.5 : 1;
+            corner.Classes.Set(Theme.TerminalCloseButton,
+                active && child.ActiveLeaf().Pane.Kind == PaneKind.Terminal);
+            accent.Background = active && focus ? Palette.AccentBrush : Brushes.Transparent;
+            corner.IsVisible = vertical || pinned || active || tab.IsPointerOver;
             var current = child.Title.Length > 0 ? child.Title : leaves.Length == 1
                 ? leaves[0].Pane.Title : $"{leaves[0].Pane.Title}  +{leaves.Length - 1}";
             if (string.IsNullOrWhiteSpace(current)) current = "untitled";
