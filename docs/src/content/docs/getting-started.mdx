@@ -73,6 +73,30 @@ zip the releases carry.
 
 Open it again tomorrow and the panes come back, in the same shape, in the same directories.
 
+## Opening a folder
+
+Ordinary startup restores your saved panes without adding another CMD. To request one CMD at a
+specific folder on either cold or warm startup, run:
+
+```powershell
+WinMux.exe --open-directory "C:\path to\folder"
+```
+
+From Explorer's address bar or Windows Run, use `winmux --open-directory "C:\path to\folder"`.
+If WinMux is restoring, the new tab waits until its panes are ready. Without a saved session,
+the default CMD and file browser both use the requested folder, with just one CMD in total.
+Relative paths use the caller's directory. Missing, invalid or unavailable folders are refused
+before session/settings work; use a mapped drive for a UNC folder because CMD cannot use UNC
+working directories.
+
+While WinMux is already running, bare `winmux` still adds a CMD tab at the caller's folder to the
+active window. A bare cold launch restores only; it does not infer folder intent from Explorer
+or the working directory. Existing CMD panes saved by earlier versions are kept.
+
+A positional session file cannot accompany `--open-directory`; specify only one session file.
+`--keymap path.json` and `--no-prefix` still work on cold startup, including with a folder request.
+Session/keymap/no-prefix arguments are refused while WinMux is already running.
+
 ## Where things live
 
 | | |

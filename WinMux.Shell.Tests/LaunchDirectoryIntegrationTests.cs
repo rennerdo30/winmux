@@ -2,6 +2,7 @@ using System.Reflection;
 using Avalonia.Controls;
 using WinMux.Core.Layout;
 using WinMux.Core.Model;
+using WinMux.Core.Session;
 using WinMux.Panes;
 using WinMux.Platform;
 using WinMux.Shell.Keymap;
@@ -12,6 +13,107 @@ namespace WinMux.Shell.Tests;
 /// showing MainWindow, starting a PTY, running the command server, or invoking its Opened hooks.</summary>
 public sealed class LaunchDirectoryIntegrationTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task OrdinaryRestoredStartupDoesNotAddPanes(bool explicitSession) => Headless.RunAsync(async () =>
+    {
+        using var fixture = new Fixture();
+        var window = fixture.NewWindow(out var tree, out var provider, out var original);
+        SessionFile.Save(fixture.Session.SessionPath, new SessionSnapshot
+        {
+            SavedAt = DateTimeOffset.UtcNow,
+            Windows = [SessionMapper.ToSnapshot(tree, "restore")],
+        });
+        var savedBytes = File.ReadAllBytes(fixture.Session.SessionPath);
+        var arguments = Program.ShellArguments.Parse(explicitSession ? [fixture.Session.SessionPath, "--no-prefix"] : []);
+        var loaded = Program.LoadStartupSession(fixture.Session.SessionPath, arguments, fixture.Incoming);
+        Assert.True(loaded.Restored);
+        Field<TaskCompletionSource>(window, "_startupReady").SetResult();
+        using var launch = SingleInstanceLaunch.Open("winmux-startup-test-" + Guid.NewGuid().ToString("N"));
+        launch.SetHandler(request => fixture.Session.DispatchLaunchAsync(request.Directory));
+        var queued = Program.QueueStartup(arguments, loaded.Restored, launch);
+        if (queued is not null) Assert.True((await queued.WaitAsync(TimeSpan.FromSeconds(5))).Success);
+        Assert.Single(tree.Panes);
+        Assert.Same(original, tree.GetPane(original.Id));
+        Assert.Empty(provider.Created);
+        Assert.Equal(savedBytes, File.ReadAllBytes(fixture.Session.SessionPath));
+    });
+
+    [Fact]
+    public Task ExplicitColdFolderQueuesOneCmdAfterRestoreReadiness() => Headless.RunAsync(async () =>
+    {
+        using var fixture = new Fixture();
+        var window = fixture.NewWindow(out var tree, out var provider, out var original);
+        var arguments = Program.ShellArguments.Parse(["--open-directory", fixture.Incoming]);
+        using var launch = SingleInstanceLaunch.Open("winmux-startup-test-" + Guid.NewGuid().ToString("N"));
+        var queued = Program.QueueStartup(arguments, true, launch)!;
+        Assert.False(queued.IsCompleted);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        launch.SetHandler(request =>
+        {
+            entered.SetResult();
+            return fixture.Session.DispatchLaunchAsync(request.Directory);
+        });
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(queued.IsCompleted);
+        Assert.Single(tree.Panes);
+        Assert.Empty(provider.Created);
+        Field<TaskCompletionSource>(window, "_startupReady").SetResult();
+        Assert.True((await queued.WaitAsync(TimeSpan.FromSeconds(5))).Success);
+        Assert.Equal(2, tree.Panes.Count());
+        Assert.Same(original, tree.GetPane(original.Id));
+        AssertIncomingCmd(Assert.Single(provider.Created), fixture.Incoming);
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task FreshStartupUsesDefaultCmdWithoutQueueingAnother(bool explicitFolder) => Headless.RunSync(() =>
+    {
+        using var fixture = new Fixture();
+        var arguments = Program.ShellArguments.Parse(explicitFolder ? ["--open-directory", fixture.Incoming] : []);
+        var expected = explicitFolder ? fixture.Incoming : fixture.Focused;
+        var loaded = Program.LoadStartupSession(fixture.Session.SessionPath, arguments, fixture.Focused);
+        Assert.False(loaded.Restored);
+        var tree = SessionMapper.FromSnapshot(Assert.Single(loaded.Snapshot.Windows));
+        var cmd = Assert.Single(tree.Panes, pane => pane.Kind == PaneKind.Terminal);
+        Assert.Equal("cmd.exe", Path.GetFileName(cmd.Restore.Program), StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(expected, cmd.Restore.Cwd.Path);
+        Assert.Equal(expected, Assert.Single(tree.Panes, pane => pane.Kind == PaneKind.FileBrowser).Restore.Extras["current_directory"]);
+        using var launch = SingleInstanceLaunch.Open("winmux-startup-test-" + Guid.NewGuid().ToString("N"));
+        Assert.Null(Program.QueueStartup(arguments, loaded.Restored, launch));
+        Assert.False(File.Exists(fixture.Session.SessionPath));
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task WarmStartupForwardsExactlyOneCmd(bool explicitFolder) => Headless.RunAsync(async () =>
+    {
+        using var fixture = new Fixture();
+        var first = fixture.NewWindow(out var firstTree, out var firstProvider, out _);
+        var window = fixture.NewWindow(out var tree, out var provider, out var original);
+        fixture.Session.Activate(window);
+        var arguments = Program.ShellArguments.Parse(explicitFolder ? ["--open-directory", fixture.Incoming] : []);
+        var endpoint = "winmux-startup-test-" + Guid.NewGuid().ToString("N");
+        using var primary = SingleInstanceLaunch.Open(endpoint);
+        using var secondary = SingleInstanceLaunch.Open(endpoint);
+        primary.SetHandler(request => fixture.Session.DispatchLaunchAsync(request.Directory));
+        var forwarded = secondary.ForwardAsync(arguments.SecondaryRequest(explicitFolder ? fixture.Focused : fixture.Incoming),
+            TimeSpan.FromSeconds(5));
+        Assert.False(forwarded.IsCompleted);
+        Assert.Empty(provider.Created);
+        Field<TaskCompletionSource>(first, "_startupReady").SetResult();
+        Field<TaskCompletionSource>(window, "_startupReady").SetResult();
+        Assert.True((await forwarded.WaitAsync(TimeSpan.FromSeconds(5))).Success);
+        Assert.Single(firstTree.Panes);
+        Assert.Empty(firstProvider.Created);
+        Assert.Equal(2, tree.Panes.Count());
+        Assert.Same(original, tree.GetPane(original.Id));
+        AssertIncomingCmd(Assert.Single(provider.Created), fixture.Incoming);
+    });
+
     [Fact]
     public Task WindowLaunchWaitsForStartupAndAddsCmdAtExplicitDirectory() => Headless.RunAsync(async () =>
     {
