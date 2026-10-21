@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using Avalonia.Threading;
 using WinMux.Core.Layout;
 using WinMux.Core.Model;
@@ -9,6 +10,7 @@ using WinMux.Shell.Keymap;
 
 namespace WinMux.Shell.Tests;
 
+[Collection(AsyncSessionSaveCollection.Name)]
 public sealed class AsyncSessionSaveTests
 {
     private readonly Xunit.Abstractions.ITestOutputHelper _output;
@@ -46,7 +48,7 @@ public sealed class AsyncSessionSaveTests
             SessionFile.Save(target, snapshot);
         });
         Task<SessionSaveResult>? pending = null;
-        try
+        await RunWithCleanupAsync(async () =>
         {
             saver.RequestSave(new SessionSnapshot { Windows = [next] });
             using var deadline = new CancellationTokenSource();
@@ -73,21 +75,19 @@ public sealed class AsyncSessionSaveTests
             release.Set();
             Assert.True((await pending.WaitAsync(TimeSpan.FromSeconds(2))).Succeeded);
             Assert.Equal("next", SessionFile.Load(path).Windows.Single().Title);
-        }
-        finally
+        }, async () =>
         {
             release.Set();
-            try
-            {
-                if (pending is not null) await pending.WaitAsync(TimeSpan.FromSeconds(2));
-            }
-            finally
-            {
-                // Release and join even when an assertion fails, before DisposeAsync can flush again.
-                await saver.DisposeAsync();
-                if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
-            }
-        }
+            if (pending is not null) await pending.WaitAsync(TimeSpan.FromSeconds(2));
+        }, async () =>
+        {
+            // Release and join even when an assertion fails, before DisposeAsync can flush again.
+            await saver.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        }, () =>
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+            return Task.CompletedTask;
+        });
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public sealed class AsyncSessionSaveTests
             var window = new MainWindow(new LayoutTree(Pane.Empty()), session,
                 KeymapConfiguration.TmuxDefaults(), "slow save test");
             Task<ActionDispatchResult>? pending = null;
-            try
+            await RunWithCleanupAsync(async () =>
             {
                 var timer = Stopwatch.StartNew();
                 pending = window.DispatchNamedActionAsync(ShellActionNames.SaveSession).AsTask();
@@ -139,27 +139,71 @@ public sealed class AsyncSessionSaveTests
 
                 releaseWrite.Set();
                 Assert.True((await pending.WaitAsync(TimeSpan.FromSeconds(2))).Succeeded);
-            }
-            finally
+            }, async () =>
             {
                 releaseWrite.Set();
-                try
-                {
-                    if (pending is not null) await pending.WaitAsync(TimeSpan.FromSeconds(2));
-                }
-                finally
-                {
-                    session.Dispose();
-                    var handler = (Action<WinMux.Platform.ForegroundWindow>)Delegate.CreateDelegate(
-                        typeof(Action<WinMux.Platform.ForegroundWindow>), window, "OnForegroundWindowChanged");
-                    PlatformServices.Foreground.Changed -= handler;
-                    ((IDisposable)typeof(MainWindow).GetField("_foreignProvider",
-                        BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!).Dispose();
-                    typeof(MainWindow).GetField("_shutdownComplete",
-                        BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, true);
-                    window.Close();
-                }
-            }
+                if (pending is not null) await pending.WaitAsync(TimeSpan.FromSeconds(2));
+            }, () =>
+            {
+                session.Dispose();
+                var handler = (Action<WinMux.Platform.ForegroundWindow>)Delegate.CreateDelegate(
+                    typeof(Action<WinMux.Platform.ForegroundWindow>), window, "OnForegroundWindowChanged");
+                PlatformServices.Foreground.Changed -= handler;
+                ((IDisposable)typeof(MainWindow).GetField("_foreignProvider",
+                    BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!).Dispose();
+                typeof(MainWindow).GetField("_shutdownComplete",
+                    BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, true);
+                window.Close();
+                return Task.CompletedTask;
+            });
         });
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Probe_cleanup_preserves_assertions_and_cleanup_failures(bool failProbe, bool failCleanup)
+    {
+        var primary = new Xunit.Sdk.XunitException("probe assertion");
+        var cleanup = new TimeoutException("cleanup deadline");
+        var finalCleanupRan = false;
+        var error = await Record.ExceptionAsync(() => RunWithCleanupAsync(
+            () => failProbe ? Task.FromException(primary) : Task.CompletedTask,
+            () => failCleanup ? Task.FromException(cleanup) : Task.CompletedTask,
+            () => { finalCleanupRan = true; return Task.CompletedTask; }));
+
+        Assert.True(finalCleanupRan);
+        if (failProbe && failCleanup)
+        {
+            var both = Assert.IsType<AggregateException>(error);
+            Assert.Collection(both.InnerExceptions,
+                failure => Assert.Same(primary, failure), failure => Assert.Same(cleanup, failure));
+
+            // Deterministic reproduction of the old finally masking, without scheduler load.
+            var masked = await Record.ExceptionAsync(async () =>
+            {
+                try { await Task.FromException(primary); }
+                finally { await Task.FromException(cleanup); }
+            });
+            Assert.Same(cleanup, masked);
+            var rejected = Record.Exception(() => Assert.IsType<AggregateException>(masked));
+            Assert.IsAssignableFrom<Xunit.Sdk.XunitException>(rejected);
+            _output.WriteLine("Cleanup control rejected old finally masking of the primary assertion.");
+        }
+        else if (failProbe) Assert.Same(primary, error);
+        else if (failCleanup) Assert.Same(cleanup, error);
+        else Assert.Null(error);
+    }
+
+    private static async Task RunWithCleanupAsync(Func<Task> probe, params Func<Task>[] cleanup)
+    {
+        // A finally exception used to replace the assertion that a negative control must see.
+        // Preserve each failure; a cleanup timeout must still fail, even alongside an assertion.
+        var errors = new Xunit.Sdk.ExceptionAggregator();
+        await errors.RunAsync(probe);
+        foreach (var step in cleanup) await errors.RunAsync(step);
+        if (errors.ToException() is { } error) ExceptionDispatchInfo.Capture(error).Throw();
     }
 }
