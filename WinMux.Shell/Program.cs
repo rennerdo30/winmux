@@ -147,7 +147,12 @@ internal sealed class App : Application
 internal static class Program
 {
     [STAThread]
-    private static int Main(string[] argv)
+    private static int Main(string[] argv) =>
+        Run(argv, CrashLog.Install, ShowStartupError, () => SingleInstanceLaunch.Open());
+
+    // Keep startup ordering testable without installing process-wide hooks or showing native UI.
+    internal static int Run(string[] argv, Action installCrashLog,
+        Action<string, string> showStartupError, Func<SingleInstanceLaunch> openLaunch)
     {
         using var self = System.Diagnostics.Process.GetCurrentProcess();
         var processStartUtc = self.StartTime.ToUniversalTime();
@@ -161,27 +166,24 @@ internal static class Program
         catch (ArgumentException ex)
         {
             Console.Error.WriteLine(ex.Message);
-            ShowStartupError("WinMux startup arguments are invalid", ex.Message);
+            showStartupError("WinMux startup arguments are invalid", ex.Message);
             return 64;
         }
-        // Invalid folder intent must not install an exit hook that writes user data.
-        CrashLog.Install();
-
         SingleInstanceLaunch launch;
         try
         {
-            launch = SingleInstanceLaunch.Open();
+            launch = openLaunch();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Threading.WaitHandleCannotBeOpenedException)
         {
-            ShowStartupError("WinMux could not establish launch ownership", ex.Message);
+            showStartupError("WinMux could not establish launch ownership", ex.Message);
             return 1;
         }
         using var launchLifetime = launch;
         if (launch.IsPrimary && !WinMuxDataDirectory.IsIsolated &&
             LegacyInstanceProbe.IsListeningAsync().GetAwaiter().GetResult())
         {
-            ShowStartupError("An older WinMux is already running",
+            showStartupError("An older WinMux is already running",
                 "This running version does not support folder-launch forwarding. Close its windows safely " +
                 "before starting the updated WinMux. Your existing session was left alone; no duplicate was started.");
             return 1;
@@ -195,13 +197,17 @@ internal static class Program
             }
             catch (ArgumentException ex)
             {
-                ShowStartupError("WinMux is already running", ex.Message);
+                showStartupError("WinMux is already running", ex.Message);
                 return 64;
             }
             var reply = launch.ForwardAsync(request).GetAwaiter().GetResult();
-            if (!reply.Success) ShowStartupError("WinMux could not open this folder", reply.Message);
+            if (!reply.Success) showStartupError("WinMux could not open this folder", reply.Message);
             return reply.Success ? 0 : 1;
         }
+        // Only an accepted primary owns crash logging. A rejected warm invocation must not
+        // install a ProcessExit hook that creates, appends or rotates user data after returning.
+        installCrashLog();
+
         SessionLocation.Resolution location;
         try
         {
@@ -211,7 +217,7 @@ internal static class Program
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            ShowStartupError("WinMux could not move the session to its new place", ex.Message);
+            showStartupError("WinMux could not move the session to its new place", ex.Message);
             return 1;
         }
 
@@ -237,7 +243,7 @@ internal static class Program
             Console.Error.WriteLine();
             Console.Error.WriteLine("  " + ex.Message);
             Console.Error.WriteLine();
-            ShowStartupError("WinMux could not restore the session", ex.Message);
+            showStartupError("WinMux could not restore the session", ex.Message);
             return 1;
         }
 
@@ -254,7 +260,7 @@ internal static class Program
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or ArgumentException)
         {
             Console.Error.WriteLine($"Could not load keymap: {ex.Message}");
-            ShowStartupError("WinMux could not load the keymap", ex.Message);
+            showStartupError("WinMux could not load the keymap", ex.Message);
             return 2;
         }
 
