@@ -147,56 +147,67 @@ internal sealed class App : Application
 internal static class Program
 {
     [STAThread]
-    private static int Main(string[] argv)
+    private static int Main(string[] argv) =>
+        Run(argv, CrashLog.Install, ShowStartupError, () => SingleInstanceLaunch.Open());
+
+    // Keep startup ordering testable without installing process-wide hooks or showing native UI.
+    internal static int Run(string[] argv, Action installCrashLog,
+        Action<string, string> showStartupError, Func<SingleInstanceLaunch> openLaunch)
     {
         using var self = System.Diagnostics.Process.GetCurrentProcess();
         var processStartUtc = self.StartTime.ToUniversalTime();
-        CrashLog.Install();
         var launchDirectory = Environment.CurrentDirectory;
 
         ShellArguments arguments;
         try
         {
-            arguments = ShellArguments.Parse(argv);
+            arguments = ShellArguments.Parse(argv, launchDirectory);
         }
         catch (ArgumentException ex)
         {
             Console.Error.WriteLine(ex.Message);
+            showStartupError("WinMux startup arguments are invalid", ex.Message);
             return 64;
         }
-
         SingleInstanceLaunch launch;
         try
         {
-            launch = SingleInstanceLaunch.Open();
+            launch = openLaunch();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Threading.WaitHandleCannotBeOpenedException)
         {
-            ShowStartupError("WinMux could not establish launch ownership", ex.Message);
+            showStartupError("WinMux could not establish launch ownership", ex.Message);
             return 1;
         }
         using var launchLifetime = launch;
         if (launch.IsPrimary && !WinMuxDataDirectory.IsIsolated &&
             LegacyInstanceProbe.IsListeningAsync().GetAwaiter().GetResult())
         {
-            ShowStartupError("An older WinMux is already running",
+            showStartupError("An older WinMux is already running",
                 "This running version does not support folder-launch forwarding. Close its windows safely " +
                 "before starting the updated WinMux. Your existing session was left alone; no duplicate was started.");
             return 1;
         }
         if (!launch.IsPrimary)
         {
-            if (argv.Length > 0)
+            LaunchRequest request;
+            try
             {
-                ShowStartupError("WinMux is already running",
-                    "Session and keymap startup arguments cannot be applied to an existing WinMux. " +
-                    "Open the session or settings inside WinMux, or close all WinMux windows before launching with these arguments.");
+                request = arguments.SecondaryRequest(launchDirectory);
+            }
+            catch (ArgumentException ex)
+            {
+                showStartupError("WinMux is already running", ex.Message);
                 return 64;
             }
-            var reply = launch.ForwardAsync(new LaunchRequest(launchDirectory)).GetAwaiter().GetResult();
-            if (!reply.Success) ShowStartupError("WinMux could not open this folder", reply.Message);
+            var reply = launch.ForwardAsync(request).GetAwaiter().GetResult();
+            if (!reply.Success) showStartupError("WinMux could not open this folder", reply.Message);
             return reply.Success ? 0 : 1;
         }
+        // Only an accepted primary owns crash logging. A rejected warm invocation must not
+        // install a ProcessExit hook that creates, appends or rotates user data after returning.
+        installCrashLog();
+
         SessionLocation.Resolution location;
         try
         {
@@ -206,7 +217,7 @@ internal static class Program
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            ShowStartupError("WinMux could not move the session to its new place", ex.Message);
+            showStartupError("WinMux could not move the session to its new place", ex.Message);
             return 1;
         }
 
@@ -223,15 +234,7 @@ internal static class Program
         bool restored;
         try
         {
-            snapshot = SessionFile.Load(sessionPath);
-            restored = true;
-        }
-        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
-        {
-            // Missing is the only safe reason to create a new session. File.Exists also returns
-            // false for access failures, which could let a later autosave overwrite real data.
-            snapshot = DefaultSession();
-            restored = false;
+            (snapshot, restored) = LoadStartupSession(sessionPath, arguments, launchDirectory);
         }
         catch (Exception ex) when (ex is SessionFormatException or IOException or UnauthorizedAccessException or FormatException or ArgumentException)
         {
@@ -240,7 +243,7 @@ internal static class Program
             Console.Error.WriteLine();
             Console.Error.WriteLine("  " + ex.Message);
             Console.Error.WriteLine();
-            ShowStartupError("WinMux could not restore the session", ex.Message);
+            showStartupError("WinMux could not restore the session", ex.Message);
             return 1;
         }
 
@@ -257,20 +260,13 @@ internal static class Program
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or ArgumentException)
         {
             Console.Error.WriteLine($"Could not load keymap: {ex.Message}");
-            ShowStartupError("WinMux could not load the keymap", ex.Message);
+            showStartupError("WinMux could not load the keymap", ex.Message);
             return 2;
         }
 
         // Avalonia chooses its graphics backend before App.Initialize runs.
         Settings.ShellSettings.Load();
-        // A fresh default session already opens CMD in this folder. A restored session needs a
-        // new tab, queued until the primary window finishes restoring its runtimes.
-        if (restored && arguments.SessionPath is null)
-        {
-            var request = new LaunchRequest(launchDirectory);
-            if (request.ValidationError() is { } error) notices.Add(error);
-            else _ = launch.QueueInitial(request);
-        }
+        _ = QueueStartup(arguments, restored, launch);
         return BuildAvaloniaApp(snapshot, sessionPath, keymap, restored, notices, launch,
             processStartUtc, !WinMuxDataDirectory.IsIsolated).StartWithClassicDesktopLifetime(argv);
     }
@@ -306,9 +302,8 @@ internal static class Program
     /// With no session file: a shell and the built-in file browser side by side on the current
     /// directory — the smallest layout that exercises Phase 4's terminal handoff workflow.
     /// </summary>
-    private static SessionSnapshot DefaultSession()
+    private static SessionSnapshot DefaultSession(string here)
     {
-        var here = Environment.CurrentDirectory;
         var cwd = new WorkingDirectory(here, CwdSource.LaunchDirectory, DateTimeOffset.UtcNow);
 
         var shell = Pane.Terminal("cmd", Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe", cwd);
@@ -325,12 +320,43 @@ internal static class Program
         };
     }
 
-    private sealed record ShellArguments(string? SessionPath, string? KeymapPath, bool NoPrefix)
+    internal static Task<LaunchReply>? QueueStartup(
+        ShellArguments arguments, bool restored, SingleInstanceLaunch launch)
     {
-        public static ShellArguments Parse(string[] args)
+        // Restore alone is not a folder-open request. A fresh layout already contains one CMD.
+        if (restored && arguments.OpenDirectory is { } directory)
+            return launch.QueueInitial(new LaunchRequest(directory));
+        return null;
+    }
+
+    internal static (SessionSnapshot Snapshot, bool Restored) LoadStartupSession(
+        string sessionPath, ShellArguments arguments, string launchDirectory)
+    {
+        try { return (SessionFile.Load(sessionPath), true); }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // Only absence permits a default layout; other failures must never overwrite user data.
+            return (DefaultSession(arguments.OpenDirectory ?? launchDirectory), false);
+        }
+    }
+
+    internal sealed record ShellArguments(string? SessionPath, string? KeymapPath, bool NoPrefix,
+        string? OpenDirectory)
+    {
+        public LaunchRequest SecondaryRequest(string launchDirectory)
+        {
+            if (SessionPath is not null || KeymapPath is not null || NoPrefix)
+                throw new ArgumentException(
+                    "Session and keymap startup arguments cannot be applied to an existing WinMux. " +
+                    "Open the session or settings inside WinMux, or close all WinMux windows before launching with these arguments.");
+            return new LaunchRequest(OpenDirectory ?? launchDirectory);
+        }
+
+        public static ShellArguments Parse(string[] args, string? launchDirectory = null)
         {
             string? session = null;
             string? keymap = null;
+            string? directory = null;
             var noPrefix = false;
             for (var index = 0; index < args.Length; index++)
             {
@@ -340,15 +366,38 @@ internal static class Program
                 }
                 else if (args[index].Equals("--keymap", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (++index >= args.Length) throw new ArgumentException("--keymap requires a JSON file path.");
+                    if (++index >= args.Length || args[index].StartsWith("--", StringComparison.Ordinal))
+                        throw new ArgumentException("--keymap requires a JSON file path.");
                     keymap = args[index];
                 }
-                else if (!args[index].StartsWith('-') && session is null)
+                else if (args[index].Equals("--open-directory", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (directory is not null) throw new ArgumentException("Specify --open-directory only once.");
+                    if (++index >= args.Length || args[index].StartsWith("--", StringComparison.Ordinal))
+                        throw new ArgumentException("--open-directory requires a folder path.");
+                    directory = args[index];
+                    if (string.IsNullOrWhiteSpace(directory))
+                        throw new ArgumentException("--open-directory requires a non-empty folder path.");
+                    try { directory = Path.GetFullPath(directory, launchDirectory ?? Environment.CurrentDirectory); }
+                    catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+                    {
+                        throw new ArgumentException("--open-directory has an invalid folder path: " + ex.Message);
+                    }
+                    if (directory.StartsWith(@"\\", StringComparison.Ordinal))
+                        throw new ArgumentException("--open-directory cannot use a UNC folder as CMD's working directory. Use a mapped drive.");
+                    if (new LaunchRequest(directory).ValidationError() is { } error)
+                        throw new ArgumentException(error);
+                }
+                else if (!args[index].StartsWith('-'))
+                {
+                    if (session is not null) throw new ArgumentException("Specify only one session file.");
                     session = args[index];
                 }
+                else throw new ArgumentException("Unknown startup argument: " + args[index]);
             }
-            return new ShellArguments(session, keymap, noPrefix);
+            if (session is not null && directory is not null)
+                throw new ArgumentException("--open-directory cannot be combined with an explicit session file.");
+            return new ShellArguments(session, keymap, noPrefix, directory);
         }
     }
 }
