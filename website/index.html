@@ -17,8 +17,8 @@
   <meta property="og:description" content="tmux, outside the terminal. Panes, tabs and saved sessions for terminals and ordinary Windows applications alike.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://winmux.renner.dev/">
-  <meta property="og:image" content="https://winmux.renner.dev/assets/winmux-256.png">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://winmux.renner.dev/assets/shots/hero-dark.png">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="style.css">
   <script src="site.js" defer></script>
   <script src="releases.js" defer></script>
@@ -33,6 +33,7 @@
         <span>WinMux</span>
       </a>
       <nav aria-label="Sections">
+        <a href="#screens">Screenshots</a>
         <a href="#isolation">Isolation</a>
         <a href="#sessions">Sessions</a>
         <a href="#panes">Panes</a>
@@ -110,12 +111,31 @@ Build succeeded. 0 warnings.
           </div>
         </div>
         <figcaption id="demo-caption" aria-live="polite">Click a pane to focus it, then split it, give it tabs, or close it. The session file beside it is the one WinMux keeps on disk, rewritten a moment after every change.</figcaption>
-        <p class="demo-note">An interactive illustration drawn in your browser, not a screenshot. The toolbar buttons are the real ones; so is the file format.</p>
+        <p class="demo-note">An interactive illustration drawn in your browser, not a screenshot: those are <a href="#screens">just below</a>. The toolbar buttons are the real ones; so is the file format.</p>
       </figure>
     </section>
   </div>
 
   <main id="main">
+    <section class="band" id="screens" aria-labelledby="screens-title">
+      <div class="head">
+        <p class="chord"><kbd>screenshots</kbd></p>
+        <h2 id="screens-title">And the real thing</h2>
+        <p class="intro">WinMux 0.8.3, the released build, on Windows 11: a tab group of shells, a file browser, and an application in a pane of its own. These are captures, not mock-ups.</p>
+      </div>
+      <figure class="shot-fig">
+        <picture>
+          <source media="(prefers-color-scheme: light)" srcset="assets/shots/hero-light.png">
+          <img src="assets/shots/hero-dark.png" width="1600" height="1002" alt="WinMux with three panes: a cmd tab showing git history beside a pwsh tab, a file browser on the WinMux.Shell folder, and a web browser window embedded in the third pane showing the WinMux documentation.">
+        </picture>
+        <figcaption>Splits, tabs and three kinds of pane in one window, following the Windows light or dark setting. The application pane is a browser in app mode with no entry in the compatibility list yet, and the status bar says so.</figcaption>
+      </figure>
+      <figure class="shot-fig">
+        <img src="assets/shots/tabs-dark.png" width="1600" height="1002" loading="lazy" alt="WinMux with a tab group whose tabs run down the left edge, beside a second tab group across the top whose active tab is itself split into a file browser and a PowerShell pane.">
+        <figcaption>Tab groups nest anywhere. Left, a group with its tabs down the side; right, a group across the top whose second tab is itself a split.</figcaption>
+      </figure>
+    </section>
+
     <section class="band" id="why" aria-labelledby="why-title">
       <div class="head">
         <p class="chord"><kbd>why</kbd></p>

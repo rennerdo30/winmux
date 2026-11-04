@@ -17,6 +17,13 @@
   <a href="LICENSE">MIT license</a>
 </p>
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="website/assets/shots/hero-light.png">
+    <img src="website/assets/shots/hero-dark.png" alt="WinMux with three panes: a cmd tab showing git history beside a pwsh tab, a file browser, and a web browser embedded in the third pane showing the WinMux documentation">
+  </picture>
+</p>
+
 ## Why WinMux
 
 Windows has four half-solutions and no whole one:
@@ -42,6 +49,13 @@ continuous persistence, in one host window with one keymap.
 | **Profiles** | A named thing you can put in a pane, created from the Start Menu's installed-app list rather than by typing paths. Open windows can be adopted into a pane. |
 | **Looks like Windows 11** | Mica, your accent colour, light and dark, the toolbar in the title bar and real snap layouts. |
 | **Updates itself, carefully** | Help → About checks GitHub and refuses any download whose SHA-256 does not match the published `checksums.txt`. No account, no telemetry; one setting turns the check off. |
+
+<p align="center">
+  <img src="website/assets/shots/tabs-dark.png" alt="A tab group with its tabs down the left edge, beside a tab group across the top whose active tab is split into a file browser and a PowerShell pane">
+  <br><b>Tab groups nest anywhere</b>: tabs down the side on the left; on the right, a group whose second tab is itself a split.
+</p>
+
+<p align="center"><sub>Screenshots of the released WinMux 0.8.3 on Windows 11. The browser pane has no compatibility-list entry yet, and the status bar says so.</sub></p>
 
 ## How it works
 
