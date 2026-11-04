@@ -24,7 +24,9 @@ concurrency:
 
 jobs:
   build:
-    runs-on: [self-hosted, docs]
+    # A public repository: GitHub's hosted runners are free and need no server of ours.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -65,7 +67,9 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: [self-hosted, docs]
+    # A public repository: GitHub's hosted runners are free and need no server of ours.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
