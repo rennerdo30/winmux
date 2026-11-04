@@ -9,6 +9,13 @@ Ordinary startup restores the saved layout without adding CMD. See
 
 ## What just happened
 
+**2026-11-04:** branch `website/landing-page` adds `website/`, a hand-built homepage for
+`winmux.renner.dev` in the style of the Corewright, Kwil and Sim Bridge sites, with an interactive
+layout demo and the live session TOML. It also rewrites `README.md` in their layout and moves the
+Starlight docs to `/docs/`, with `docs.yml` assembling both. Not merged and not published: merging
+deploys, and the domain needs DNS plus the Pages custom-domain setting (owner). See
+`website/README.md`.
+
 **2026-10-22:** [PR 1](https://github.com/rennerdo30/winmux/pull/1) fixed WM-20:
 restore alone queues no terminal; `--open-directory <folder>` explicitly opens one
 on cold or warm startup, and bare warm forwarding remains. Existing saved tabs stay.
@@ -28,6 +35,8 @@ appears, then check an explicit folder launch. WM-20 is waiting for native owner
 
 ## Blocked / needs a human
 
+Website: the owner approves merging `website/landing-page` (that publishes it) and sets up
+`winmux.renner.dev`. It has no real screenshots yet; capturing them needs a visible WinMux run.
 Native Explorer/foreground and physical mixed-DPI acceptance remain unmeasured.
 Existing owner checks remain open. Installer signing still needs an owner certificate.
 The patch is published; no release authorization remains outstanding.

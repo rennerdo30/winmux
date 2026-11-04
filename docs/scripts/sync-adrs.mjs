@@ -34,8 +34,8 @@ const quote = (value) => `'${value.replace(/'/g, "''")}'`;
  */
 function rewriteLinks(body) {
   return body
-    .replace(/\]\((\.\/)?(\d{4}-[a-z0-9-]+)\.md(#[^)]*)?\)/gi, "](/adr/$2/$3)")
-    .replace(/\]\(\.\.\/src\/content\/docs\/([a-z0-9-]+)\.mdx?(#[^)]*)?\)/gi, "](/$1/$2)");
+    .replace(/\]\((\.\/)?(\d{4}-[a-z0-9-]+)\.md(#[^)]*)?\)/gi, "](/docs/adr/$2/$3)")
+    .replace(/\]\(\.\.\/src\/content\/docs\/([a-z0-9-]+)\.mdx?(#[^)]*)?\)/gi, "](/docs/$1/$2)");
 }
 
 const files = (await readdir(source)).filter((name) => name.endsWith(".md")).sort();

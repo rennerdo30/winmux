@@ -3,13 +3,19 @@ import starlight from "@astrojs/starlight";
 import starlightThemeGalaxy from "starlight-theme-galaxy";
 import starlightClientMermaid from "@pasqal-io/starlight-client-mermaid";
 
-// site and base are passed on the command line in CI, from actions/configure-pages.
+// https://winmux.renner.dev serves the homepage (../website) at / and this documentation
+// under /docs/. The docs workflow assembles both into one Pages artifact.
 export default defineConfig({
+  site: "https://winmux.renner.dev",
+  base: "/docs",
+  trailingSlash: "always",
   integrations: [
     starlight({
       title: "WinMux",
       description:
         "A window multiplexer for Windows: tmux-style panes, tabs and session restore for terminals and ordinary applications alike.",
+      logo: { src: "./src/assets/winmux.svg" },
+      favicon: "/favicon.svg",
       plugins: [starlightThemeGalaxy(), starlightClientMermaid()],
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/rennerdo30/winmux" },

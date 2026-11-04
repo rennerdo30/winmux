@@ -1,10 +1,14 @@
 name: Deploy Documentation
 
+# https://winmux.renner.dev serves the homepage (website/) at / and the documentation (docs/,
+# built with base /docs) under /docs/. Both go out as one Pages artifact.
+
 on:
   push:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'website/**'
       # The ADRs are mirrored into the site at build time, so a change to one is a docs change.
       - '.github/workflows/docs.yml'
   workflow_dispatch:
@@ -31,7 +35,6 @@ jobs:
           cache-dependency-path: docs/package-lock.json
 
       - name: Setup Pages
-        id: pages
         uses: actions/configure-pages@v6
 
       - name: Install dependencies
@@ -42,11 +45,23 @@ jobs:
       # collection. The ADRs stay canonical where they are; the site never owns a second copy.
       - name: Build
         working-directory: docs
-        run: npm run build -- --site "${{ steps.pages.outputs.origin }}" --base "${{ steps.pages.outputs.base_path }}"
+        # site and base live in astro.config.mjs: https://winmux.renner.dev, /docs.
+        run: npm run build
+
+      - name: Assemble the site
+        run: |
+          rm -rf _site
+          mkdir -p _site/docs
+          cp -R website/. _site/
+          rm -f _site/README.md
+          cp -R docs/dist/. _site/docs/
+          cp docs/dist/404.html _site/404.html
+          test -f _site/CNAME && test -f _site/.nojekyll && test -f _site/index.html && test -f _site/docs/index.html
 
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: docs/dist
+          path: _site
+          include-hidden-files: true
 
   deploy:
     needs: build

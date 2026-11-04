@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy · WinMux</title>
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'">
+  <link rel="canonical" href="https://winmux.renner.dev/privacy.html">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="assets/winmux.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="desk">
+    <header class="top">
+      <a class="brand" href="./" aria-label="WinMux home">
+        <img src="assets/winmux.svg" width="30" height="30" alt="">
+        <span>WinMux</span>
+      </a>
+      <nav aria-label="Site">
+        <a href="./#download">Download</a>
+        <a href="docs/">Docs</a>
+        <a class="nav-gh" href="https://github.com/rennerdo30/winmux">GitHub</a>
+      </nav>
+    </header>
+  </div>
+
+  <main class="doc">
+    <h1>Privacy</h1>
+
+    <h2>This website</h2>
+    <p>This site sets no cookies, uses no analytics and loads nothing from other sites except one request: your browser asks the public GitHub API for the newest WinMux release, so the download links point at it. GitHub receives that request like any other visit to GitHub. The site is hosted on GitHub Pages, which logs visitors' IP addresses in its own server logs; see the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub privacy statement</a>.</p>
+
+    <h2>The WinMux app</h2>
+    <p>WinMux has no account and no telemetry. The only request it makes by itself is the update check against GitHub's release list, plus the download of an update when you install one. Turn off <b>Check for updates on start</b> in Settings and WinMux makes no network requests of its own. Servers you browse in a file pane are the ones you connect to, with credentials you enter. Sessions, settings and profiles stay on your computer, in <code>%APPDATA%\WinMux</code>.</p>
+
+    <h2>Contact</h2>
+    <p>Write to <a href="mailto:support@renner.dev">support@renner.dev</a>, or open an issue on <a href="https://github.com/rennerdo30/winmux/issues">GitHub</a>.</p>
+  </main>
+
+  <footer class="foot">
+    <p><img src="assets/winmux.svg" width="20" height="20" alt=""> WinMux, a project by <a href="https://github.com/rennerdo30">rennerdo30</a>.</p>
+    <p><a href="./">Home</a> <a href="docs/">Documentation</a> <a href="https://github.com/rennerdo30/winmux">GitHub</a></p>
+  </footer>
+</body>
+</html>

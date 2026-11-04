@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WinMux: tmux-style panes, tabs and sessions for every Windows app</title>
+  <meta name="description" content="WinMux is a window multiplexer for Windows. Split one window into panes and tabs, put a terminal, a file browser or an ordinary Windows application in each, and get the whole arrangement back on the next start. Free and open source.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#eef1f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0e15" media="(prefers-color-scheme: dark)">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
+  <link rel="canonical" href="https://winmux.renner.dev/">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="assets/winmux.svg" type="image/svg+xml">
+  <link rel="manifest" href="site.webmanifest">
+  <meta property="og:title" content="WinMux">
+  <meta property="og:description" content="tmux, outside the terminal. Panes, tabs and saved sessions for terminals and ordinary Windows applications alike.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://winmux.renner.dev/">
+  <meta property="og:image" content="https://winmux.renner.dev/assets/winmux-256.png">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="style.css">
+  <script src="site.js" defer></script>
+  <script src="releases.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <div class="desk">
+    <header class="top">
+      <a class="brand" href="#top" aria-label="WinMux home">
+        <img src="assets/winmux.svg" width="30" height="30" alt="">
+        <span>WinMux</span>
+      </a>
+      <nav aria-label="Sections">
+        <a href="#isolation">Isolation</a>
+        <a href="#sessions">Sessions</a>
+        <a href="#panes">Panes</a>
+        <a href="#download">Download</a>
+        <a href="docs/">Docs</a>
+        <a class="nav-gh" href="https://github.com/rennerdo30/winmux">GitHub</a>
+      </nav>
+    </header>
+
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="kicker"><kbd>Ctrl+Shift+P</kbd> <kbd>%</kbd> <span>Free and open source, for Windows 10 and 11</span></p>
+        <h1 id="hero-title">tmux, outside the&nbsp;terminal.</h1>
+        <p class="lede">WinMux splits one window into panes and tabs, and a pane can hold anything: a shell, a file browser, or an ordinary Windows application in its own process. Close it tonight, and tomorrow the same layout comes back, every program in the folder it was in.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="#download" data-release="latest" data-field="hero-label">Download WinMux</a>
+          <a class="btn btn-ghost" href="docs/getting-started/">Read the guide</a>
+        </div>
+      </div>
+
+      <figure class="demo" aria-labelledby="demo-caption">
+        <div class="demo-grid">
+          <div class="wm" data-wm>
+            <div class="wm-title">
+              <img src="assets/winmux.svg" width="18" height="18" alt="">
+              <div class="wm-tools" role="toolbar" aria-label="WinMux toolbar (try it)">
+                <button type="button" data-act="split-columns" title="Split right (prefix %)"><span class="ic ic-cols" aria-hidden="true"></span><span class="lbl">Split right</span></button>
+                <button type="button" data-act="split-rows" title="Split down (prefix &quot;)"><span class="ic ic-rows" aria-hidden="true"></span><span class="lbl">Split down</span></button>
+                <button type="button" data-act="new-tab" title="New tab (prefix c)"><span class="ic ic-tab" aria-hidden="true"></span><span class="lbl">New tab</span></button>
+                <button type="button" data-act="close-pane" title="Close pane (prefix x)"><span class="ic ic-close" aria-hidden="true"></span><span class="lbl">Close pane</span></button>
+                <span class="sep" aria-hidden="true"></span>
+                <button type="button" data-act="freeze" title="Make the application pane stop responding"><span class="ic ic-freeze" aria-hidden="true"></span><span class="lbl">Freeze the app</span></button>
+                <button type="button" data-act="restart" title="Close WinMux and start it again"><span class="ic ic-restart" aria-hidden="true"></span><span class="lbl">Restart</span></button>
+              </div>
+              <span class="wm-caps" aria-hidden="true"><i></i><i></i><i></i></span>
+            </div>
+            <div class="wm-body" data-wm-body>
+              <!-- Without JavaScript this static layout stays; site.js replaces it with a live one. -->
+              <div class="pane pane-term is-focused fx-l">
+                <div class="pane-head">build · cmd</div>
+                <pre class="term"><span class="p">C:\src\winmux&gt;</span> dotnet build -c Release
+  WinMux.Core      → bin\Release\net10.0
+  WinMux.Shell     → bin\x64\Release
+Build succeeded. 0 warnings.
+<span class="p">C:\src\winmux&gt;</span> <span class="cur"></span></pre>
+              </div>
+              <div class="pane pane-files fx-tr">
+                <div class="pane-head">files · C:\src\winmux</div>
+                <ul class="files"><li class="d">docs</li><li class="d">WinMux.Core</li><li class="d">WinMux.Shell</li><li>README.md</li><li>session.toml</li></ul>
+              </div>
+              <div class="pane pane-app fx-br">
+                <div class="pane-head">notes.txt · Editor</div>
+                <div class="app"><div class="app-menu"><span>File</span><span>Edit</span><span>View</span></div><div class="app-doc"><p>Release checklist</p><p>– tag v0.9.0</p><p>– checksums.txt</p></div></div>
+              </div>
+            </div>
+            <div class="wm-status" aria-hidden="true"><span data-status-left>3 panes · saved</span><span data-status-right>C:\src\winmux</span></div>
+          </div>
+
+          <div class="toml" aria-label="The session file, as WinMux writes it">
+            <div class="toml-head"><span>%APPDATA%\WinMux\session.toml</span><span class="toml-saved" data-toml-saved>saved</span></div>
+<pre data-toml><code><span class="k">version</span> = 1
+
+[[<span class="t">windows.nodes</span>]]
+<span class="k">id</span>        = <span class="s">'n0'</span>
+<span class="k">kind</span>      = <span class="s">'split'</span>
+<span class="k">direction</span> = <span class="s">'columns'</span>
+<span class="k">children</span>  = [<span class="s">'n1'</span>, <span class="s">'n2'</span>]
+<span class="k">ratios</span>    = [0.5, 0.5]
+
+[[<span class="t">windows.panes</span>]]
+<span class="k">kind</span>    = <span class="s">'terminal'</span>
+<span class="k">title</span>   = <span class="s">'build'</span>
+<span class="k">program</span> = <span class="s">'C:\WINDOWS\system32\cmd.exe'</span>
+<span class="k">cwd</span>     = <span class="s">'C:\src\winmux'</span></code></pre>
+          </div>
+        </div>
+        <figcaption id="demo-caption" aria-live="polite">Click a pane to focus it, then split it, give it tabs, or close it. The session file beside it is the one WinMux keeps on disk, rewritten a moment after every change.</figcaption>
+        <p class="demo-note">An interactive illustration drawn in your browser, not a screenshot. The toolbar buttons are the real ones; so is the file format.</p>
+      </figure>
+    </section>
+  </div>
+
+  <main id="main">
+    <section class="band" id="why" aria-labelledby="why-title">
+      <div class="head">
+        <p class="chord"><kbd>why</kbd></p>
+        <h2 id="why-title">Windows has four half-solutions and no whole one</h2>
+        <p class="intro">Terminal multiplexers only hold terminals. Tiling window managers rearrange your whole desktop. Tab tools group windows but forget them. Layout restorers reopen apps but give you no panes. WinMux is the intersection, in one window with one keymap.</p>
+      </div>
+      <div class="matrix-wrap">
+        <table class="matrix">
+          <thead>
+            <tr><th scope="col">Kind of tool</th><th scope="col">Panes and tabs</th><th scope="col">A process per pane</th><th scope="col">Non-terminal apps</th><th scope="col">Layout comes back</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Terminal multiplexers<small>Windows Terminal, WezTerm, Zellij</small></th><td class="y">Yes</td><td class="y">Yes</td><td class="n">No, terminals only</td><td class="p">Partly</td></tr>
+            <tr><th scope="row">Tiling window managers<small>GlazeWM, komorebi</small></th><td class="p">The whole desktop</td><td class="y">Yes</td><td class="p">As loose windows</td><td class="n">Weak</td></tr>
+            <tr><th scope="row">Window tabbers<small>Groupy, TidyTabs</small></th><td class="p">Tabs only</td><td class="y">Yes</td><td class="y">Yes</td><td class="n">No</td></tr>
+            <tr><th scope="row">Layout restorers<small>PowerToys Workspaces</small></th><td class="n">No</td><td class="y">Yes</td><td class="y">Yes</td><td class="y">Yes</td></tr>
+            <tr class="us"><th scope="row">WinMux</th><td class="y">Nested, on any edge</td><td class="y">Yes, isolated</td><td class="y">Embedded or attached</td><td class="y">Continuously saved</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="band" id="isolation" aria-labelledby="iso-title">
+      <div class="split">
+        <div class="prose">
+          <p class="chord"><kbd>stability</kbd></p>
+          <h2 id="iso-title">A frozen app freezes its own pane, not WinMux</h2>
+          <p>Putting another program's window inside yours is easy. Surviving that program when it hangs is not: one ordinary window call against a stuck application blocks the caller for as long as the application is stuck.</p>
+          <p>So WinMux never touches a hosted application's window itself. Every application pane gets its own small <code>WinMux.PaneHost</code> process, which holds the window and does the risky calls. When the application hangs, its host waits; the shell keeps drawing, keeps taking keys, and can still detach or close the pane.</p>
+          <p>Terminals are separate processes too, through ConPTY. Close a pane and only that pane's process tree goes.</p>
+        </div>
+        <div class="gauges" role="group" aria-labelledby="iso-gauges">
+          <p class="gauges-title" id="iso-gauges">Measured before a line of product code was written</p>
+          <div class="gauge">
+            <h3>Shell blocked while a hosted app hangs for 6 s</h3>
+            <div class="bars">
+              <div class="bar"><span class="bar-label">Window held in the shell's own process</span><span class="bar-track"><span class="bar-fill bad w-100"></span></span><b>5,965 ms</b></div>
+              <div class="bar"><span class="bar-label">Window held by a separate pane host</span><span class="bar-track"><span class="bar-fill good w-0"></span></span><b>stayed responsive</b></div>
+            </div>
+          </div>
+          <div class="gauge">
+            <h3>Taking focus while a linked app is wedged</h3>
+            <div class="bars">
+              <div class="bar"><span class="bar-label">Input queues kept apart</span><span class="bar-track"><span class="bar-fill good w-5"></span></span><b>201 ms</b></div>
+              <div class="bar"><span class="bar-label">Input queues attached</span><span class="bar-track"><span class="bar-fill bad w-73"></span></span><b>4,386 ms</b></div>
+            </div>
+          </div>
+          <p class="gauges-foot">From spikes 3 and 5, written up in <a href="docs/adr/0001-out-of-process-pane-hosts/">ADR 0001</a> and <a href="docs/adr/0017-input-queue-attachment/">ADR 0017</a>, including what failed on the way.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="sessions" aria-labelledby="sessions-title">
+      <div class="split split-rev">
+        <div class="cwd" role="group" aria-labelledby="cwd-title">
+          <p class="gauges-title" id="cwd-title">Finding each pane's folder, three ways, best answer wins</p>
+          <ol class="layers">
+            <li><b>The shell says so.</b> PowerShell, cmd and bash report their folder with an escape sequence after every prompt. WinMux offers to install the one-line snippet for you.</li>
+            <li><b>WinMux asks the process.</b> It reads the working directory of the deepest program running in the pane, which covers a nested shell that reports nothing.</li>
+            <li><b>The folder it started in.</b> One unknown pane never stops the session from saving.</li>
+          </ol>
+          <div class="score"><b>34 of 40</b><span>scenarios recovered the right folder across pwsh, Windows PowerShell, cmd and WSL bash, with each layer recorded and timestamped.</span></div>
+        </div>
+        <div class="prose">
+          <p class="chord"><kbd>prefix</kbd> <kbd>w</kbd></p>
+          <h2 id="sessions-title">Sessions come back the way you left them</h2>
+          <p>The layout is saved continuously, a moment after every change, and each time a pane changes folder. A crash does not cost you the session. On the next start WinMux rebuilds the tree, the tabs, each pane's program, arguments and folder.</p>
+          <p>The session is a TOML file meant for people: the tree is flattened into a list, panes are short tables, and paths keep their backslashes. A file that will not load is quarantined and reported, never silently replaced with an empty session.</p>
+          <p class="honest">What it does not do: bring back what was inside a process. A restored shell is a new shell in the right folder, without its scrollback or running jobs. Nothing can restore those, so WinMux does not pretend to.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="panes" aria-labelledby="panes-title">
+      <div class="head">
+        <p class="chord"><kbd>prefix</kbd> <kbd>e</kbd></p>
+        <h2 id="panes-title">Four kinds of pane, one contract</h2>
+        <p class="intro">Every kind is a provider behind the same public interface, so the layout, the session file and the keymap never need to know what is inside a pane. A fifth kind can be loaded from a folder beside the app.</p>
+      </div>
+      <dl class="spec">
+        <div><dt><span class="sw sw-term" aria-hidden="true"></span>Terminal</dt><dd>cmd, PowerShell, pwsh, WSL or ssh on ConPTY, drawn by a VT engine that parses 3 to 10 times faster than ConPTY delivers. Scrollback, selection, mouse reporting and copy that never steals <code>Ctrl+C</code>.</dd></div>
+        <div><dt><span class="sw sw-files" aria-hidden="true"></span>File browser</dt><dd>Built in, with details view, drag and drop between panes, a terminal at the selected folder, and the same keys on a local drive, a network share or a server.</dd></div>
+        <div><dt><span class="sw sw-app" aria-hidden="true"></span>Application</dt><dd>Any program from the Start Menu, or a window that is already open, adopted into a pane. Embedded when it allows it, attached alongside when it does not.</dd></div>
+        <div><dt><span class="sw sw-empty" aria-hidden="true"></span>Empty</dt><dd>Make the pane first and decide later. An empty pane offers your profiles, every installed application and the open windows it could take in.</dd></div>
+        <div><dt>Profiles</dt><dd>A named thing you can put in a pane: a shell or an application, with its arguments and folder. Add one from the installed-app list instead of typing a path; it appears in every menu at once.</dd></div>
+        <div><dt>SFTP and FTP</dt><dd>Browse a server in a file pane and copy between it and your disk. Shares need nothing: Windows mounts them, and WinMux walks the path.</dd></div>
+        <div><dt>Tab groups anywhere</dt><dd>A tab group can sit inside a split or inside another group, with its strip on the top, bottom, left or right edge. Pin, rename and resize vertical strips.</dd></div>
+        <div><dt>Notifications</dt><dd>A program in a hidden pane that asks for you, with a bell or an OSC 9, 777 or 99 message, becomes a Windows notification.</dd></div>
+      </dl>
+    </section>
+
+    <section class="band" id="compat" aria-labelledby="compat-title">
+      <div class="split">
+        <div class="prose">
+          <p class="chord"><kbd>prefix</kbd> <kbd>A</kbd></p>
+          <h2 id="compat-title">Honest about which apps fit</h2>
+          <p>WinMux hosts an application in one of two ways. <b>Embed</b> takes its window into the pane, so it moves, clips and resizes with the layout. <b>Attach</b> leaves the window where Windows wants it and keeps it lined up with the pane, the way a tiling window manager does.</p>
+          <p>A shipped, editable compatibility list picks the way per application. When an app refuses to be embedded, WinMux keeps the same window alive, says why in plain words, and attaches it instead. You can switch any pane live, and the choice is remembered.</p>
+          <p>When WinMux closes it hands every window back exactly as it found it: parent, styles and position.</p>
+        </div>
+        <div class="ledger" role="group" aria-labelledby="compat-ledger">
+          <p class="ledger-title" id="compat-ledger">What was measured</p>
+          <table>
+            <thead><tr><th scope="col">Application</th><th scope="col">Hosted as</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Ordinary Win32 apps</th><td class="ok">Embed, restored byte-exactly on detach</td></tr>
+              <tr><th scope="row">Chromium-based apps</th><td class="ok">Embed</td></tr>
+              <tr><th scope="row">Store and packaged apps</th><td class="mid">Attach; Windows refuses embedding</td></tr>
+              <tr><th scope="row">Apps running as administrator</th><td class="no">Refused and explained. WinMux never runs elevated to get around it.</td></tr>
+              <tr><th scope="row">Monitors at different scales</th><td class="mid">Supported in code, not yet verified on real hardware</td></tr>
+            </tbody>
+          </table>
+          <p class="ledger-foot">Details in <a href="docs/adr/0003-foreign-app-compatibility/">ADR 0003</a> and <a href="docs/troubleshooting/">Troubleshooting</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="keys" aria-labelledby="keys-title">
+      <div class="split">
+        <div class="prose">
+          <p class="chord"><kbd>prefix</kbd> <kbd>:</kbd></p>
+          <h2 id="keys-title">Keyboard first, never keyboard only</h2>
+          <p>The default keymap is tmux-style, behind <code>Ctrl+Shift+P</code> so <code>Ctrl+B</code> stays with your terminal programs. Every action is also a toolbar button, a command-palette entry and a <code>wmux</code> command, and all four call the same named action.</p>
+          <p>Bindings written as a character match the character your keyboard produces, so <code>%</code> and <code>:</code> still work on a Japanese keyboard, where they sit on different keys. Replace the whole map with one JSON file, or turn the prefix off.</p>
+          <p>It looks like Windows 11 because it reads Windows: Mica, your accent colour, light and dark, the toolbar in the title bar and real snap layouts.</p>
+        </div>
+        <div class="term-card" role="group" aria-label="Keys and commands">
+          <div class="term-bar" aria-hidden="true"><span>wmux</span></div>
+<pre><code><span class="c"># Prefix, then a key</span>
+<kbd>%</kbd>  split right       <kbd>"</kbd>  split down
+<kbd>c</kbd>  new tab           <kbd>v</kbd>  tab group, tabs down the side
+<kbd>e</kbd>  empty pane        <kbd>o</kbd>  adopt an open window
+<kbd>,</kbd>  rename            <kbd>x</kbd>  close
+<kbd>w</kbd>  save              <kbd>:</kbd>  command palette
+
+<span class="c"># The same actions from any script</span>
+wmux split -h
+wmux focus left
+wmux new-tab
+wmux validate session.toml</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="band trio" aria-label="Safety, updates and privacy">
+      <article>
+        <h2>Never elevated</h2>
+        <p>WinMux installs for your account only, needs no administrator rights, and never asks for them as a workaround. It changes no PATH; typing <code>winmux</code> in Explorer's address bar works through a per-user registration.</p>
+      </article>
+      <article>
+        <h2>Updates itself, carefully</h2>
+        <p>Help → About checks GitHub for a newer release and refuses to install anything whose SHA-256 does not match the published <code>checksums.txt</code>. Stable releases only, unless you ask for prereleases.</p>
+      </article>
+      <article>
+        <h2>Nothing phones home</h2>
+        <p>No account, no telemetry. The update check is the only request WinMux makes by itself, and one setting turns it off. Servers you browse are the ones you connect to.</p>
+      </article>
+    </section>
+
+    <section class="band download" id="download" aria-labelledby="download-title">
+      <h2 id="download-title">Get WinMux</h2>
+      <p class="intro">WinMux is before 1.0: terminals, sessions, application panes and the file browser are in daily use, and the interface is still being finished. Compatibility with your applications is a measured list, not a promise. <a href="https://github.com/rennerdo30/winmux/issues">Tell us</a> what does not fit.</p>
+      <div class="dl-grid">
+        <div class="dl">
+          <h3>Newest release</h3>
+          <p class="dl-version" data-release="latest" data-field="found" hidden>WinMux <strong data-release="latest" data-field="version"></strong>, released <span data-release="latest" data-field="date"></span>.</p>
+          <p class="dl-version" data-release="latest" data-field="missing">Downloads are on the GitHub releases page.</p>
+          <ul class="assets">
+            <li>
+              <span class="asset-os">Windows 10 and 11, x64</span>
+              <span class="asset-links">
+                <a class="btn btn-primary btn-small" data-asset="win-x64-setup.exe" href="https://github.com/rennerdo30/winmux/releases/latest">Installer</a>
+                <a class="btn btn-small" data-asset="win-x64.zip" href="https://github.com/rennerdo30/winmux/releases/latest">Portable zip</a>
+                <a class="btn btn-small" data-asset="checksums.txt" href="https://github.com/rennerdo30/winmux/releases/latest">checksums.txt</a>
+              </span>
+            </li>
+          </ul>
+          <p class="dl-sub">Needs the <a href="https://dotnet.microsoft.com/download/dotnet/10.0">.NET 10 Desktop Runtime</a>; setup checks for it and offers the download. The installer is per user, into <code>%LOCALAPPDATA%\Programs\WinMux</code>, and is not code-signed yet, so SmartScreen warns on first start. Unzip the portable copy anywhere you can write to, not under Program Files. Uninstalling keeps your sessions and settings.</p>
+        </div>
+        <div class="dl">
+          <h3>Build from source</h3>
+          <p>Needs the .NET 10 SDK.</p>
+<pre><code>git clone https://github.com/rennerdo30/winmux
+cd winmux
+.\run.cmd            <span class="c"># build and launch, isolated profile</span>
+.\publish.cmd        <span class="c"># the same zip a release carries</span></code></pre>
+          <p class="cta"><a class="btn" href="docs/getting-started/">Getting started</a> <a class="btn" href="https://github.com/rennerdo30/winmux/releases">All releases</a></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p><img src="assets/winmux.svg" width="20" height="20" alt=""> WinMux, a project by <a href="https://github.com/rennerdo30">rennerdo30</a>. MIT licensed.</p>
+    <p><a href="docs/">Documentation</a> <a href="docs/architecture/">Architecture</a> <a href="https://github.com/rennerdo30/winmux/blob/main/CHANGELOG.md">Changelog</a> <a href="privacy.html">Privacy</a> <a href="https://github.com/rennerdo30/winmux/issues">Report an issue</a></p>
+  </footer>
+</body>
+</html>

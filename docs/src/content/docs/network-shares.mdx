@@ -10,7 +10,7 @@ optional component, and once a share is reachable it is an ordinary path. A file
 browse it, a terminal pane will start in it, and a session will restore to it.
 
 (SFTP and FTP are the other way round — Windows has no client to delegate to, so WinMux speaks those
-itself. See [Profiles](/profiles/#browsing-a-server).)
+itself. See [Profiles](/docs/profiles/#browsing-a-server).)
 
 So this page is mostly about Windows, and about the four things that actually go wrong.
 
@@ -20,7 +20,7 @@ already does correctly, including Kerberos, DFS referrals, offline files and the
 It would also be a protocol parser processing untrusted bytes from the network inside the WinMux
 process, which is a meaningful thing to take on for no capability gained.
 
-Read [Architecture](/architecture/) for the general rule this follows: WinMux composes what the
+Read [Architecture](/docs/architecture/) for the general rule this follows: WinMux composes what the
 system provides rather than reimplementing it.
 </Aside>
 
@@ -48,7 +48,7 @@ To save the password, let Windows save it, in the store built for that:
 cmdkey /add:nas.example.com /user:media-user /pass
 ```
 
-WinMux never sees it and never stores it. See [Profiles](/profiles/#remote-connections) for the same
+WinMux never sees it and never stores it. See [Profiles](/docs/profiles/#remote-connections) for the same
 policy applied to SSH and Remote Desktop.
 
 ## NFS: mounting an export
@@ -87,7 +87,7 @@ share that is unreachable at restore time falls back to a local directory with a
 *without* forgetting where you were. Reconnect, reopen, and you are back on the share.
 
 **As a profile's working directory** — set `\\nas.example.com\media` or `Z:\` as the working
-directory of a terminal profile. See [Profiles](/profiles/).
+directory of a terminal profile. See [Profiles](/docs/profiles/).
 
 **Navigating up from a share root** stops there. `\\nas.example.com\media` has no parent the way
 `C:\` has none; WinMux says so rather than doing something surprising.
@@ -149,10 +149,10 @@ Stated plainly so nobody waits for it:
 
 - **No built-in SMB or NFS client.** Mount it with Windows; WinMux browses the result.
 - **SFTP and FTP are built in**, because Windows has nothing to delegate to there. They are
-  profiles like any other — see [Profiles](/profiles/#browsing-a-server). SCP has no entry of its
+  profiles like any other — see [Profiles](/docs/profiles/#browsing-a-server). SCP has no entry of its
   own: it cannot list a directory, and every server that speaks it speaks SFTP.
 - **File transfer works, within one filesystem.** Copy, cut, paste, rename, new folder and delete
-  all work on a share exactly as they do locally — see [Keyboard](/keyboard/#in-a-file-browser-pane).
+  all work on a share exactly as they do locally — see [Keyboard](/docs/keyboard/#in-a-file-browser-pane).
   Windows is doing the work, so a UNC path is just a path. What is *not* built yet is copying
   **between** two filesystems — dragging a file from an SFTP pane onto a local one.
 - **No credential storage of its own**, for a share or anything else. Windows Credential Manager

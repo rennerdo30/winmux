@@ -7,7 +7,7 @@ import { Steps, Aside } from '@astrojs/starlight/components';
 
 ## Requirements
 
-Windows 10 or 11, x64. Nothing else — the release is self-contained.
+Windows 10 or 11, x64, with the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). Setup checks for it and offers the download page if it is missing.
 
 <Aside type="tip" title="Cascadia Mono">
 Terminals use Cascadia Mono when it is present and fall back to Consolas otherwise. It ships with
@@ -34,7 +34,7 @@ Windows Terminal and Visual Studio; installing it gives you the intended look.
 
 WinMux needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0); setup
 offers the download page if it is missing. After that, WinMux keeps itself current — see
-[Updates](/updates/). It is listed in **Settings → Apps → Installed apps**, and uninstalling it there
+[Updates](/docs/updates/). It is listed in **Settings → Apps → Installed apps**, and uninstalling it there
 removes the program folder but keeps your sessions and settings in `%APPDATA%\WinMux`.
 
 <Aside type="note" title="Prefer a folder you control?">
