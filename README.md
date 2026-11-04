@@ -229,3 +229,13 @@ Terminal.
 
 WinMux is released under the [MIT license](LICENSE). A project by
 [rennerdo30](https://github.com/rennerdo30).
+
+Every release carries `THIRD-PARTY-NOTICES.txt` with the licences of the components shipped beside
+WinMux (Avalonia, SkiaSharp and Skia, HarfBuzz, ANGLE, SSH.NET, FluentFTP, BouncyCastle, Porta.Pty,
+Terminal.Emulation, Tomlyn, ConPTY and the native libraries they bundle). It is generated from the
+package contents by [`scripts/third-party-notices.ps1`](scripts/third-party-notices.ps1).
+
+Windows, PowerShell, Windows Terminal and PowerToys are trademarks of Microsoft; other product
+names mentioned here belong to their respective owners. They are named only to describe what
+WinMux works with or how it compares. WinMux is an independent project and is not affiliated with
+or endorsed by any of them.

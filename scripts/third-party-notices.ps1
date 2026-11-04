@@ -48,6 +48,36 @@ $packageAliases = @{
     'System.Private.Windows.Core' = 'system.drawing.common'
 }
 
+# The version each package resolved to, from the lock files. The NuGet cache keeps every version
+# ever restored, and taking the first one found would attach another release's notices.
+$lockedVersions = @{}
+Get-ChildItem -LiteralPath (Split-Path -Parent $PSScriptRoot) -Filter packages.lock.json -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch '[\\/](bin|obj|node_modules)[\\/]' } |
+    ForEach-Object {
+        $lock = Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json
+        foreach ($framework in $lock.dependencies.PSObject.Properties) {
+            foreach ($package in $framework.Value.PSObject.Properties) {
+                # Project references carry no "resolved" version; StrictMode needs the explicit check.
+                $resolved = $package.Value.PSObject.Properties['resolved']
+                if ($resolved) { $lockedVersions[$package.Name.ToLowerInvariant()] = $resolved.Value }
+            }
+        }
+    }
+
+function Resolve-PackageVersion {
+    param([string] $PackageRoot)
+    if (-not $PackageRoot) { return $null }
+    $id = (Split-Path -Leaf $PackageRoot).ToLowerInvariant()
+    if ($lockedVersions.ContainsKey($id)) {
+        $locked = Join-Path $PackageRoot $lockedVersions[$id]
+        if (Test-Path -LiteralPath $locked) { return $locked }
+    }
+    # Not in a lock file (a transitive asset of a runtime pack, say): the newest cached version.
+    return Get-ChildItem -LiteralPath $PackageRoot -Directory -ErrorAction SilentlyContinue |
+        Sort-Object { try { [version]($_.Name -replace '-.*$', '') } catch { [version]'0.0' } } -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+
 function Find-PackageDirectory {
     param([string] $AssemblyName)
 
@@ -71,12 +101,24 @@ function Get-LicenceText {
     param([string] $PackageDirectory)
     if (-not $PackageDirectory) { return $null }
 
-    $file = Get-ChildItem -LiteralPath $PackageDirectory -Recurse -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match '^(LICENSE|LICENCE|COPYING|NOTICE)(\.(txt|md))?$' } |
+    $files = Get-ChildItem -LiteralPath $PackageDirectory -Recurse -File -ErrorAction SilentlyContinue
+    $licence = $files | Where-Object { $_.Name -match '^(LICENSE|LICENCE|COPYING|NOTICE)(\.(txt|md))?$' } |
         Select-Object -First 1
-    if (-not $file) { return $null }
+    # Native packages (SkiaSharp, HarfBuzzSharp) are a .NET wrapper's licence on top of a native
+    # library with licences of its own -- Skia, HarfBuzz, libpng, zlib, FreeType and more. Those
+    # live in the package's THIRD-PARTY-NOTICES file, and without it the shipped binary's actual
+    # authors go unattributed.
+    $upstream = $files | Where-Object { $_.Name -match '^THIRD[-_ ]?PARTY[-_ ]?NOTICES?(\.(txt|md))?$' } |
+        Select-Object -First 1
 
-    return (Get-Content -LiteralPath $file.FullName -Raw).Trim()
+    $parts = @()
+    if ($licence) { $parts += (Get-Content -LiteralPath $licence.FullName -Raw).Trim() }
+    if ($upstream) {
+        $parts += "Components bundled in this package, from its $($upstream.Name):"
+        $parts += (Get-Content -LiteralPath $upstream.FullName -Raw).Trim()
+    }
+    if ($parts.Count -eq 0) { return $null }
+    return $parts -join "`n`n"
 }
 
 function Get-SpdxExpression {
@@ -144,10 +186,13 @@ provided that the following conditions are met:
    provided with the distribution.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
-IMPLIED WARRANTIES ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 "@ }
         '^BSD-3-Clause$' { return @"
 $holder
@@ -165,10 +210,13 @@ provided that the following conditions are met:
    permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
-IMPLIED WARRANTIES ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 "@ }
         default { return $null }
     }
@@ -179,9 +227,10 @@ $seen = New-Object System.Collections.Generic.HashSet[string]
 $withoutText = New-Object System.Collections.Generic.List[string]
 
 foreach ($assembly in $assemblies) {
-    $directory = Find-PackageDirectory $assembly.BaseName
-    $key = if ($directory) { Split-Path -Leaf $directory } else { $assembly.BaseName }
+    $packageRoot = Find-PackageDirectory $assembly.BaseName
+    $key = if ($packageRoot) { Split-Path -Leaf $packageRoot } else { $assembly.BaseName }
     if (-not $seen.Add($key)) { continue }
+    $directory = Resolve-PackageVersion $packageRoot
 
     $copyright = (Get-Item -LiteralPath $assembly.FullName).VersionInfo.LegalCopyright
     $spdx = Get-SpdxExpression $directory

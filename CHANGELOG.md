@@ -7,6 +7,16 @@ Notable changes per release. Dates are absolute; the format follows
 Architectural reasoning lives in [`docs/adr/`](docs/adr/), not here. This file says what changed;
 the ADRs say why.
 
+## Unreleased
+
+### Fixed
+
+- `THIRD-PARTY-NOTICES.txt` now reproduces the licences of the native libraries inside SkiaSharp and
+  HarfBuzzSharp (Skia, HarfBuzz, libpng, zlib, FreeType, expat and others) from their packages'
+  own notices, uses the package version the lock files resolve rather than the first one in the
+  NuGet cache, and gives the full BSD warranty disclaimer. Releases up to 0.8.3 listed only the
+  .NET wrappers' MIT licences for those binaries.
+
 ## 0.8.1 — 2026-10-12
 
 ### Fixed
