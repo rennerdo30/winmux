@@ -16,8 +16,8 @@
       exactly what this project is. It stays on this side of the platform boundary: WinMux.Platform
       hands the shell a byte[], so no drawing type crosses (ADR 0013).
     -->
-    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
+    <PackageReference Include="System.Drawing.Common" Version="11.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
   </ItemGroup>
 
   <ItemGroup>
