@@ -26,7 +26,7 @@ jobs:
       # From global.json, not a floating version: SDK-implicit packages such as
       # Microsoft.NET.ILLink.Tasks are pinned by the lock files, and a newer SDK patch changes
       # them out from under a locked restore.
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -74,7 +74,7 @@ jobs:
           Get-Content dist/checksums.txt
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           draft: false
