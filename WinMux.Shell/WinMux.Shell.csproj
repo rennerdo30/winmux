@@ -25,7 +25,7 @@
       taken for granted because ADR 0018 is about the cost of the opposite case.
     -->
     <PackageReference Include="SSH.NET" Version="2026.0.0" />
-    <PackageReference Include="FluentFTP" Version="54.2.1" />
+    <PackageReference Include="FluentFTP" Version="55.1.0" />
   </ItemGroup>
 
   <ItemGroup>
