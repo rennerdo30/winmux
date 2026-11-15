@@ -10,9 +10,9 @@
       },
       "Porta.Pty": {
         "type": "Direct",
-        "requested": "[2.2.2, )",
-        "resolved": "2.2.2",
-        "contentHash": "wpKiHa3GOhgLpnu3bMAVJdAV+1Sek5bIgmuJrC04nl20T2VWBvoIq2+6aSOSora5pSRI9udo77F5IKLMcrk0rA==",
+        "requested": "[2.2.4, )",
+        "resolved": "2.2.4",
+        "contentHash": "9oXgJBgdSZU2gEmxyyR4rLvWG16jR+WWeg9bQvwm32TxGYbaD/80UIH4Uc3fY8xCjR9ApKKZ0CKghg88XvulOA==",
         "dependencies": {
           "Microsoft.Windows.Console.ConPTY": "1.24.260710001"
         }
