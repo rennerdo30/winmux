@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <!-- Pin exactly: ADR 0002 records the supply-chain risk of this source-unavailable package. -->
-    <PackageReference Include="Terminal.Emulation" Version="0.3.3" />
+    <PackageReference Include="Terminal.Emulation" Version="0.4.5" />
   </ItemGroup>
 
   <!--
