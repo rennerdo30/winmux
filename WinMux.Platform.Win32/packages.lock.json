@@ -10,18 +10,18 @@
       },
       "System.Drawing.Common": {
         "type": "Direct",
-        "requested": "[9.0.0, )",
-        "resolved": "9.0.0",
-        "contentHash": "uoozjI3+dlgKh2onFJcz8aNLh6TRCPlLSh8Dbuljc8CdvqXrxHOVysJlrHvlsOCqceqGBR1wrMPxlnzzhynktw==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "oF5GQr2bzXFe3urMHTPRykuS+OcW2AJOZ2YGBcAqsctQ+2JE7l7Kxqup33ZpM3C2Yfdjurts2fNZL2qnHfY4JA==",
         "dependencies": {
-          "Microsoft.Win32.SystemEvents": "9.0.0"
+          "Microsoft.Win32.SystemEvents": "11.0.0"
         }
       },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Direct",
-        "requested": "[9.0.0, )",
-        "resolved": "9.0.0",
-        "contentHash": "CJW+x/F6fmRQ7N6K8paasTw9PDZp4t7G76UjGNlSDgoHPF0h08vTzLYbLZpOLEJSg35d5wy2jCXGo84EN05DpQ=="
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "iS9iyAMwLDPFBzTdcREDkzRBYmwy7aENYl7EXxAvnNJNCbl7+UVRgJfWaVLtVjSeDmT3JIItgGODmuAPljXFww=="
       },
       "BouncyCastle.Cryptography": {
         "type": "Transitive",
@@ -30,13 +30,13 @@
       },
       "Microsoft.Win32.SystemEvents": {
         "type": "Transitive",
-        "resolved": "9.0.0",
-        "contentHash": "z8FfGIaoeALdD+KF44A2uP8PZIQQtDGiXsOLuN8nohbKhkyKt7zGaZb+fKiCxTuBqG22Q7myIAioSWaIcOOrOw=="
+        "resolved": "11.0.0",
+        "contentHash": "cI7p6SRuPcNTsgoryUpb367r1DhE+69l5XZeAS1UmyU293gwkguh2LPMiCg0YlZUZxBx0CPfXqI59Q/20Dlnvg=="
       },
       "Tomlyn": {
         "type": "Transitive",
-        "resolved": "2.10.1",
-        "contentHash": "ykjOY3IpYmC4SpPcAZRTl/w2jTmhPMDydHq8xcV7tTBAQ22nKBsOkPqauIrZlMjHm03cmKfV23UOPscKp+J4Og=="
+        "resolved": "2.11.1",
+        "contentHash": "ePC5kPidQngNoOi7jCDeRo5hbXS5uV3o4CAzz5QaxkDo1IhgM0QtGinuI03tqj8/Dl/FigRG4gRiatUsV3pcrA=="
       },
       "winmux.connections": {
         "type": "Project",
@@ -47,7 +47,7 @@
       "winmux.core": {
         "type": "Project",
         "dependencies": {
-          "Tomlyn": "[2.10.1, )"
+          "Tomlyn": "[2.11.1, )"
         }
       },
       "winmux.platform": {
